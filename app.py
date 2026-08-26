@@ -5,6 +5,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import pytz
 
 # Page Configuration
 st.set_page_config(
@@ -91,7 +92,7 @@ st.markdown("""
 st.markdown("""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
     <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.0</span></span>
-    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Closed | 🕒 22:56 ET</span>
+    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Closed | 🕒 23:09 ET</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -213,7 +214,7 @@ st.markdown("""
 
 st.divider()
 
-# 6. Volume + CVD Section (Error-free TF Selector + Static Non-interactive Chart)
+# 6. Volume + CVD Section (EDT Timezone Fixed)
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
 tf_col1, tf_col2 = st.columns([2, 3])
@@ -228,19 +229,17 @@ with tf_col1:
 with tf_col2:
     st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
 
-# Safe Datetime Data Generation (Fixing 1m, 5m, 15m, 30m Panda errors)
-tf_config = {
-    "1m": (30, '1min'),
-    "5m": (24, '5min'),
-    "15m": (20, '15min'),
-    "30m": (16, '30min'),
-    "1H": (12, '1h')
-}
+# Timeframe mapping (minutes per step)
+tf_mins = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1H": 60}
+step_min = tf_mins.get(selected_tf, 60)
+n_bars = 16
 
-n_bars, freq_str = tf_config.get(selected_tf, (12, '1h'))
+# Explicit US/Eastern Time Handling
+est_tz = pytz.timezone('US/Eastern')
+now_est = datetime.now(est_tz)
 
-now = datetime.now()
-dates = [now - timedelta(minutes=i * (1 if selected_tf=="1m" else 5 if selected_tf=="5m" else 15 if selected_tf=="15m" else 30 if selected_tf=="30m" else 60)) for i in range(n_bars)][::-1]
+dates = [now_est - timedelta(minutes=i * step_min) for i in range(n_bars)][::-1]
+dates_str = [d.strftime("%H:%M") for d in dates]
 
 np.random.seed(42)
 buy_vol = np.random.randint(10, 250, n_bars) * 1000000
@@ -250,8 +249,8 @@ cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + 400
 colors = ['#10b981' if b > s else '#ef4444' for b, s in zip(buy_vol, sell_vol)]
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_trace(go.Bar(x=dates, y=total_vol / 1000000, name="Volume", marker_color=colors, opacity=0.85), secondary_y=False)
-fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#facc15', width=2)), secondary_y=True)
+fig.add_trace(go.Bar(x=dates_str, y=total_vol / 1000000, name="Volume", marker_color=colors, opacity=0.85), secondary_y=False)
+fig.add_trace(go.Scatter(x=dates_str, y=cvd, name="CVD", line=dict(color='#facc15', width=2)), secondary_y=True)
 
 fig.update_layout(
     template="plotly_dark",
@@ -260,12 +259,12 @@ fig.update_layout(
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
-    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True),
+    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True, type='category'),
     yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True),
     yaxis2=dict(showgrid=False, title=None, fixedrange=True)
 )
 
-# Render Chart inside Static Pointer-Free HTML Container (Completely blocks zoom/pan/clicks)
+# Render Non-interactive Static HTML Component
 html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
 components.html(f"""
     <div style="pointer-events: none; user-select: none; width:100%; height:180px;">
