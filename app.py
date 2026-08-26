@@ -19,67 +19,67 @@ st.set_page_config(
 
 # Mobile 2-Column Grid & Compact UI CSS
 st.markdown("""
-    <style>
-    .stApp { background-color: #0b0e14; color: #e1e6ed; }
-    .block-container {
-        padding-top: 0.8rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-        max-width: 100% !important;
-    }
-    .grid-2col {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 8px;
-    }
-    .card-box {
-        background-color: #121721;
-        border: 1px solid #1f2937;
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 8px;
-    }
-    .news-box {
-        background-color: #161114;
-        border: 1px solid #3d1c1c;
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 8px;
-    }
-    .signal-box {
-        background-color: #16150e;
-        border: 1px solid #785a00;
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 8px;
-    }
-    .badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
-    .badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
-    .badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
-    .risk-tag {
-        background-color: #211522;
-        border: 1px solid #4a284e;
-        color: #d8b4fe;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 10px;
-        font-weight: bold;
-        display: inline-block;
-        margin-right: 2px;
-        margin-bottom: 2px;
-    }
-    .bar-container {
-        width: 100%;
-        background-color: #ef4444;
-        height: 6px;
-        border-radius: 3px;
-        overflow: hidden;
-        margin: 4px 0;
-    }
-    .bar-fill { height: 100%; background-color: #10b981; }
-    </style>
+<style>
+.stApp { background-color: #0b0e14; color: #e1e6ed; }
+.block-container {
+    padding-top: 0.8rem !important;
+    padding-bottom: 1rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    max-width: 100% !important;
+}
+.grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.card-box {
+    background-color: #121721;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+}
+.news-box {
+    background-color: #161114;
+    border: 1px solid #3d1c1c;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+}
+.signal-box {
+    background-color: #16150e;
+    border: 1px solid #785a00;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+.badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+.badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+.badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+.risk-tag {
+    background-color: #211522;
+    border: 1px solid #4a284e;
+    color: #d8b4fe;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: bold;
+    display: inline-block;
+    margin-right: 2px;
+    margin-bottom: 2px;
+}
+.bar-container {
+    width: 100%;
+    background-color: #ef4444;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 4px 0;
+}
+.bar-fill { height: 100%; background-color: #10b981; }
+</style>
 """, unsafe_allow_html=True)
 
 # Cache Yahoo Finance Data (1 minute TTL)
@@ -180,7 +180,7 @@ sr_levels = calculate_support_resistance(spx_p)
 # 1. Top Bar Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v13.0</span></span>
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v13.1</span></span>
     <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live (YFinance) | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
@@ -220,30 +220,30 @@ if result:
     tf_name = result.get('tf_option', tf_option)
 
     st.markdown(f"""
-    <div class="card-box">
-        <div style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">
-            필터: [거래량 급증 + 양봉 + ATR 변동성] → <b>{tf_name} 결과 예측</b>
+<div class="card-box">
+    <div style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">
+        필터: [거래량 급증 + 양봉 + ATR 변동성] → <b>{tf_name} 결과 예측</b>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; text-align: center;">
+        <div>
+            <div style="font-size: 9px; color: #6b7280;">총 시그널</div>
+            <div style="font-size: 13px; font-weight: bold; color: #e1e6ed;">{total_signals}회</div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; text-align: center;">
-            <div>
-                <div style="font-size: 9px; color: #6b7280;">총 시그널</div>
-                <div style="font-size: 13px; font-weight: bold; color: #e1e6ed;">{total_signals}회</div>
-            </div>
-            <div>
-                <div style="font-size: 9px; color: #6b7280;">▲ 상승 확률</div>
-                <div style="font-size: 13px; font-weight: bold; color: #10b981;">{win_rate}%</div>
-            </div>
-            <div>
-                <div style="font-size: 9px; color: #6b7280;">▼ 하락 확률</div>
-                <div style="font-size: 13px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
-            </div>
-            <div>
-                <div style="font-size: 9px; color: #6b7280;">기대값 (EV)</div>
-                <div style="font-size: 13px; font-weight: bold; color: #facc15;">+{ev}pt</div>
-            </div>
+        <div>
+            <div style="font-size: 9px; color: #6b7280;">▲ 상승 확률</div>
+            <div style="font-size: 13px; font-weight: bold; color: #10b981;">{win_rate}%</div>
+        </div>
+        <div>
+            <div style="font-size: 9px; color: #6b7280;">▼ 하락 확률</div>
+            <div style="font-size: 13px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
+        </div>
+        <div>
+            <div style="font-size: 9px; color: #6b7280;">기대값 (EV)</div>
+            <div style="font-size: 13px; font-weight: bold; color: #facc15;">+{ev}pt</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
 st.divider()
 
@@ -351,12 +351,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES (HTML 주석 제거 완료)
+# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES (태그 오탈자 수정)
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 6px;'>🎯 SUPPORT/RESISTANCE & RECOMMENDED STRIKES</div>", unsafe_allow_html=True)
 
 diff_r2 = round(sr_levels['R2'] - spx_p, 1)
 diff_s2 = round(spx_p - sr_levels['S2'], 1)
+pct_r2 = round((diff_r2 / spx_p) * 100, 2) if spx_p else 0.0
+pct_s2 = round((diff_s2 / spx_p) * 100, 2) if spx_p else 0.0
 
 sr_html = f"""
 <div class="grid-2col">
@@ -371,7 +373,7 @@ sr_html = f"""
         </div>
         <div style="margin-top: 4px; font-size: 10px; color: #6b7280;">
             1차 저항 (R1): <b>{sr_levels['R1']}</b><br>
-            안전 버퍼: <b style="color: #ef4444;">+{diff_r2} pt</b> (+{round(diff_r2/spx_p*100, 2)}%)
+            안전 버퍼: <b style="color: #ef4444;">+{diff_r2} pt</b> (+{pct_r2}%)
         </div>
         <div style="margin-top: 6px; padding: 4px; background-color: #1f1315; border-radius: 4px; font-size: 9px; color: #fca5a5; text-align: center;">
             💡 <b>{sr_levels['R1']} / {sr_levels['R2']} Call Sell</b> 권장
@@ -389,7 +391,7 @@ sr_html = f"""
         </div>
         <div style="margin-top: 4px; font-size: 10px; color: #6b7280;">
             1차 지지 (S1): <b>{sr_levels['S1']}</b><br>
-            안전 버퍼: <b style="color: #10b981;">-{diff_s2} pt</b> (-{round(diff_s2/spx_p*100, 2)}%)
+            안전 버퍼: <b style="color: #10b981;">-{diff_s2} pt</b> (-{pct_s2}%)
         </div>
         <div style="margin-top: 6px; padding: 4px; background-color: #0f1f19; border-radius: 4px; font-size: 9px; color: #6ee7b7; text-align: center;">
             💡 <b>{sr_levels['S1']} / {sr_levels['S2']} Put Sell</b> 권장
@@ -461,9 +463,9 @@ fig.update_layout(
 
 html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
 components.html(f"""
-    <div style="pointer-events: none; user-select: none; width:100%; height:180px;">
-        {html_fig}
-    </div>
+<div style="pointer-events: none; user-select: none; width:100%; height:180px;">
+    {html_fig}
+</div>
 """, height=185)
 
 st.markdown(f"""
