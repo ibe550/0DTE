@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Mobile 2-Column Grid & Compact UI CSS
+# Custom CSS for UI styling
 st.markdown("""
 <style>
 .stApp { background-color: #0b0e14; color: #e1e6ed; }
@@ -27,12 +27,6 @@ st.markdown("""
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
     max-width: 100% !important;
-}
-.grid-2col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 8px;
 }
 .card-box {
     background-color: #121721;
@@ -180,7 +174,7 @@ sr_levels = calculate_support_resistance(spx_p)
 # 1. Top Bar Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v13.1</span></span>
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v13.2</span></span>
     <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live (YFinance) | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
@@ -265,45 +259,14 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Helper function for coloring
-def format_change(price, change, pct):
-    color = "#10b981" if change >= 0 else "#ef4444"
-    sign = "+" if change >= 0 else ""
-    return f'<div style="font-size: 18px; font-weight: bold; color: {color}; margin: 2px 0;">{price:.2f}</div><div style="font-size: 11px; color: {color};">{sign}{change:.2f} ({sign}{pct:.2f}%)</div>'
-
 # 3. Ticker Metrics Grid
-st.markdown(f"""
-<div class="grid-2col">
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">SPX INDEX</div>
-        <div style="font-size: 9px; color: #6b7280;">Yahoo Realtime</div>
-        {format_change(spx_p, spx_c, spx_pct)}
-    </div>
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">VIX INDEX</div>
-        <div style="font-size: 9px; color: #6b7280;">Yahoo Realtime</div>
-        {format_change(vix_p, vix_c, vix_pct)}
-    </div>
-</div>
-<div class="grid-2col">
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">ES FUTURES <span style="background-color: #1e293b; color: #93c5fd; padding: 1px 3px; border-radius: 3px; font-size: 8px;">ACTIVE</span></div>
-        {format_change(es_p, es_c, es_pct)}
-        <div style="font-size: 9px; color: #6b7280;">E-mini S&P 500</div>
-    </div>
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">FEAR & GREED</div>
-        <div style="font-size: 9px; color: #6b7280;">Market Sentiment</div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
-            <div>
-                <div style="font-size: 15px; font-weight: bold; color: #10b981;">Greed</div>
-                <div style="font-size: 9px; color: #9ca3af;">1w: 55 | 1m: 41</div>
-            </div>
-            <div style="font-size: 14px; font-weight: bold; color: #10b981; background: #064e3b; padding: 4px 8px; border-radius: 50%;">59</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+col_m1, col_m2 = st.columns(2)
+with col_m1:
+    st.metric(label="SPX INDEX", value=f"{spx_p:.2f}", delta=f"{spx_c:+.2f} ({spx_pct:+.2f}%)")
+    st.metric(label="ES FUTURES", value=f"{es_p:.2f}", delta=f"{es_c:+.2f} ({es_pct:+.2f}%)")
+with col_m2:
+    st.metric(label="VIX INDEX", value=f"{vix_p:.2f}", delta=f"{vix_c:+.2f} ({vix_pct:+.2f}%)", delta_color="inverse")
+    st.metric(label="FEAR & GREED", value="59 (Greed)", delta="1w: 55 | 1m: 41")
 
 # ---------------------------------------------------------
 # 4. DECISION SIGNAL
@@ -351,7 +314,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES (태그 오탈자 수정)
+# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES (Streamlit Columns Native)
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 6px;'>🎯 SUPPORT/RESISTANCE & RECOMMENDED STRIKES</div>", unsafe_allow_html=True)
 
@@ -360,47 +323,19 @@ diff_s2 = round(spx_p - sr_levels['S2'], 1)
 pct_r2 = round((diff_r2 / spx_p) * 100, 2) if spx_p else 0.0
 pct_s2 = round((diff_s2 / spx_p) * 100, 2) if spx_p else 0.0
 
-sr_html = f"""
-<div class="grid-2col">
-    <div class="card-box" style="border-left: 3px solid #ef4444;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 10px; color: #ef4444; font-weight: bold;">🔴 CALL CREDIT RANGE</span>
-            <span class="badge-red">SELL CALL</span>
-        </div>
-        <div style="margin-top: 6px;">
-            <div style="font-size: 9px; color: #9ca3af;">2차 저항선 (R2)</div>
-            <div style="font-size: 15px; font-weight: bold; color: #fca5a5;">{sr_levels['R2']} Strike</div>
-        </div>
-        <div style="margin-top: 4px; font-size: 10px; color: #6b7280;">
-            1차 저항 (R1): <b>{sr_levels['R1']}</b><br>
-            안전 버퍼: <b style="color: #ef4444;">+{diff_r2} pt</b> (+{pct_r2}%)
-        </div>
-        <div style="margin-top: 6px; padding: 4px; background-color: #1f1315; border-radius: 4px; font-size: 9px; color: #fca5a5; text-align: center;">
-            💡 <b>{sr_levels['R1']} / {sr_levels['R2']} Call Sell</b> 권장
-        </div>
-    </div>
+col_sr1, col_sr2 = st.columns(2)
 
-    <div class="card-box" style="border-left: 3px solid #10b981;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 10px; color: #10b981; font-weight: bold;">🟢 PUT CREDIT RANGE</span>
-            <span class="badge-green">SELL PUT</span>
-        </div>
-        <div style="margin-top: 6px;">
-            <div style="font-size: 9px; color: #9ca3af;">2차 지지선 (S2)</div>
-            <div style="font-size: 15px; font-weight: bold; color: #6ee7b7;">{sr_levels['S2']} Strike</div>
-        </div>
-        <div style="margin-top: 4px; font-size: 10px; color: #6b7280;">
-            1차 지지 (S1): <b>{sr_levels['S1']}</b><br>
-            안전 버퍼: <b style="color: #10b981;">-{diff_s2} pt</b> (-{pct_s2}%)
-        </div>
-        <div style="margin-top: 6px; padding: 4px; background-color: #0f1f19; border-radius: 4px; font-size: 9px; color: #6ee7b7; text-align: center;">
-            💡 <b>{sr_levels['S1']} / {sr_levels['S2']} Put Sell</b> 권장
-        </div>
-    </div>
-</div>
-"""
+with col_sr1:
+    st.markdown("### 🔴 CALL CREDIT")
+    st.metric(label="2차 저항선 (R2)", value=f"{sr_levels['R2']} Strike", delta=f"+{diff_r2} pt (+{pct_r2}%)")
+    st.caption(f"1차 저항 (R1): {sr_levels['R1']}")
+    st.info(f"💡 **{sr_levels['R1']} / {sr_levels['R2']} Call Sell** 권장")
 
-st.markdown(sr_html, unsafe_allow_html=True)
+with col_sr2:
+    st.markdown("### 🟢 PUT CREDIT")
+    st.metric(label="2차 지지선 (S2)", value=f"{sr_levels['S2']} Strike", delta=f"-{diff_s2} pt (-{pct_s2}%)")
+    st.caption(f"1차 지지 (S1): {sr_levels['S1']}")
+    st.success(f"💡 **{sr_levels['S1']} / {sr_levels['S2']} Put Sell** 권장")
 
 # 6. Volume + CVD Section
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD (ES=F Live)</div>", unsafe_allow_html=True)
@@ -477,5 +412,3 @@ st.markdown(f"""
     <div class="bar-fill" style="width: {buy_pct}%;"></div>
 </div>
 """, unsafe_allow_html=True)
-
-
