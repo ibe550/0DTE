@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# 1. Page Configuration
+# 1. Page Config
 st.set_page_config(
     page_title="SPX 0DTE DEFENDER v12.0",
     page_icon="🛡️",
@@ -14,155 +14,223 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Eastern Timezone Fix (ZoneInfo 내장 모듈 사용으로 pytz 의존성 제거)
 et_tz = ZoneInfo("America/New_York")
 now_et = datetime.now(et_tz)
 
-# 2. Custom CSS (Fix text clipping and padding)
+# 2. Modern UI CSS (Image Style Matching)
 st.markdown("""
     <style>
-    /* 상단 짤림 방지: padding-top을 2rem으로 확보 */
     .block-container { 
-        padding-top: 2rem !important; 
-        padding-bottom: 1.5rem !important; 
+        padding-top: 1rem !important; 
+        padding-bottom: 1rem !important; 
         padding-left: 0.8rem !important; 
         padding-right: 0.8rem !important; 
     }
-    .stApp { background-color: #0b0e14; color: #e1e6ed; }
+    .stApp { background-color: #080a0f; color: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
-    /* Card Styles */
-    .card-box {
-        background-color: #121721;
-        border: 1px solid #1f2937;
-        border-radius: 6px;
-        padding: 12px;
-        margin-bottom: 10px;
-        font-size: 13px;
-        line-height: 1.5;
+    /* Header Bar */
+    .header-box {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
     }
-    .status-wait-box {
-        background-color: #1e1b0e;
-        border: 1px solid #785a00;
-        border-radius: 6px;
-        padding: 12px;
-        color: #fbbf24;
-        font-size: 13px;
-        line-height: 1.5;
+    .header-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .v-badge {
+        background-color: #1e1b4b;
+        color: #818cf8;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    .market-status {
+        background-color: #171923;
+        border: 1px solid #2d3748;
+        color: #a0aec0;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* Cards Common Style */
+    .dash-card {
+        background-color: #0f131c;
+        border: 1px solid #1e2638;
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+        position: relative;
+    }
+    .dash-card-red {
+        background-color: #12090d;
+        border: 1px solid #450a0a;
+        border-radius: 8px;
+        padding: 12px 14px;
         margin-bottom: 10px;
     }
-    .badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
-    .badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
+
+    /* Header text inside cards */
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+    .card-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #cbd5e1;
+    }
+    .card-time {
+        font-size: 10px;
+        color: #64748b;
+    }
+
+    /* Values & Badges */
+    .val-large-green { font-size: 26px; font-weight: 800; color: #10b981; margin: 4px 0 2px 0; }
+    .val-large-red { font-size: 26px; font-weight: 800; color: #f43f5e; margin: 4px 0 2px 0; }
+    .val-sub-green { font-size: 12px; font-weight: 600; color: #10b981; }
+    .val-sub-red { font-size: 12px; font-weight: 600; color: #f43f5e; }
     
-    /* Gauge Bar */
-    .bar-container { width: 100%; background-color: #ef4444; height: 6px; border-radius: 3px; overflow: hidden; margin: 6px 0; }
-    .bar-fill { height: 100%; background-color: #10b981; }
-    
-    /* Radio Button Margin Fix */
-    .stRadio { margin-top: 4px; }
-    
+    .badge-active { background-color: #1e1b4b; color: #818cf8; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; }
+    .tag-red { background-color: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    .tag-dark { background-color: #18181b; color: #a1a1aa; border: 1px solid #27272a; font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# Header Section
-st.markdown("<h3 style='margin-top: 0px;'>🛡️ SPX 0DTE DEFENDER v12.0</h3>", unsafe_allow_html=True)
-st.caption(f"● Market Closed | Data as of {now_et.strftime('%m/%d %H:%M:%S')} ET")
-
-# Ticker Metrics Grid
-m1, m2 = st.columns(2)
-with m1:
-    st.metric(label="SPX INDEX", value="7677.28", delta="+24.42 (+0.32%)")
-    st.metric(label="ES FUTURES", value="7672.75", delta="-19.25 (-0.25%)", delta_color="inverse")
-with m2:
-    st.metric(label="VIX INDEX", value="15.45", delta="+0.32 (+2.12%)", delta_color="inverse")
-    st.metric(label="FEAR & GREED", value="59 (Greed)", delta="1w: 55", delta_color="off")
-
-# Status Cards
-st.markdown("""
-    <div class="status-wait-box">
-        <b>🚨 DECISION SIGNAL: [WAIT] 신호 대기</b><br>
-        <span style="font-size: 12px;">일부 데이터가 오래되어 새 진입을 제안하지 않습니다 (STALE)</span><br>
-        <hr style="border-color: #785a00; margin: 6px 0;">
-        <b>CONFIDENCE:</b> 0% &nbsp;|&nbsp; <b>CREDIT DIRECTION:</b> WAIT
-    </div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-    <div class="card-box">
-        <b>⚡ GEX:</b> <span class="badge-red"> Explosive 폭발적 구간 </span><br>
-        • <b>Flip:</b> 7660 &nbsp;|&nbsp; <b>Call Wall:</b> 7670 &nbsp;|&nbsp; <b>Put Wall:</b> 7670<br>
-        • <b>Net Delta:</b> +94,588 <span class="badge-green">CALL BIASED</span>
-    </div>
-""", unsafe_allow_html=True)
-
-st.divider()
-
-# VOLUME + CVD Section
-st.markdown("**📊 VOLUME + CVD**")
-
-# Timeframe Selector & Badge Layout
-col_tf, col_sp = st.columns([3, 1])
-with col_tf:
-    selected_tf = st.radio(
-        "Timeframe",
-        ["1m", "5m", "15m", "30m", "1H"],
-        index=4,
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-with col_sp:
-    st.markdown("<div style='text-align:right; padding-top: 5px;'><span class='badge-red'>↓ Selling Pressure</span></div>", unsafe_allow_html=True)
-
-# Eastern Time Sequence Data
-freq_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1H": "1h"}
-bar_count_map = {"1m": 30, "5m": 24, "15m": 20, "30m": 16, "1H": 12}
-
-n_bars = bar_count_map[selected_tf]
-pd_freq = freq_map[selected_tf]
-
-np.random.seed(42)
-dates = pd.date_range(end=now_et, periods=n_bars, freq=pd_freq, tz=et_tz)
-
-buy_vol = np.random.randint(10, 250, n_bars) * 1000000
-sell_vol = np.random.randint(10, 280, n_bars) * 1000000
-total_vol = buy_vol + sell_vol
-cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + 100
-
-colors = ['#10b981' if b > s else '#ef4444' for b, s in zip(buy_vol, sell_vol)]
-
-# Plotly Subplot Chart
-fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_trace(go.Bar(x=dates, y=total_vol / 1000000, name="Volume", marker_color=colors), secondary_y=False)
-fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#facc15', width=2)), secondary_y=True)
-
-fig.update_layout(
-    template="plotly_dark",
-    height=240,
-    margin=dict(l=10, r=10, t=15, b=10),
-    paper_bgcolor='#0b0e14',
-    plot_bgcolor='#121721',
-    showlegend=False,
-    xaxis=dict(showgrid=False, tickformat="%H:%M"),
-    yaxis=dict(showgrid=True, gridcolor='#1f2937', title="Volume"),
-    yaxis2=dict(showgrid=False, title="CVD")
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# Gauge Bar & Flow Signal Card
-buy_pct, sell_pct = 44, 56
+# 3. Header Section
 st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">
-        <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
-        <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
+    <div class="header-box">
+        <div class="header-title">
+            <span style="color: #6366f1;">🛡️</span> SPX 0DTE DEFENDER <span class="v-badge">v12.0</span>
+        </div>
+        <div class="market-status">
+            <span style="color: #6366f1;">●</span> Market Closed &nbsp; 🕒 {now_et.strftime('%H:%M:%S')}
+        </div>
     </div>
-    <div class="bar-container"><div class="bar-fill" style="width: {buy_pct}%;"></div></div>
 """, unsafe_allow_html=True)
 
+# 4. Breaking News Card
 st.markdown("""
-    <div class="card-box">
-        <b>🌊 WEIGHTED FLOW:</b> <span class="badge-green">📈 종합 상승</span><br>
-        <span style="color: #fbbf24;">⚠️ <b>Bullish Absorption</b> — 매도 물량을 매수세가 흡수하는 흐름입니다.</span>
+    <div class="dash-card-red">
+        <div class="card-header">
+            <span class="card-title" style="color: #f87171;">⚠️ BREAKING NEWS</span>
+            <span class="card-time"><span style="color: #ef4444;">Google News</span> Data as of 08/25 22:01:00 ET</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+            <a href="#" style="color: #f1f5f9; font-size: 13px; font-weight: 600; text-decoration: underline;">
+                Case for BoC rate hike crumbling as trade war ramps up - mpamag.com
+            </a>
+            <span style="font-size: 11px; color: #64748b;">9h ago</span>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# 5. High Impact Events Card
+st.markdown("""
+    <div class="dash-card">
+        <div class="card-title" style="margin-bottom: 8px;">📅 TODAY'S HIGH-IMPACT EVENTS (USD)</div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+            <span><span style="color: #eab308;">●</span> <b>Core PCE Price Index m/m</b> <span style="color: #64748b;">f:0.2%</span></span>
+            <span style="color: #64748b;">9h 48m</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px;">
+            <span><span style="color: #eab308;">●</span> <b>Prelim GDP q/q</b> <span style="color: #64748b;">f:1.5%</span></span>
+            <span style="color: #64748b;">9h 48m</span>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# 6. News Risks Card
+st.markdown("""
+    <div class="dash-card">
+        <div class="card-header">
+            <span class="card-title">📈 NEWS RISKS:</span>
+            <span class="card-time">Latest item 08/25 22:01:00 ET</span>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+            <span class="tag-red">INFLATION</span>
+            <span class="tag-dark">FED</span>
+            <span class="tag-dark">FOMC</span>
+            <span class="tag-red">WAR</span>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# 7. Ticker Grid (2x2)
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("""
+        <div class="dash-card">
+            <div class="card-title">SPX INDEX</div>
+            <div class="card-time">Data as of 08/25 17:43:00 ET</div>
+            <div class="val-large-green">7677.28</div>
+            <div class="val-sub-green">+24.42 (+0.32%)</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class="dash-card">
+            <div class="card-header">
+                <span class="card-title">ES FUTURES</span>
+                <span class="badge-active">ACTIVE</span>
+            </div>
+            <div class="val-large-red">7679.50</div>
+            <div class="val-sub-red">-12.50 (-0.16%)</div>
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">E-mini S&P 500</div>
+            <div class="card-time" style="margin-top: 2px;">Data as of 08/25 22:30:42 ET</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown("""
+        <div class="dash-card">
+            <div class="card-title">VIX</div>
+            <div class="card-time">Data as of 08/25 16:14:00 ET</div>
+            <div class="val-large-green">15.45</div>
+            <div class="val-sub-red">+0.32 (+2.12%)</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class="dash-card">
+            <div class="card-title">FEAR & GREED</div>
+            <div class="card-time">Data as of 08/25 19:59:53 ET</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+                <div style="width: 50px; height: 50px; border-radius: 50%; border: 4px solid #10b981; border-bottom-color: transparent; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff;">59</div>
+                <div>
+                    <div style="color: #10b981; font-size: 16px; font-weight: 800;">Greed</div>
+                    <div style="font-size: 10px; color: #64748b;">1w ago: 55</div>
+                    <div style="font-size: 10px; color: #64748b;">1m ago: 41</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+# 8. VIX Trend Card
+st.markdown("""
+    <div class="dash-card" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="card-title">VIX TREND</span>
+            <span class="tag-dark">— VIX Stable</span>
+        </div>
+        <div style="font-size: 10px; color: #64748b;">1pt</div>
     </div>
 """, unsafe_allow_html=True)
