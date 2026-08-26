@@ -135,6 +135,10 @@ def fetch_es_history(interval_str):
     except Exception:
         return None
 
+# Session State 내 백테스트 결과 초기화
+if "backtest_result" not in st.session_state:
+    st.session_state["backtest_result"] = None
+
 market_data = fetch_market_data()
 est_tz = pytz.timezone('US/Eastern')
 now_est = datetime.now(est_tz)
@@ -146,17 +150,16 @@ es_p, es_c, es_pct = market_data['es'] if market_data else (7685.75, -6.25, -0.0
 # 1. Top Bar Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.1</span></span>
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.2</span></span>
     <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live (YFinance) | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [최상단 배치] REALTIME PROBABILITY ENGINE (Dual Probability Grid)
+# [최상단 배치] REALTIME PROBABILITY ENGINE
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
 
-# 예측 타임프레임 선택 버튼
 tf_option = st.radio(
     "예측 타임프레임 선택",
     ["10분 뒤", "30분 뒤", "1시간 뒤"],
@@ -165,48 +168,52 @@ tf_option = st.radio(
     label_visibility="collapsed"
 )
 
-# 선택된 타임프레임에 따른 lookahead 봉 수 설정 (5분봉 기준)
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
 if st.button(f"🚀 [{tf_option}] 승률/하락률 및 기대값 검증"):
     with st.spinner("과거 데이터 분석 및 양방향 확률 산출 중..."):
-        result = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
-        
-        if result:
-            # result 딕셔너리에 loss_rate가 없더라도 안전하게 계산
-            win_rate = result.get('win_rate', 0.0)
-            loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
-            total_signals = result.get('total_signals', 0)
-            ev = result.get('expected_value', 0.0)
-            
-            st.markdown(f"""
-            <div class="card-box">
-                <div style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">
-                    필터: [거래량 급증 + 양봉 + ATR 변동성] → <b>{tf_option} 결과 예측</b>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; text-align: center;">
-                    <div>
-                        <div style="font-size: 9px; color: #6b7280;">총 시그널</div>
-                        <div style="font-size: 13px; font-weight: bold; color: #e1e6ed;">{total_signals}회</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 9px; color: #6b7280;">▲ 상승 확률</div>
-                        <div style="font-size: 13px; font-weight: bold; color: #10b981;">{win_rate}%</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 9px; color: #6b7280;">▼ 하락 확률</div>
-                        <div style="font-size: 13px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 9px; color: #6b7280;">기대값 (EV)</div>
-                        <div style="font-size: 13px; font-weight: bold; color: #facc15;">+{ev}pt</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        res = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
+        if res:
+            res["tf_option"] = tf_option
+            st.session_state["backtest_result"] = res
         else:
             st.error("분석할 수 있는 데이터가 없거나 시그널이 발생하지 않았습니다.")
+
+result = st.session_state["backtest_result"]
+
+if result:
+    win_rate = result.get('win_rate', 0.0)
+    loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
+    total_signals = result.get('total_signals', 0)
+    ev = result.get('expected_value', 0.0)
+    tf_name = result.get('tf_option', tf_option)
+
+    st.markdown(f"""
+    <div class="card-box">
+        <div style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">
+            필터: [거래량 급증 + 양봉 + ATR 변동성] → <b>{tf_name} 결과 예측</b>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; text-align: center;">
+            <div>
+                <div style="font-size: 9px; color: #6b7280;">총 시그널</div>
+                <div style="font-size: 13px; font-weight: bold; color: #e1e6ed;">{total_signals}회</div>
+            </div>
+            <div>
+                <div style="font-size: 9px; color: #6b7280;">▲ 상승 확률</div>
+                <div style="font-size: 13px; font-weight: bold; color: #10b981;">{win_rate}%</div>
+            </div>
+            <div>
+                <div style="font-size: 9px; color: #6b7280;">▼ 하락 확률</div>
+                <div style="font-size: 13px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
+            </div>
+            <div>
+                <div style="font-size: 9px; color: #6b7280;">기대값 (EV)</div>
+                <div style="font-size: 13px; font-weight: bold; color: #facc15;">+{ev}pt</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
@@ -268,20 +275,52 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 4. DECISION SIGNAL
+# ---------------------------------------------------------
+# 4. DECISION SIGNAL (백테스트 확률 결과 연동)
+# ---------------------------------------------------------
+if result:
+    win = result.get('win_rate', 0.0)
+    loss = result.get('loss_rate', 0.0)
+    ev_val = result.get('expected_value', 0.0)
+    
+    # 퀀트 신뢰도 산출 (상승/하락 확률 격차)
+    confidence = min(round(abs(win - loss) * 2), 100)
+    
+    if win > loss and ev_val > 0:
+        sig_title = "PUT CREDIT SPREAD (상승 우세)"
+        sig_badge = '<span class="badge-green">BULLISH</span>'
+        sig_color = "#10b981"
+        sig_desc = f"상승 확률({win}%)이 하락 확률({loss}%)보다 높으며 EV(+{ev_val}pt)가 양수입니다. <b>Put Credit Spread</b>가 유리합니다."
+    elif loss > win:
+        sig_title = "CALL CREDIT SPREAD (하락/조정 우세)"
+        sig_badge = '<span class="badge-red">BEARISH</span>'
+        sig_color = "#ef4444"
+        sig_desc = f"하락 확률({loss}%)이 상승 확률({win}%)보다 높습니다. <b>Call Credit Spread</b> 진입을 고려하세요."
+    else:
+        sig_title = "관망 (NEUTRAL / WAIT)"
+        sig_badge = '<span class="badge-yellow">WAIT</span>'
+        sig_color = "#fbbf24"
+        sig_desc = "상승/하락 확률이 비슷하거나 기대값이 불분명합니다. 추가 시그널을 대기하세요."
+else:
+    sig_title = "백테스트 검증 필요"
+    sig_badge = '<span class="badge-yellow">⏱️ READY</span>'
+    sig_color = "#fbbf24"
+    confidence = 0
+    sig_desc = "상단 버튼을 눌러 승률/하락률을 분석하면 추천 전략이 자동 대입됩니다."
+
 st.markdown(f"""
 <div class="signal-box">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <span style="font-size: 11px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
-        <span class="badge-yellow">⏱️ WAIT</span>
+        {sig_badge}
     </div>
     <div style="margin-top: 4px;">
-        <span style="font-size: 18px; font-weight: bold; color: #fbbf24;">대기</span>
-        <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: #fbbf24;">0%</b></span>
+        <span style="font-size: 17px; font-weight: bold; color: {sig_color};">{sig_title}</span>
+        <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: {sig_color};">{confidence}%</b></span>
     </div>
-    <p style="font-size: 11px; color: #d1d5db; margin: 2px 0;">YFinance 시세 연동 중 - 정밀 옵션 체결량(GEX) 대기 중</p>
-    <div style="font-size: 10px; color: #f59e0b; margin-bottom: 4px;">
-        <span class="badge-green">YFINANCE CONNECTED</span> as of {now_est.strftime('%H:%M:%S')} ET
+    <p style="font-size: 11px; color: #d1d5db; margin: 4px 0 2px 0;">{sig_desc}</p>
+    <div style="font-size: 10px; color: #f59e0b; margin-top: 4px;">
+        <span class="badge-green">ENGINE INTEGRATED</span> as of {now_est.strftime('%H:%M:%S')} ET
     </div>
 </div>
 """, unsafe_allow_html=True)
