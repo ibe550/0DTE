@@ -17,45 +17,48 @@ st.set_page_config(
 et_tz = ZoneInfo("America/New_York")
 now_et = datetime.now(et_tz)
 
-# 2. Modern UI CSS (Mobile-Optimized)
+# 2. Compact & Sleek Mobile Grid CSS
 st.markdown("""
     <style>
     .block-container { 
-        padding-top: 1.5rem !important; 
-        padding-bottom: 1.5rem !important; 
-        padding-left: 0.6rem !important; 
-        padding-right: 0.6rem !important; 
+        padding-top: 1rem !important; 
+        padding-bottom: 1rem !important; 
+        padding-left: 0.5rem !important; 
+        padding-right: 0.5rem !important; 
     }
-    .stApp { background-color: #080a0f; color: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .stApp { background-color: #0b0e14; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
-    .header-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-    .header-title { font-size: 18px; font-weight: 800; color: #ffffff; display: flex; align-items: center; gap: 8px; }
-    .v-badge { background-color: #1e1b4b; color: #818cf8; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-    .market-status { background-color: #171923; border: 1px solid #2d3748; color: #a0aec0; padding: 3px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 6px; }
+    /* Header */
+    .header-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }
+    .header-title { font-size: 16px; font-weight: 800; color: #ffffff; display: flex; align-items: center; gap: 6px; }
+    .v-badge { background-color: #1e1b4b; color: #818cf8; padding: 1px 5px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+    .market-status { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px; }
 
-    .dash-card { background-color: #0f131c; border: 1px solid #1e2638; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-    .dash-card-red { background-color: #12090d; border: 1px solid #450a0a; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-    .status-wait-box { background-color: #1e1b0e; border: 1px solid #785a00; border-radius: 8px; padding: 12px 14px; color: #fbbf24; margin-bottom: 10px; font-size: 12px; line-height: 1.5; }
+    /* Compact Card Grid */
+    .mini-card { background-color: #121721; border: 1px solid #1f2937; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+    .mini-card-red { background-color: #160b0e; border: 1px solid #450a0a; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+    .mini-card-yellow { background-color: #18150a; border: 1px solid #785a00; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
 
-    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    .card-title { font-size: 12px; font-weight: 700; color: #cbd5e1; }
-    .card-time { font-size: 10px; color: #64748b; }
-
-    .val-large-green { font-size: 26px; font-weight: 800; color: #10b981; margin: 4px 0 2px 0; }
-    .val-large-red { font-size: 26px; font-weight: 800; color: #f43f5e; margin: 4px 0 2px 0; }
-    .val-sub-green { font-size: 12px; font-weight: 600; color: #10b981; }
-    .val-sub-red { font-size: 12px; font-weight: 600; color: #f43f5e; }
+    .card-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
     
-    .badge-active { background-color: #1e1b4b; color: #818cf8; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; }
-    .tag-red { background-color: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-    .tag-green { background-color: #064e3b; color: #34d399; border: 1px solid #065f46; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    /* Values */
+    .val-main { font-size: 20px; font-weight: 800; color: #ffffff; margin: 2px 0; }
+    .val-green { font-size: 12px; font-weight: 700; color: #10b981; }
+    .val-red { font-size: 12px; font-weight: 700; color: #f43f5e; }
     
-    .bar-container { width: 100%; background-color: #ef4444; height: 6px; border-radius: 3px; overflow: hidden; margin: 4px 0 8px 0; }
+    /* Tags & Badges */
+    .tag-red { background-color: #450a0a; color: #fca5a5; font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: bold; }
+    .tag-green { background-color: #064e3b; color: #34d399; font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: bold; }
+    .tag-dark { background-color: #1e293b; color: #cbd5e1; font-size: 9px; padding: 1px 4px; border-radius: 3px; }
+
+    /* Gauge Bar */
+    .bar-container { width: 100%; background-color: #f43f5e; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0 6px 0; }
     .bar-fill { height: 100%; background-color: #10b981; }
 
-    div[role="radiogroup"] { display: flex; justify-content: space-between; width: 100%; gap: 4px; margin-bottom: 8px; }
-    div[role="radiogroup"] label { background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 4px 6px !important; margin: 0 !important; flex-grow: 1; text-align: center; }
-    div[role="radiogroup"] label[data-checked="true"] { background-color: #3b82f6 !important; border-color: #60a5fa !important; }
+    /* Radio Tabs */
+    div[role="radiogroup"] { display: flex; justify-content: space-between; width: 100%; gap: 3px; margin-bottom: 6px; }
+    div[role="radiogroup"] label { background-color: #121721; border: 1px solid #1f2937; border-radius: 4px; padding: 2px 4px !important; margin: 0 !important; flex-grow: 1; text-align: center; font-size: 11px; }
+    div[role="radiogroup"] label[data-checked="true"] { background-color: #2563eb !important; border-color: #3b82f6 !important; color: white !important; }
 
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -63,77 +66,89 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Header & Dashboard Metrics
+# 3. Header Bar
 st.markdown(f"""
     <div class="header-box">
         <div class="header-title">
-            <span style="color: #6366f1;">🛡️</span> SPX 0DTE DEFENDER <span class="v-badge">v12.0</span>
+            <span>🛡️</span> SPX 0DTE <span class="v-badge">v12.0</span>
         </div>
         <div class="market-status">
-            <span style="color: #6366f1;">●</span> Closed &nbsp; 🕒 {now_et.strftime('%H:%M')}
+            <span style="color: #6366f1;">●</span> Closed &nbsp;|&nbsp; 🕒 {now_et.strftime('%H:%M')} ET
         </div>
     </div>
 """, unsafe_allow_html=True)
 
+# 4. Breaking News (Compact)
 st.markdown("""
-    <div class="dash-card-red">
-        <div class="card-header">
-            <span class="card-title" style="color: #f87171;">⚠️ BREAKING NEWS</span>
-            <span class="card-time"><span style="color: #ef4444;">Google News</span> 08/25 22:01 ET</span>
+    <div class="mini-card-red" style="padding: 6px 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #f87171; font-size: 11px; font-weight: 700;">⚠️ BREAKING</span>
+            <span style="font-size: 9px; color: #64748b;">9h ago</span>
         </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-            <span style="color: #f1f5f9; font-size: 13px; font-weight: 600;">
-                Case for BoC rate hike crumbling as trade war ramps up
-            </span>
-            <span style="font-size: 11px; color: #64748b; white-space: nowrap; margin-left: 10px;">9h ago</span>
+        <div style="color: #f1f5f9; font-size: 11px; font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            Case for BoC rate hike crumbling as trade war ramps up
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-with col1:
+# 5. Core Metrics Grid (2 columns x 2 rows - 꽉 찬 정보 구조)
+c1, c2 = st.columns(2)
+
+with c1:
     st.markdown("""
-        <div class="dash-card">
+        <div class="mini-card">
             <div class="card-title">SPX INDEX</div>
-            <div class="card-time">Data as of 08/25 17:43:00 ET</div>
-            <div class="val-large-green">7677.28</div>
-            <div class="val-sub-green">+24.42 (+0.32%)</div>
+            <div class="val-main">7,677.28</div>
+            <div class="val-green">▲ +24.42 (+0.32%)</div>
         </div>
     """, unsafe_allow_html=True)
-with col2:
+    
     st.markdown("""
-        <div class="dash-card">
-            <div class="card-header">
+        <div class="mini-card">
+            <div style="display: flex; justify-content: space-between;">
                 <span class="card-title">ES FUTURES</span>
-                <span class="badge-active">ACTIVE</span>
+                <span class="tag-dark">ACTIVE</span>
             </div>
-            <div class="val-large-red">7679.50</div>
-            <div class="val-sub-red">-12.50 (-0.16%)</div>
+            <div class="val-main" style="color: #f43f5e;">7,679.50</div>
+            <div class="val-red">▼ -12.50 (-0.16%)</div>
         </div>
     """, unsafe_allow_html=True)
 
-# 4. Signals & GEX
-st.markdown("""
-    <div class="status-wait-box">
-        <b>🚨 DECISION SIGNAL: [WAIT] 신호 대기</b><br>
-        <span style="color: #d4d4d8;">일부 데이터가 오래되어 새 진입을 제안하지 않습니다 (STALE)</span>
-        <hr style="border-color: #785a00; margin: 6px 0;">
-        <b>CONFIDENCE:</b> 0% &nbsp;|&nbsp; <b>DIRECTION:</b> WAIT
-    </div>
-""", unsafe_allow_html=True)
+with c2:
+    st.markdown("""
+        <div class="mini-card">
+            <div class="card-title">VIX INDEX</div>
+            <div class="val-main" style="color: #10b981;">15.45</div>
+            <div class="val-red">▲ +0.32 (+2.12%)</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div class="mini-card" style="display: flex; align-items: center; justify-content: space-between; padding: 11px 10px;">
+            <div>
+                <div class="card-title">FEAR & GREED</div>
+                <div style="font-size: 14px; font-weight: 800; color: #10b981; margin-top: 2px;">59 (Greed)</div>
+                <div style="font-size: 9px; color: #64748b;">1w: 55 | 1m: 41</div>
+            </div>
+            <div style="width: 34px; height: 34px; border-radius: 50%; border: 3px solid #10b981; border-bottom-color: transparent; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">59</div>
+        </div>
+    """, unsafe_allow_html=True)
 
+# 6. GEX & Decision Signal (Compact Row)
 st.markdown("""
-    <div class="dash-card">
-        <b>⚡ GEX:</b> <span class="tag-red"> Explosive 폭발적 구간 </span><br>
-        <div style="margin-top: 4px; color: #cbd5e1; font-size: 12px;">
-            • <b>Flip:</b> 7660 &nbsp;|&nbsp; <b>Call Wall:</b> 7670 &nbsp;|&nbsp; <b>Put Wall:</b> 7670<br>
-            • <b>Net Delta:</b> +94,588 <span class="tag-green">CALL BIASED</span>
+    <div class="mini-card-yellow">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11px; font-weight: bold; color: #fbbf24;">🚨 SIGNAL: WAIT (STALE)</span>
+            <span class="tag-red">Explosive GEX</span>
+        </div>
+        <div style="font-size: 10px; color: #cbd5e1; margin-top: 3px;">
+            <b>Flip:</b> 7660 | <b>Call Wall:</b> 7670 | <b>Put Wall:</b> 7670 | <b>Net Delta:</b> +94.5k <span class="tag-green">CALL</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-# 5. Volume + CVD Chart Section
-st.markdown("<div style='margin-top: 15px; margin-bottom: 5px; font-weight: bold; color: #ffffff;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
+# 7. Volume + CVD Chart Section (Compact Height)
+st.markdown("<div style='font-size: 11px; font-weight: bold; color: #ffffff; margin-top: 6px; margin-bottom: 2px;'>📊 VOLUME + CVD FLOW</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio(
     "Timeframe",
@@ -144,7 +159,7 @@ selected_tf = st.radio(
 )
 
 freq_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1H": "60min"}
-bar_count_map = {"1m": 20, "5m": 18, "15m": 16, "30m": 14, "1H": 10}
+bar_count_map = {"1m": 16, "5m": 15, "15m": 14, "30m": 12, "1H": 10}
 
 n_bars = bar_count_map[selected_tf]
 pd_freq = freq_map[selected_tf]
@@ -161,36 +176,32 @@ colors = ['#10b981' if b > s else '#f43f5e' for b, s in zip(buy_vol, sell_vol)]
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
 fig.add_trace(go.Bar(x=dates, y=total_vol / 1000000, name="Volume", marker_color=colors), secondary_y=False)
-fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#eab308', width=2.5)), secondary_y=True)
+fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#eab308', width=2)), secondary_y=True)
 
-# 최신 Plotly 스펙에 맞춘 yaxis 타이틀 설정
 fig.update_layout(
     template="plotly_dark",
-    height=220,
-    margin=dict(l=0, r=0, t=5, b=0),
+    height=160,
+    margin=dict(l=0, r=0, t=2, b=0),
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=False,
     autosize=True,
-    xaxis=dict(showgrid=False, tickformat="%H:%M", nticks=5),
-    yaxis=dict(showgrid=True, gridcolor='#1e2638', title=dict(text="Vol", font=dict(size=10))),
-    yaxis2=dict(showgrid=False, title=dict(text="CVD", font=dict(size=10)))
+    xaxis=dict(showgrid=False, tickformat="%H:%M", nticks=4, tickfont=dict(size=9)),
+    yaxis=dict(showgrid=True, gridcolor='#1e2938', title=dict(text="Vol", font=dict(size=8)), tickfont=dict(size=8)),
+    yaxis2=dict(showgrid=False, title=dict(text="CVD", font=dict(size=8)), tickfont=dict(size=8))
 )
 
 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
+# Gauge & Flow Summary
 buy_pct, sell_pct = 44, 56
 st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-top: -10px;">
+    <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; margin-top: -4px;">
         <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
         <span style="color: #f43f5e;">▼ Sell {sell_pct}%</span>
     </div>
     <div class="bar-container"><div class="bar-fill" style="width: {buy_pct}%;"></div></div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-    <div class="dash-card">
-        <b>🌊 WEIGHTED FLOW:</b> <span class="tag-green">📈 종합 상승</span><br>
-        <span style="color: #fbbf24; font-size: 12px;">⚠️ <b>Bullish Absorption</b> — 매도 물량을 매수세가 흡수하는 흐름입니다.</span>
+    <div class="mini-card" style="padding: 6px 10px; font-size: 11px;">
+        <b>🌊 WEIGHTED FLOW:</b> <span class="tag-green">📈 종합 상승</span> &nbsp;|&nbsp; <span style="color: #fbbf24;">Bullish Absorption</span>
     </div>
 """, unsafe_allow_html=True)
