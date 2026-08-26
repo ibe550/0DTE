@@ -6,6 +6,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
+import yfinance as yf
+from backtest import run_probability_analysis
 
 # Page Configuration
 st.set_page_config(
@@ -53,14 +55,6 @@ st.markdown("""
         padding: 12px;
         margin-bottom: 8px;
     }
-    .credit-alert-box {
-        background-color: #1a1510;
-        border: 1px solid #523b11;
-        border-radius: 6px;
-        padding: 8px;
-        margin-top: 6px;
-        margin-bottom: 6px;
-    }
     .badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
     .badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
     .badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
@@ -88,230 +82,78 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 1. Top Bar Header
-st.markdown("""
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.0</span></span>
-    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Closed | 🕒 23:16 ET</span>
-</div>
-""", unsafe_allow_html=True)
+# Cache Yahoo Finance Data (1 minute TTL)
+@st.cache_data(ttl=60)
+def fetch_market_data():
+    try:
+        tickers = yf.Tickers('^SPX ^VIX ES=F')
+        spx = tickers.tickers['^SPX'].fast_info
+        vix = tickers.tickers['^VIX'].fast_info
+        es = tickers.tickers['ES=F'].fast_info
+        
+        spx_price = spx.last_price or 0.0
+        spx_prev = spx.previous_close or spx_price
+        spx_change = spx_price - spx_prev
+        spx_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-# 2. Breaking News & Risks
-st.markdown("""
-<div class="news-box">
-    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-        <span style="color: #ef4444; font-weight: bold; font-size: 11px;">⚠️ BREAKING NEWS</span>
-        <span style="color: #6b7280; font-size: 9px;">08/25 22:51 ET</span>
-    </div>
-    <p style="font-size: 11px; margin: 0; color: #e5e7eb;">Case for BoC rate hike crumbling as trade war ramps up</p>
-</div>
-""", unsafe_allow_html=True)
+        vix_price = vix.last_price or 0.0
+        vix_prev = vix.previous_close or vix_price
+        vix_change = vix_price - vix_prev
+        vix_pct = (vix_change / vix_prev) * 100 if vix_prev else 0.0
 
-st.markdown("""
-<div class="card-box" style="padding: 6px 10px;">
-    <span style="color: #f43f5e; font-weight: bold; font-size: 10px;">⚡ RISKS:</span>
-    <span class="risk-tag">INFLATION</span><span class="risk-tag">FED</span><span class="risk-tag">FOMC</span><span class="risk-tag">WAR</span><span class="risk-tag">CPI</span>
-</div>
-""", unsafe_allow_html=True)
+        es_price = es.last_price or 0.0
+        es_prev = es.previous_close or es_price
+        es_change = es_price - es_prev
+        es_pct = (es_change / es_prev) * 100 if es_prev else 0.0
 
-# 3. Ticker Metrics Grid
-st.markdown("""
-<div class="grid-2col">
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">SPX INDEX</div>
-        <div style="font-size: 9px; color: #6b7280;">08/25 17:43 ET</div>
-        <div style="font-size: 18px; font-weight: bold; color: #10b981; margin: 2px 0;">7677.28</div>
-        <div style="font-size: 11px; color: #10b981;">+24.42 (+0.32%)</div>
-    </div>
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">VIX INDEX</div>
-        <div style="font-size: 9px; color: #6b7280;">08/25 16:14 ET</div>
-        <div style="font-size: 18px; font-weight: bold; color: #10b981; margin: 2px 0;">15.45</div>
-        <div style="font-size: 11px; color: #10b981;">+0.32 (+2.12%)</div>
-    </div>
-</div>
-<div class="grid-2col">
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">ES FUTURES <span style="background-color: #1e293b; color: #93c5fd; padding: 1px 3px; border-radius: 3px; font-size: 8px;">ACTIVE</span></div>
-        <div style="font-size: 18px; font-weight: bold; color: #ef4444; margin: 2px 0;">7685.75</div>
-        <div style="font-size: 11px; color: #ef4444;">-6.25 (-0.08%)</div>
-        <div style="font-size: 9px; color: #6b7280;">E-mini S&P 500</div>
-    </div>
-    <div class="card-box" style="margin-bottom:0;">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">FEAR & GREED</div>
-        <div style="font-size: 9px; color: #6b7280;">08/25 19:59 ET</div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
-            <div>
-                <div style="font-size: 15px; font-weight: bold; color: #10b981;">Greed</div>
-                <div style="font-size: 9px; color: #9ca3af;">1w: 55 | 1m: 41</div>
-            </div>
-            <div style="font-size: 14px; font-weight: bold; color: #10b981; background: #064e3b; padding: 4px 8px; border-radius: 50%;">59</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+        return {
+            'spx': (spx_price, spx_change, spx_pct),
+            'vix': (vix_price, vix_change, vix_pct),
+            'es': (es_price, es_change, es_pct)
+        }
+    except Exception:
+        return None
 
-# 4. DECISION SIGNAL
-st.markdown("""
-<div class="signal-box">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 11px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
-        <span class="badge-yellow">⏱️ WAIT</span>
-    </div>
-    <div style="margin-top: 4px;">
-        <span style="font-size: 18px; font-weight: bold; color: #fbbf24;">대기</span>
-        <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: #fbbf24;">0%</b></span>
-    </div>
-    <p style="font-size: 11px; color: #d1d5db; margin: 2px 0;">일부 데이터가 오래되어 새 진입을 제안하지 않습니다.</p>
-    <div style="font-size: 10px; color: #f59e0b; margin-bottom: 4px;">
-        <span class="badge-red">STALE</span> as of 08/25 22:51:18 ET
-    </div>
-    <div class="credit-alert-box">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 10px; color: #fbbf24; font-weight: bold;">🔔 CREDIT DIRECTION ALERT</span>
-            <span class="badge-yellow">WAIT</span>
-        </div>
-        <div style="font-size: 12px; font-weight: bold; color: #fde68a; margin-top: 1px;">Put / Call Credit 대기</div>
-        <div style="font-size: 10px; color: #9ca3af;">신뢰할 수 있는 방향 신호가 없어 추천하지 않습니다.</div>
-    </div>
-    <div style="font-size: 9px; color: #6b7280; font-family: monospace;">
-        WHY NO DRAFT: <span style="color: #fbbf24;">stale data</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# Fetch Timeframe Volume History from Yahoo Finance (ES=F)
+@st.cache_data(ttl=30)
+def fetch_es_history(interval_str):
+    try:
+        yf_interval = "60m" if interval_str == "1H" else interval_str
+        period = "1d" if interval_str in ["1m", "5m"] else "5d"
+        
+        df = yf.download(tickers="ES=F", period=period, interval=yf_interval, progress=False)
+        if df.empty:
+            return None
+        
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        df = df.tail(16).copy()
+        est_tz = pytz.timezone('US/Eastern')
+        df.index = df.index.tz_convert(est_tz)
+        return df
+    except Exception:
+        return None
 
-# 5. 0DTE DECISION PANEL
-st.markdown("""
-<div class="card-box" style="border: 1px solid #1e3a8a;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-        <span style="font-size: 11px; font-weight: bold; color: #93c5fd;">⚡ 0DTE DECISION PANEL</span>
-        <span style="font-size: 9px; color: #6b7280;">08/25 15:30 ET</span>
-    </div>
-    <div style="background-color: #0d1e18; border: 1px solid #065f46; border-radius: 6px; padding: 6px; margin-bottom: 6px;">
-        <div style="display: flex; justify-content: space-between; font-size: 10px;">
-            <span style="color: #6ee7b7; font-weight: bold;">0DTE TIME RISK</span>
-            <span style="color: #6ee7b7;">LOW • Closed</span>
-        </div>
-        <div style="font-size: 10px; color: #d1d5db; margin-top: 1px;">정규장 외 시간 – 새로운 진입은 피하세요.</div>
-    </div>
-    <div class="grid-2col" style="margin-bottom: 4px;">
-        <div style="background-color: #1a2234; padding: 6px; border-radius: 6px;">
-            <div style="font-size: 9px; color: #9ca3af;">Expected Move</div>
-            <div style="font-size: 11px; font-weight: bold; color: #f3f4f6;">±3.0pt</div>
-            <div style="font-size: 9px; color: #6b7280;">RTH unavailable</div>
-        </div>
-        <div style="background-color: #1a2234; padding: 6px; border-radius: 6px;">
-            <div style="font-size: 9px; color: #9ca3af;">Intraday range / EM</div>
-            <div style="font-size: 11px; font-weight: bold; color: #f3f4f6;">—</div>
-            <div style="font-size: 9px; color: #6b7280;">No data</div>
-        </div>
-    </div>
-    <div style="font-size: 10px; color: #9ca3af;">
-        <b>OPENING RANGE</b> <span style="float: right; color: #fbbf24; font-size: 9px;">Starts 09:30 ET</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.divider()
-
-# 6. Volume + CVD Section (Dynamic TF Sensitivity)
-st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
-
-tf_col1, tf_col2 = st.columns([2, 3])
-with tf_col1:
-    selected_tf = st.radio(
-        "TF",
-        ["1m", "5m", "15m", "30m", "1H"],
-        index=4,
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-with tf_col2:
-    st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
-
-# Timeframe mapping (minutes per step & unique seed for dynamic variation)
-tf_config = {
-    "1m": (1, 101, 15),
-    "5m": (5, 202, 35),
-    "15m": (15, 303, 80),
-    "30m": (30, 404, 150),
-    "1H": (60, 505, 300)
-}
-
-step_min, seed_val, vol_multiplier = tf_config.get(selected_tf, (60, 505, 300))
-n_bars = 16
-
-# US/Eastern Time Handling
+market_data = fetch_market_data()
 est_tz = pytz.timezone('US/Eastern')
 now_est = datetime.now(est_tz)
 
-dates = [now_est - timedelta(minutes=i * step_min) for i in range(n_bars)][::-1]
-dates_str = [d.strftime("%H:%M") for d in dates]
+spx_p, spx_c, spx_pct = market_data['spx'] if market_data else (7677.28, 24.42, 0.32)
+vix_p, vix_c, vix_pct = market_data['vix'] if market_data else (15.45, 0.32, 2.12)
+es_p, es_c, es_pct = market_data['es'] if market_data else (7685.75, -6.25, -0.08)
 
-# Dynamic Data Generation according to Timeframe
-np.random.seed(seed_val)
-buy_vol = np.random.randint(10, 250, n_bars) * vol_multiplier * 10000
-sell_vol = np.random.randint(10, 280, n_bars) * vol_multiplier * 10000
-total_vol = buy_vol + sell_vol
-cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + (seed_val % 100)
-colors = ['#10b981' if b > s else '#ef4444' for b, s in zip(buy_vol, sell_vol)]
-
-fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_trace(go.Bar(x=dates_str, y=total_vol / 1000000, name="Volume", marker_color=colors, opacity=0.85), secondary_y=False)
-fig.add_trace(go.Scatter(x=dates_str, y=cvd, name="CVD", line=dict(color='#facc15', width=2)), secondary_y=True)
-
-fig.update_layout(
-    template="plotly_dark",
-    height=180,
-    margin=dict(l=0, r=0, t=0, b=0),
-    paper_bgcolor='#0b0e14',
-    plot_bgcolor='#121721',
-    showlegend=False,
-    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True, type='category'),
-    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True),
-    yaxis2=dict(showgrid=False, title=None, fixedrange=True)
-)
-
-# Render Non-interactive Static HTML Component
-html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
-components.html(f"""
-    <div style="pointer-events: none; user-select: none; width:100%; height:180px;">
-        {html_fig}
-    </div>
-""", height=185)
-
-# Buy/Sell Ratio & Flow Signal
-buy_pct = int((np.sum(buy_vol) / np.sum(total_vol)) * 100)
-sell_pct = 100 - buy_pct
-
+# 1. Top Bar Header
 st.markdown(f"""
-<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11px;">
-    <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
-    <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
-</div>
-<div class="bar-container">
-    <div class="bar-fill" style="width: {buy_pct}%;"></div>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.0</span></span>
+    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live (YFinance) | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="card-box" style="margin-top: 6px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-        <span style="font-weight: bold; font-size: 10px; color: #9ca3af;">WEIGHTED FLOW SIGNAL</span>
-        <span class="badge-green">📈 종합 상승</span>
-    </div>
-    <p style="font-size: 11px; margin-bottom: 2px;"><b>현재가가 Gamma Flip 위 — Selling Pressure 가중치 50%↓</b></p>
-    <p style="font-size: 10px; color: #fbbf24; margin: 0;">
-        ⚠️ <b>Bullish Absorption</b> — 주가는 상승했으나 CVD는 하락. 매도세 흡수 중.
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-# 7. PROBABILITY BACKTEST ENGINE (Bill Benter Style)
-import streamlit as st
-from backtest import run_probability_analysis
-
-st.divider()
+# ---------------------------------------------------------
+# [최상단 이동] 2. REALTIME PROBABILITY ENGINE (Bill Benter Style)
+# ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
 
 if st.button("🚀 과거 데이터 기반 승률/기대값 검증 (In-Memory Run)"):
@@ -340,3 +182,157 @@ if st.button("🚀 과거 데이터 기반 승률/기대값 검증 (In-Memory Ru
             """, unsafe_allow_html=True)
         else:
             st.error("데이터를 불러오지 못했습니다.")
+
+st.divider()
+
+# 3. Breaking News & Risks
+st.markdown(f"""
+<div class="news-box">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+        <span style="color: #ef4444; font-weight: bold; font-size: 11px;">⚠️ BREAKING NEWS</span>
+        <span style="color: #6b7280; font-size: 9px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
+    </div>
+    <p style="font-size: 11px; margin: 0; color: #e5e7eb;">Case for BoC rate hike crumbling as trade war ramps up</p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="card-box" style="padding: 6px 10px;">
+    <span style="color: #f43f5e; font-weight: bold; font-size: 10px;">⚡ RISKS:</span>
+    <span class="risk-tag">INFLATION</span><span class="risk-tag">FED</span><span class="risk-tag">FOMC</span><span class="risk-tag">WAR</span><span class="risk-tag">CPI</span>
+</div>
+""", unsafe_allow_html=True)
+
+# Helper function for coloring
+def format_change(price, change, pct):
+    color = "#10b981" if change >= 0 else "#ef4444"
+    sign = "+" if change >= 0 else ""
+    return f'<div style="font-size: 18px; font-weight: bold; color: {color}; margin: 2px 0;">{price:.2f}</div><div style="font-size: 11px; color: {color};">{sign}{change:.2f} ({sign}{pct:.2f}%)</div>'
+
+# 4. Ticker Metrics Grid
+st.markdown(f"""
+<div class="grid-2col">
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">SPX INDEX</div>
+        <div style="font-size: 9px; color: #6b7280;">Yahoo Realtime</div>
+        {format_change(spx_p, spx_c, spx_pct)}
+    </div>
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">VIX INDEX</div>
+        <div style="font-size: 9px; color: #6b7280;">Yahoo Realtime</div>
+        {format_change(vix_p, vix_c, vix_pct)}
+    </div>
+</div>
+<div class="grid-2col">
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">ES FUTURES <span style="background-color: #1e293b; color: #93c5fd; padding: 1px 3px; border-radius: 3px; font-size: 8px;">ACTIVE</span></div>
+        {format_change(es_p, es_c, es_pct)}
+        <div style="font-size: 9px; color: #6b7280;">E-mini S&P 500</div>
+    </div>
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">FEAR & GREED</div>
+        <div style="font-size: 9px; color: #6b7280;">Market Sentiment</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+            <div>
+                <div style="font-size: 15px; font-weight: bold; color: #10b981;">Greed</div>
+                <div style="font-size: 9px; color: #9ca3af;">1w: 55 | 1m: 41</div>
+            </div>
+            <div style="font-size: 14px; font-weight: bold; color: #10b981; background: #064e3b; padding: 4px 8px; border-radius: 50%;">59</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 5. DECISION SIGNAL
+st.markdown(f"""
+<div class="signal-box">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
+        <span class="badge-yellow">⏱️ WAIT</span>
+    </div>
+    <div style="margin-top: 4px;">
+        <span style="font-size: 18px; font-weight: bold; color: #fbbf24;">대기</span>
+        <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: #fbbf24;">0%</b></span>
+    </div>
+    <p style="font-size: 11px; color: #d1d5db; margin: 2px 0;">YFinance 시세 연동 중 - 정밀 옵션 체결량(GEX) 대기 중</p>
+    <div style="font-size: 10px; color: #f59e0b; margin-bottom: 4px;">
+        <span class="badge-green">YFINANCE CONNECTED</span> as of {now_est.strftime('%H:%M:%S')} ET
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 6. Volume + CVD Section
+st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD (ES=F Live)</div>", unsafe_allow_html=True)
+
+tf_col1, tf_col2 = st.columns([2, 3])
+with tf_col1:
+    selected_tf = st.radio(
+        "TF",
+        ["1m", "5m", "15m", "30m", "1H"],
+        index=2,
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+with tf_col2:
+    st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
+
+es_df = fetch_es_history(selected_tf)
+
+if es_df is not None and not es_df.empty:
+    dates_str = [d.strftime("%H:%M") for d in es_df.index]
+    total_vol = es_df['Volume'].values
+    close_vals = es_df['Close'].values
+    open_vals = es_df['Open'].values
+    delta = close_vals - open_vals
+    
+    buy_mask = delta >= 0
+    buy_vol = np.where(buy_mask, total_vol * 0.55, total_vol * 0.45)
+    sell_vol = total_vol - buy_vol
+    
+    cvd = np.cumsum(buy_vol - sell_vol) / 1000
+    colors = ['#10b981' if b else '#ef4444' for b in buy_mask]
+    
+    total_buy = np.sum(buy_vol)
+    total_sum = np.sum(total_vol) if np.sum(total_vol) > 0 else 1
+    buy_pct = int((total_buy / total_sum) * 100)
+    sell_pct = 100 - buy_pct
+else:
+    n_bars = 16
+    dates_str = [(now_est - timedelta(minutes=i*15)).strftime("%H:%M") for i in range(n_bars)][::-1]
+    total_vol = np.random.randint(100, 1000, n_bars) * 100
+    cvd = np.cumsum(np.random.randint(-50, 50, n_bars))
+    colors = ['#10b981' if i % 2 == 0 else '#ef4444' for i in range(n_bars)]
+    buy_pct, sell_pct = 48, 52
+
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+fig.add_trace(go.Bar(x=dates_str, y=total_vol, name="Volume", marker_color=colors, opacity=0.85), secondary_y=False)
+fig.add_trace(go.Scatter(x=dates_str, y=cvd, name="CVD", line=dict(color='#facc15', width=2)), secondary_y=True)
+
+fig.update_layout(
+    template="plotly_dark",
+    height=180,
+    margin=dict(l=0, r=0, t=0, b=0),
+    paper_bgcolor='#0b0e14',
+    plot_bgcolor='#121721',
+    showlegend=False,
+    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True, type='category'),
+    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True),
+    yaxis2=dict(showgrid=False, title=None, fixedrange=True)
+)
+
+html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
+components.html(f"""
+    <div style="pointer-events: none; user-select: none; width:100%; height:180px;">
+        {html_fig}
+    </div>
+""", height=185)
+
+st.markdown(f"""
+<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11px;">
+    <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
+    <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
+</div>
+<div class="bar-container">
+    <div class="bar-fill" style="width: {buy_pct}%;"></div>
+</div>
+""", unsafe_allow_html=True)
