@@ -152,25 +152,38 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [최상단 이동] 2. REALTIME PROBABILITY ENGINE (Bill Benter Style)
+# [최상단 배치] REALTIME PROBABILITY ENGINE (Bill Benter Style)
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
 
-if st.button("🚀 과거 데이터 기반 승률/기대값 검증 (In-Memory Run)"):
-    with st.spinner("과거 1개월 데이터 분석 중..."):
-        result = run_probability_analysis("ES=F", period="1mo", interval="5m")
+# 예측 타임프레임 선택 버튼
+tf_option = st.radio(
+    "예측 타임프레임 선택",
+    ["10분 뒤", "30분 뒤", "1시간 뒤"],
+    index=1,
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+# 선택된 타임프레임에 따른 lookahead 봉 수 설정 (5분봉 기준)
+bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
+selected_bars = bars_map[tf_option]
+
+if st.button(f"🚀 [{tf_option}] 승률 및 기대값 검증"):
+    with st.spinner("변동성 필터(VIX/ATR) 적용 데이터 분석 중..."):
+        result = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
         
         if result:
             st.markdown(f"""
             <div class="card-box">
-                <div style="font-size: 11px; color: #9ca3af;">조건: [5분봉 거래량 급증 + 상승 장대양봉 발생 시]</div>
+                <div style="font-size: 10px; color: #9ca3af;">필터: [거래량 급증 + 양봉 + 변동성(ATR) 확대 구간] → <b>{tf_option} 예측</b></div>
                 <div style="display: flex; justify-content: space-between; margin-top: 8px;">
                     <div>
                         <div style="font-size: 9px; color: #6b7280;">총 포착 시그널</div>
                         <div style="font-size: 14px; font-weight: bold;">{result['total_signals']}회</div>
                     </div>
                     <div>
-                        <div style="font-size: 9px; color: #6b7280;">30분 뒤 상승 확률 (Win Rate)</div>
+                        <div style="font-size: 9px; color: #6b7280;">{tf_option} 상승 확률</div>
                         <div style="font-size: 14px; font-weight: bold; color: #10b981;">{result['win_rate']}%</div>
                     </div>
                     <div>
@@ -185,7 +198,7 @@ if st.button("🚀 과거 데이터 기반 승률/기대값 검증 (In-Memory Ru
 
 st.divider()
 
-# 3. Breaking News & Risks
+# 2. Breaking News & Risks
 st.markdown(f"""
 <div class="news-box">
     <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
@@ -209,7 +222,7 @@ def format_change(price, change, pct):
     sign = "+" if change >= 0 else ""
     return f'<div style="font-size: 18px; font-weight: bold; color: {color}; margin: 2px 0;">{price:.2f}</div><div style="font-size: 11px; color: {color};">{sign}{change:.2f} ({sign}{pct:.2f}%)</div>'
 
-# 4. Ticker Metrics Grid
+# 3. Ticker Metrics Grid
 st.markdown(f"""
 <div class="grid-2col">
     <div class="card-box" style="margin-bottom:0;">
@@ -243,7 +256,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 5. DECISION SIGNAL
+# 4. DECISION SIGNAL
 st.markdown(f"""
 <div class="signal-box">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -261,7 +274,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 6. Volume + CVD Section
+# 5. Volume + CVD Section
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD (ES=F Live)</div>", unsafe_allow_html=True)
 
 tf_col1, tf_col2 = st.columns([2, 3])
