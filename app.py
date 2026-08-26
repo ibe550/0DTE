@@ -17,10 +17,9 @@ st.set_page_config(
 et_tz = ZoneInfo("America/New_York")
 now_et = datetime.now(et_tz)
 
-# 2. Combined Modern UI CSS
+# 2. Modern UI CSS (Mobile-Optimized)
 st.markdown("""
     <style>
-    /* 전체 여백 모바일 최적화 */
     .block-container { 
         padding-top: 1.5rem !important; 
         padding-bottom: 1.5rem !important; 
@@ -29,13 +28,11 @@ st.markdown("""
     }
     .stApp { background-color: #080a0f; color: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
-    /* Header Bar */
     .header-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .header-title { font-size: 18px; font-weight: 800; color: #ffffff; display: flex; align-items: center; gap: 8px; }
     .v-badge { background-color: #1e1b4b; color: #818cf8; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
     .market-status { background-color: #171923; border: 1px solid #2d3748; color: #a0aec0; padding: 3px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 6px; }
 
-    /* Cards Common Style */
     .dash-card { background-color: #0f131c; border: 1px solid #1e2638; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
     .dash-card-red { background-color: #12090d; border: 1px solid #450a0a; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
     .status-wait-box { background-color: #1e1b0e; border: 1px solid #785a00; border-radius: 8px; padding: 12px 14px; color: #fbbf24; margin-bottom: 10px; font-size: 12px; line-height: 1.5; }
@@ -44,7 +41,6 @@ st.markdown("""
     .card-title { font-size: 12px; font-weight: 700; color: #cbd5e1; }
     .card-time { font-size: 10px; color: #64748b; }
 
-    /* Values & Badges */
     .val-large-green { font-size: 26px; font-weight: 800; color: #10b981; margin: 4px 0 2px 0; }
     .val-large-red { font-size: 26px; font-weight: 800; color: #f43f5e; margin: 4px 0 2px 0; }
     .val-sub-green { font-size: 12px; font-weight: 600; color: #10b981; }
@@ -53,13 +49,10 @@ st.markdown("""
     .badge-active { background-color: #1e1b4b; color: #818cf8; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; }
     .tag-red { background-color: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
     .tag-green { background-color: #064e3b; color: #34d399; border: 1px solid #065f46; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-    .tag-dark { background-color: #18181b; color: #a1a1aa; border: 1px solid #27272a; font-size: 10px; padding: 2px 6px; border-radius: 4px; }
-
-    /* Gauge Bar */
+    
     .bar-container { width: 100%; background-color: #ef4444; height: 6px; border-radius: 3px; overflow: hidden; margin: 4px 0 8px 0; }
     .bar-fill { height: 100%; background-color: #10b981; }
 
-    /* Radio Button Mobile Optimize */
     div[role="radiogroup"] { display: flex; justify-content: space-between; width: 100%; gap: 4px; margin-bottom: 8px; }
     div[role="radiogroup"] label { background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 4px 6px !important; margin: 0 !important; flex-grow: 1; text-align: center; }
     div[role="radiogroup"] label[data-checked="true"] { background-color: #3b82f6 !important; border-color: #60a5fa !important; }
@@ -70,9 +63,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 3. TOP SECTION (Dashboard Metrics)
-# ==========================================
+# 3. Header & Dashboard Metrics
 st.markdown(f"""
     <div class="header-box">
         <div class="header-title">
@@ -91,9 +82,9 @@ st.markdown("""
             <span class="card-time"><span style="color: #ef4444;">Google News</span> 08/25 22:01 ET</span>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-            <a href="#" style="color: #f1f5f9; font-size: 13px; font-weight: 600; text-decoration: underline;">
+            <span style="color: #f1f5f9; font-size: 13px; font-weight: 600;">
                 Case for BoC rate hike crumbling as trade war ramps up
-            </a>
+            </span>
             <span style="font-size: 11px; color: #64748b; white-space: nowrap; margin-left: 10px;">9h ago</span>
         </div>
     </div>
@@ -121,9 +112,7 @@ with col2:
         </div>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 4. MIDDLE SECTION (Signals & GEX)
-# ==========================================
+# 4. Signals & GEX
 st.markdown("""
     <div class="status-wait-box">
         <b>🚨 DECISION SIGNAL: [WAIT] 신호 대기</b><br>
@@ -143,12 +132,9 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 5. BOTTOM SECTION (Volume + CVD Charts)
-# ==========================================
+# 5. Volume + CVD Chart Section (Fixed timezone argument conflict)
 st.markdown("<div style='margin-top: 15px; margin-bottom: 5px; font-weight: bold; color: #ffffff;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
-# Timeframe Selector
 selected_tf = st.radio(
     "Timeframe",
     ["1m", "5m", "15m", "30m", "1H"],
@@ -157,15 +143,15 @@ selected_tf = st.radio(
     label_visibility="collapsed"
 )
 
-# Chart Data Generation
-freq_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1H": "1h"}
+freq_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1H": "60min"}
 bar_count_map = {"1m": 20, "5m": 18, "15m": 16, "30m": 14, "1H": 10}
 
 n_bars = bar_count_map[selected_tf]
 pd_freq = freq_map[selected_tf]
 
 np.random.seed(42)
-dates = pd.date_range(end=now_et, periods=n_bars, freq=pd_freq, tz=et_tz)
+# tz 파라미터 제거 (now_et가 이미 타임존을 포함하므로 충돌 방지)
+dates = pd.date_range(end=now_et, periods=n_bars, freq=pd_freq)
 
 buy_vol = np.random.randint(10, 250, n_bars) * 1000000
 sell_vol = np.random.randint(10, 280, n_bars) * 1000000
@@ -174,7 +160,6 @@ cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + 100
 
 colors = ['#10b981' if b > s else '#f43f5e' for b, s in zip(buy_vol, sell_vol)]
 
-# Plotly Chart
 fig = make_subplots(specs=[[{"secondary_y": True}]])
 fig.add_trace(go.Bar(x=dates, y=total_vol / 1000000, name="Volume", marker_color=colors), secondary_y=False)
 fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#eab308', width=2.5)), secondary_y=True)
@@ -194,7 +179,6 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-# Gauge Bar & Flow Status
 buy_pct, sell_pct = 44, 56
 st.markdown(f"""
     <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-top: -10px;">
