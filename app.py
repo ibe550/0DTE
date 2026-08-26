@@ -4,7 +4,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 
 # 1. Page Configuration
 st.set_page_config(
@@ -14,45 +14,59 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Eastern Timezone Fix (UTC 시간 문제 해결)
-et_tz = pytz.timezone('US/Eastern')
+# Eastern Timezone Fix (ZoneInfo 내장 모듈 사용으로 pytz 의존성 제거)
+et_tz = ZoneInfo("America/New_York")
 now_et = datetime.now(et_tz)
 
-# 2. Custom CSS (Clean Dark & Compact Buttons)
+# 2. Custom CSS (Fix text clipping and padding)
 st.markdown("""
     <style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+    /* 상단 짤림 방지: padding-top을 2rem으로 확보 */
+    .block-container { 
+        padding-top: 2rem !important; 
+        padding-bottom: 1.5rem !important; 
+        padding-left: 0.8rem !important; 
+        padding-right: 0.8rem !important; 
+    }
     .stApp { background-color: #0b0e14; color: #e1e6ed; }
     
+    /* Card Styles */
     .card-box {
         background-color: #121721;
         border: 1px solid #1f2937;
         border-radius: 6px;
-        padding: 10px;
-        margin-bottom: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
         font-size: 13px;
+        line-height: 1.5;
     }
     .status-wait-box {
         background-color: #1e1b0e;
         border: 1px solid #785a00;
         border-radius: 6px;
-        padding: 10px;
+        padding: 12px;
         color: #fbbf24;
         font-size: 13px;
+        line-height: 1.5;
+        margin-bottom: 10px;
     }
     .badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
     .badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
     
+    /* Gauge Bar */
     .bar-container { width: 100%; background-color: #ef4444; height: 6px; border-radius: 3px; overflow: hidden; margin: 6px 0; }
     .bar-fill { height: 100%; background-color: #10b981; }
+    
+    /* Radio Button Margin Fix */
+    .stRadio { margin-top: 4px; }
     
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# Header
-st.markdown("### 🛡️ SPX 0DTE DEFENDER v12.0")
+# Header Section
+st.markdown("<h3 style='margin-top: 0px;'>🛡️ SPX 0DTE DEFENDER v12.0</h3>", unsafe_allow_html=True)
 st.caption(f"● Market Closed | Data as of {now_et.strftime('%m/%d %H:%M:%S')} ET")
 
 # Ticker Metrics Grid
@@ -64,12 +78,12 @@ with m2:
     st.metric(label="VIX INDEX", value="15.45", delta="+0.32 (+2.12%)", delta_color="inverse")
     st.metric(label="FEAR & GREED", value="59 (Greed)", delta="1w: 55", delta_color="off")
 
-# Cards
+# Status Cards
 st.markdown("""
     <div class="status-wait-box">
         <b>🚨 DECISION SIGNAL: [WAIT] 신호 대기</b><br>
         <span style="font-size: 12px;">일부 데이터가 오래되어 새 진입을 제안하지 않습니다 (STALE)</span><br>
-        <hr style="border-color: #785a00; margin: 5px 0;">
+        <hr style="border-color: #785a00; margin: 6px 0;">
         <b>CONFIDENCE:</b> 0% &nbsp;|&nbsp; <b>CREDIT DIRECTION:</b> WAIT
     </div>
 """, unsafe_allow_html=True)
@@ -87,7 +101,7 @@ st.divider()
 # VOLUME + CVD Section
 st.markdown("**📊 VOLUME + CVD**")
 
-# 깔끔한 버튼 셀렉터
+# Timeframe Selector & Badge Layout
 col_tf, col_sp = st.columns([3, 1])
 with col_tf:
     selected_tf = st.radio(
@@ -98,9 +112,9 @@ with col_tf:
         label_visibility="collapsed"
     )
 with col_sp:
-    st.markdown("<div style='text-align:right;'><span class='badge-red'>↓ Selling Pressure</span></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:right; padding-top: 5px;'><span class='badge-red'>↓ Selling Pressure</span></div>", unsafe_allow_html=True)
 
-# Eastern Time 타임프레임 연산
+# Eastern Time Sequence Data
 freq_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1H": "1h"}
 bar_count_map = {"1m": 30, "5m": 24, "15m": 20, "30m": 16, "1H": 12}
 
@@ -125,7 +139,7 @@ fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#facc15', 
 fig.update_layout(
     template="plotly_dark",
     height=240,
-    margin=dict(l=10, r=10, t=10, b=10),
+    margin=dict(l=10, r=10, t=15, b=10),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
