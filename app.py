@@ -133,8 +133,8 @@ n_bars = tf_map[selected_tf]
 
 np.random.seed(42)
 dates = pd.date_range(end=datetime.now(), periods=n_bars, freq=selected_tf.lower())
-buy_vol = np.random.randint(10M := 10, 250, n_bars) * 1000000
-sell_vol = np.random.randint(10M, 280, n_bars) * 1000000
+buy_vol = np.random.randint(10, 250, n_bars) * 1000000
+sell_vol = np.random.randint(10, 280, n_bars) * 1000000
 total_vol = buy_vol + sell_vol
 cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + 400  # CVD Line Data
 
