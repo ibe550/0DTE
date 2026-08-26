@@ -146,13 +146,13 @@ es_p, es_c, es_pct = market_data['es'] if market_data else (7685.75, -6.25, -0.0
 # 1. Top Bar Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.0</span></span>
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.1</span></span>
     <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live (YFinance) | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [최상단 배치] REALTIME PROBABILITY ENGINE (Bill Benter Style)
+# [최상단 배치] REALTIME PROBABILITY ENGINE (Dual Probability Grid)
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
 
@@ -169,32 +169,44 @@ tf_option = st.radio(
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
-if st.button(f"🚀 [{tf_option}] 승률 및 기대값 검증"):
-    with st.spinner("변동성 필터(VIX/ATR) 적용 데이터 분석 중..."):
+if st.button(f"🚀 [{tf_option}] 승률/하락률 및 기대값 검증"):
+    with st.spinner("과거 데이터 분석 및 양방향 확률 산출 중..."):
         result = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
         
         if result:
+            # result 딕셔너리에 loss_rate가 없더라도 안전하게 계산
+            win_rate = result.get('win_rate', 0.0)
+            loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
+            total_signals = result.get('total_signals', 0)
+            ev = result.get('expected_value', 0.0)
+            
             st.markdown(f"""
             <div class="card-box">
-                <div style="font-size: 10px; color: #9ca3af;">필터: [거래량 급증 + 양봉 + 변동성(ATR) 확대 구간] → <b>{tf_option} 예측</b></div>
-                <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                <div style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">
+                    필터: [거래량 급증 + 양봉 + ATR 변동성] → <b>{tf_option} 결과 예측</b>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; text-align: center;">
                     <div>
-                        <div style="font-size: 9px; color: #6b7280;">총 포착 시그널</div>
-                        <div style="font-size: 14px; font-weight: bold;">{result['total_signals']}회</div>
+                        <div style="font-size: 9px; color: #6b7280;">총 시그널</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #e1e6ed;">{total_signals}회</div>
                     </div>
                     <div>
-                        <div style="font-size: 9px; color: #6b7280;">{tf_option} 상승 확률</div>
-                        <div style="font-size: 14px; font-weight: bold; color: #10b981;">{result['win_rate']}%</div>
+                        <div style="font-size: 9px; color: #6b7280;">▲ 상승 확률</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #10b981;">{win_rate}%</div>
                     </div>
                     <div>
-                        <div style="font-size: 9px; color: #6b7280;">수학적 기대값 (EV)</div>
-                        <div style="font-size: 14px; font-weight: bold; color: #facc15;">+{result['expected_value']} pt</div>
+                        <div style="font-size: 9px; color: #6b7280;">▼ 하락 확률</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 9px; color: #6b7280;">기대값 (EV)</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #facc15;">+{ev}pt</div>
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.error("데이터를 불러오지 못했습니다.")
+            st.error("분석할 수 있는 데이터가 없거나 시그널이 발생하지 않았습니다.")
 
 st.divider()
 
