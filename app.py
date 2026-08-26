@@ -143,20 +143,17 @@ def calculate_support_resistance(current_price):
         low = es_df['Low'].min()
         close = es_df['Close'].iloc[-1]
         
-        # Standard Pivot Point Formula
         pivot = (high + low + close) / 3
         r1 = (2 * pivot) - low
         s1 = (2 * pivot) - high
         r2 = pivot + (high - low)
         s2 = pivot - (high - low)
     else:
-        # Default offset fallback
         r2 = current_price + 30.0
         r1 = current_price + 15.0
         s1 = current_price - 15.0
         s2 = current_price - 30.0
 
-    # 5pt 단위 SPX Strike 반올림
     r2_strike = int(round(r2 / 5.0) * 5)
     r1_strike = int(round(r1 / 5.0) * 5)
     s1_strike = int(round(s1 / 5.0) * 5)
@@ -189,7 +186,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [최상단 배치] REALTIME PROBABILITY ENGINE
+# REALTIME PROBABILITY ENGINE
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
 
@@ -354,16 +351,15 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [신규 추가] 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES
+# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES (HTML 주석 제거 완료)
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 6px;'>🎯 SUPPORT/RESISTANCE & RECOMMENDED STRIKES</div>", unsafe_allow_html=True)
 
 diff_r2 = round(sr_levels['R2'] - spx_p, 1)
 diff_s2 = round(spx_p - sr_levels['S2'], 1)
 
-st.markdown(f"""
+sr_html = f"""
 <div class="grid-2col">
-    <!-- Call Credit Side -->
     <div class="card-box" style="border-left: 3px solid #ef4444;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <span style="font-size: 10px; color: #ef4444; font-weight: bold;">🔴 CALL CREDIT RANGE</span>
@@ -382,7 +378,6 @@ st.markdown(f"""
         </div>
     </div>
 
-    <!-- Put Credit Side -->
     <div class="card-box" style="border-left: 3px solid #10b981;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <span style="font-size: 10px; color: #10b981; font-weight: bold;">🟢 PUT CREDIT RANGE</span>
@@ -401,7 +396,9 @@ st.markdown(f"""
         </div>
     </div>
 </div>
-""", unsafe_allow_html=True)
+"""
+
+st.markdown(sr_html, unsafe_allow_html=True)
 
 # 6. Volume + CVD Section
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD (ES=F Live)</div>", unsafe_allow_html=True)
