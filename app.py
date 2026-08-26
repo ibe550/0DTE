@@ -1,9 +1,10 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(
@@ -24,7 +25,6 @@ st.markdown("""
         padding-right: 0.5rem !important;
         max-width: 100% !important;
     }
-    /* 2-Column Grid for Mobile */
     .grid-2col {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -113,7 +113,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 3. Ticker Metrics (2-Column Grid Layout matching Replit style)
+# 3. Ticker Metrics Grid
 st.markdown("""
 <div class="grid-2col">
     <div class="card-box" style="margin-bottom:0;">
@@ -213,7 +213,7 @@ st.markdown("""
 
 st.divider()
 
-# 6. Volume + CVD Section with Timeframe Selector
+# 6. Volume + CVD Section (Error-free TF Selector + Static Non-interactive Chart)
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
 tf_col1, tf_col2 = st.columns([2, 3])
@@ -228,12 +228,21 @@ with tf_col1:
 with tf_col2:
     st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
 
-# Dynamic Chart Data Generation
-tf_map = {"1m": 60, "5m": 48, "15m": 32, "30m": 24, "1H": 20}
-n_bars = tf_map[selected_tf]
+# Safe Datetime Data Generation (Fixing 1m, 5m, 15m, 30m Panda errors)
+tf_config = {
+    "1m": (30, '1min'),
+    "5m": (24, '5min'),
+    "15m": (20, '15min'),
+    "30m": (16, '30min'),
+    "1H": (12, '1h')
+}
+
+n_bars, freq_str = tf_config.get(selected_tf, (12, '1h'))
+
+now = datetime.now()
+dates = [now - timedelta(minutes=i * (1 if selected_tf=="1m" else 5 if selected_tf=="5m" else 15 if selected_tf=="15m" else 30 if selected_tf=="30m" else 60)) for i in range(n_bars)][::-1]
 
 np.random.seed(42)
-dates = pd.date_range(end=datetime.now(), periods=n_bars, freq=selected_tf.lower())
 buy_vol = np.random.randint(10, 250, n_bars) * 1000000
 sell_vol = np.random.randint(10, 280, n_bars) * 1000000
 total_vol = buy_vol + sell_vol
@@ -246,16 +255,23 @@ fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#facc15', 
 
 fig.update_layout(
     template="plotly_dark",
-    height=200,
-    margin=dict(l=2, r=2, t=2, b=2),
+    height=180,
+    margin=dict(l=0, r=0, t=0, b=0),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
-    xaxis=dict(showgrid=True, gridcolor='#1f2937'),
-    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None),
-    yaxis2=dict(showgrid=False, title=None)
+    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True),
+    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True),
+    yaxis2=dict(showgrid=False, title=None, fixedrange=True)
 )
-st.plotly_chart(fig, use_container_width=True)
+
+# Render Chart inside Static Pointer-Free HTML Container (Completely blocks zoom/pan/clicks)
+html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
+components.html(f"""
+    <div style="pointer-events: none; user-select: none; width:100%; height:180px;">
+        {html_fig}
+    </div>
+""", height=185)
 
 # Buy/Sell Ratio & Flow Signal
 buy_pct, sell_pct = 44, 56
