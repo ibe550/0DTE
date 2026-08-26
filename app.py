@@ -76,37 +76,43 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Cache Yahoo Finance Data (1 minute TTL)
+# Cache Yahoo Finance Data (1 minute TTL & Fallback Handling)
 @st.cache_data(ttl=60)
 def fetch_market_data():
-    try:
-        tickers = yf.Tickers('^SPX ^VIX ES=F')
-        spx = tickers.tickers['^SPX'].fast_info
-        vix = tickers.tickers['^VIX'].fast_info
-        es = tickers.tickers['ES=F'].fast_info
-        
-        spx_price = spx.last_price or 0.0
-        spx_prev = spx.previous_close or spx_price
-        spx_change = spx_price - spx_prev
-        spx_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
+    def get_single_ticker_data(symbol):
+        try:
+            t = yf.Ticker(symbol)
+            price = t.fast_info.last_price
+            prev = t.fast_info.previous_close
+            
+            # fast_info 데이터 누락 시 history 로직으로 자동 우회
+            if price is None or np.isnan(price):
+                hist = t.history(period="2d")
+                if not hist.empty:
+                    price = hist['Close'].iloc[-1]
+                    prev = hist['Close'].iloc[-2] if len(hist) > 1 else price
+            
+            price = float(price or 0.0)
+            prev = float(prev or price)
+            change = price - prev
+            pct = (change / prev) * 100 if prev != 0 else 0.0
+            return (price, change, pct)
+        except Exception:
+            return (0.0, 0.0, 0.0)
 
-        vix_price = vix.last_price or 0.0
-        vix_prev = vix.previous_close or vix_price
-        vix_change = vix_price - vix_prev
-        vix_pct = (vix_change / vix_prev) * 100 if vix_prev else 0.0
+    spx = get_single_ticker_data('^SPX')
+    vix = get_single_ticker_data('^VIX')
+    es = get_single_ticker_data('ES=F')
 
-        es_price = es.last_price or 0.0
-        es_prev = es.previous_close or es_price
-        es_change = es_price - es_prev
-        es_pct = (es_change / es_prev) * 100 if es_prev else 0.0
+    # SPX 틱 수신 불가 시 ES 선물 가격으로 보정
+    if spx[0] == 0.0 and es[0] != 0.0:
+        spx = es
 
-        return {
-            'spx': (spx_price, spx_change, spx_pct),
-            'vix': (vix_price, vix_change, vix_pct),
-            'es': (es_price, es_change, es_pct)
-        }
-    except Exception:
-        return None
+    return {
+        'spx': spx,
+        'vix': vix,
+        'es': es
+    }
 
 # Fetch Timeframe Volume History from Yahoo Finance (ES=F)
 @st.cache_data(ttl=30)
@@ -165,9 +171,9 @@ market_data = fetch_market_data()
 est_tz = pytz.timezone('US/Eastern')
 now_est = datetime.now(est_tz)
 
-spx_p, spx_c, spx_pct = market_data['spx'] if market_data else (7677.28, 24.42, 0.32)
-vix_p, vix_c, vix_pct = market_data['vix'] if market_data else (15.45, 0.32, 2.12)
-es_p, es_c, es_pct = market_data['es'] if market_data else (7685.75, -6.25, -0.08)
+spx_p, spx_c, spx_pct = market_data['spx']
+vix_p, vix_c, vix_pct = market_data['vix']
+es_p, es_c, es_pct = market_data['es']
 
 sr_levels = calculate_support_resistance(spx_p)
 
