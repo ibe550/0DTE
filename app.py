@@ -132,7 +132,7 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# 5. Volume + CVD Chart Section (Fixed timezone argument conflict)
+# 5. Volume + CVD Chart Section
 st.markdown("<div style='margin-top: 15px; margin-bottom: 5px; font-weight: bold; color: #ffffff;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio(
@@ -150,7 +150,6 @@ n_bars = bar_count_map[selected_tf]
 pd_freq = freq_map[selected_tf]
 
 np.random.seed(42)
-# tz 파라미터 제거 (now_et가 이미 타임존을 포함하므로 충돌 방지)
 dates = pd.date_range(end=now_et, periods=n_bars, freq=pd_freq)
 
 buy_vol = np.random.randint(10, 250, n_bars) * 1000000
@@ -164,6 +163,7 @@ fig = make_subplots(specs=[[{"secondary_y": True}]])
 fig.add_trace(go.Bar(x=dates, y=total_vol / 1000000, name="Volume", marker_color=colors), secondary_y=False)
 fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#eab308', width=2.5)), secondary_y=True)
 
+# 최신 Plotly 스펙에 맞춘 yaxis 타이틀 설정
 fig.update_layout(
     template="plotly_dark",
     height=220,
@@ -173,8 +173,8 @@ fig.update_layout(
     showlegend=False,
     autosize=True,
     xaxis=dict(showgrid=False, tickformat="%H:%M", nticks=5),
-    yaxis=dict(showgrid=True, gridcolor='#1e2638', title="Vol", titlefont=dict(size=10)),
-    yaxis2=dict(showgrid=False, title="CVD", titlefont=dict(size=10))
+    yaxis=dict(showgrid=True, gridcolor='#1e2638', title=dict(text="Vol", font=dict(size=10))),
+    yaxis2=dict(showgrid=False, title=dict(text="CVD", font=dict(size=10)))
 )
 
 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
