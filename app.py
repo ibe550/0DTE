@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# Page Configuration for Mobile Focus
+# Page Configuration for Full-Width Mobile Focus
 st.set_page_config(
     page_title="SPX 0DTE DEFENDER",
     page_icon="🛡️",
@@ -13,10 +13,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Mobile-Optimized Custom CSS
+# Mobile Full-Width Custom CSS (Removed side margins & padding)
 st.markdown("""
     <style>
-    .stApp { background-color: #0b0e14; color: #e1e6ed; max-width: 480px; margin: 0 auto; }
+    .stApp { background-color: #0b0e14; color: #e1e6ed; }
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+        max-width: 100% !important;
+    }
     .card-box {
         background-color: #121721;
         border: 1px solid #1f2937;
@@ -99,7 +106,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 3. DECISION SIGNAL (Cleaned HTML)
+# 3. DECISION SIGNAL
 st.markdown("""
 <div class="signal-box">
     <div style="display: flex; justify-content: space-between; align-items: center;">
