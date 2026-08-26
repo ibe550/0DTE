@@ -477,3 +477,5 @@ st.markdown(f"""
     <div class="bar-fill" style="width: {buy_pct}%;"></div>
 </div>
 """, unsafe_allow_html=True)
+
+
