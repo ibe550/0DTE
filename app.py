@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# Page Configuration for Full-Width Mobile Focus
+# Page Configuration
 st.set_page_config(
     page_title="SPX 0DTE DEFENDER",
     page_icon="🛡️",
@@ -13,68 +13,75 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Mobile Full-Width Custom CSS (Removed side margins & padding)
+# Mobile 2-Column Grid & Compact UI CSS
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e6ed; }
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0.8rem !important;
         padding-bottom: 1rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
         max-width: 100% !important;
+    }
+    /* 2-Column Grid for Mobile */
+    .grid-2col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 8px;
     }
     .card-box {
         background-color: #121721;
         border: 1px solid #1f2937;
         border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 10px;
+        padding: 10px;
+        margin-bottom: 8px;
     }
     .news-box {
         background-color: #161114;
         border: 1px solid #3d1c1c;
         border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 10px;
+        padding: 10px;
+        margin-bottom: 8px;
     }
     .signal-box {
         background-color: #16150e;
         border: 1px solid #785a00;
         border-radius: 8px;
-        padding: 14px;
-        margin-bottom: 10px;
+        padding: 12px;
+        margin-bottom: 8px;
     }
     .credit-alert-box {
         background-color: #1a1510;
         border: 1px solid #523b11;
         border-radius: 6px;
-        padding: 10px;
-        margin-top: 8px;
-        margin-bottom: 8px;
+        padding: 8px;
+        margin-top: 6px;
+        margin-bottom: 6px;
     }
-    .badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
-    .badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
-    .badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; }
+    .badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+    .badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+    .badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
     .risk-tag {
         background-color: #211522;
         border: 1px solid #4a284e;
         color: #d8b4fe;
-        padding: 2px 8px;
+        padding: 2px 6px;
         border-radius: 4px;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: bold;
         display: inline-block;
-        margin-right: 3px;
-        margin-bottom: 3px;
+        margin-right: 2px;
+        margin-bottom: 2px;
     }
     .bar-container {
         width: 100%;
         background-color: #ef4444;
-        height: 8px;
-        border-radius: 4px;
+        height: 6px;
+        border-radius: 3px;
         overflow: hidden;
-        margin: 6px 0;
+        margin: 4px 0;
     }
     .bar-fill { height: 100%; background-color: #10b981; }
     </style>
@@ -82,129 +89,132 @@ st.markdown("""
 
 # 1. Top Bar Header
 st.markdown("""
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-    <span style="font-weight: bold; font-size: 16px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 5px; border-radius: 4px; font-size: 11px; color: #9ca3af;">v12.0</span></span>
-    <span style="background-color: #1f2937; padding: 3px 8px; border-radius: 12px; font-size: 11px; color: #9ca3af;">● Closed | 🕒 22:56 ET</span>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.0</span></span>
+    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Closed | 🕒 22:56 ET</span>
 </div>
 """, unsafe_allow_html=True)
 
 # 2. Breaking News & Risks
 st.markdown("""
 <div class="news-box">
-    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-        <span style="color: #ef4444; font-weight: bold; font-size: 12px;">⚠️ BREAKING NEWS</span>
-        <span style="color: #6b7280; font-size: 10px;">08/25 22:51 ET</span>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+        <span style="color: #ef4444; font-weight: bold; font-size: 11px;">⚠️ BREAKING NEWS</span>
+        <span style="color: #6b7280; font-size: 9px;">08/25 22:51 ET</span>
     </div>
-    <p style="font-size: 12px; margin: 0; color: #e5e7eb;">Case for BoC rate hike crumbling as trade war ramps up</p>
+    <p style="font-size: 11px; margin: 0; color: #e5e7eb;">Case for BoC rate hike crumbling as trade war ramps up</p>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
-<div class="card-box" style="padding: 8px 12px;">
-    <span style="color: #f43f5e; font-weight: bold; font-size: 11px;">⚡ RISKS:</span>
+<div class="card-box" style="padding: 6px 10px;">
+    <span style="color: #f43f5e; font-weight: bold; font-size: 10px;">⚡ RISKS:</span>
     <span class="risk-tag">INFLATION</span><span class="risk-tag">FED</span><span class="risk-tag">FOMC</span><span class="risk-tag">WAR</span><span class="risk-tag">CPI</span>
 </div>
 """, unsafe_allow_html=True)
 
-# 3. DECISION SIGNAL
+# 3. Ticker Metrics (2-Column Grid Layout matching Replit style)
+st.markdown("""
+<div class="grid-2col">
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">SPX INDEX</div>
+        <div style="font-size: 9px; color: #6b7280;">08/25 17:43 ET</div>
+        <div style="font-size: 18px; font-weight: bold; color: #10b981; margin: 2px 0;">7677.28</div>
+        <div style="font-size: 11px; color: #10b981;">+24.42 (+0.32%)</div>
+    </div>
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">VIX INDEX</div>
+        <div style="font-size: 9px; color: #6b7280;">08/25 16:14 ET</div>
+        <div style="font-size: 18px; font-weight: bold; color: #10b981; margin: 2px 0;">15.45</div>
+        <div style="font-size: 11px; color: #10b981;">+0.32 (+2.12%)</div>
+    </div>
+</div>
+<div class="grid-2col">
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">ES FUTURES <span style="background-color: #1e293b; color: #93c5fd; padding: 1px 3px; border-radius: 3px; font-size: 8px;">ACTIVE</span></div>
+        <div style="font-size: 18px; font-weight: bold; color: #ef4444; margin: 2px 0;">7685.75</div>
+        <div style="font-size: 11px; color: #ef4444;">-6.25 (-0.08%)</div>
+        <div style="font-size: 9px; color: #6b7280;">E-mini S&P 500</div>
+    </div>
+    <div class="card-box" style="margin-bottom:0;">
+        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">FEAR & GREED</div>
+        <div style="font-size: 9px; color: #6b7280;">08/25 19:59 ET</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+            <div>
+                <div style="font-size: 15px; font-weight: bold; color: #10b981;">Greed</div>
+                <div style="font-size: 9px; color: #9ca3af;">1w: 55 | 1m: 41</div>
+            </div>
+            <div style="font-size: 14px; font-weight: bold; color: #10b981; background: #064e3b; padding: 4px 8px; border-radius: 50%;">59</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 4. DECISION SIGNAL
 st.markdown("""
 <div class="signal-box">
     <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 12px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL &nbsp;<span style="font-size: 10px; color: #6b7280;">Rule-based</span></span>
-        <span class="badge-yellow" style="font-size: 12px; padding: 3px 10px;">⏱️ WAIT</span>
+        <span style="font-size: 11px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
+        <span class="badge-yellow">⏱️ WAIT</span>
     </div>
-    <div style="margin-top: 8px;">
-        <span style="font-size: 20px; font-weight: bold; color: #fbbf24;">대기</span>
-        <span style="float: right; font-size: 11px; color: #9ca3af;">CONFIDENCE <b style="font-size: 16px; color: #fbbf24;">0%</b></span>
+    <div style="margin-top: 4px;">
+        <span style="font-size: 18px; font-weight: bold; color: #fbbf24;">대기</span>
+        <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: #fbbf24;">0%</b></span>
     </div>
-    <p style="font-size: 12px; color: #d1d5db; margin: 4px 0;">신호 대기 – 일부 데이터가 오래되어 새 진입을 제안하지 않습니다.</p>
-    <div style="font-size: 11px; color: #f59e0b; margin-bottom: 6px;">
+    <p style="font-size: 11px; color: #d1d5db; margin: 2px 0;">일부 데이터가 오래되어 새 진입을 제안하지 않습니다.</p>
+    <div style="font-size: 10px; color: #f59e0b; margin-bottom: 4px;">
         <span class="badge-red">STALE</span> as of 08/25 22:51:18 ET
     </div>
     <div class="credit-alert-box">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 11px; color: #fbbf24; font-weight: bold;">🔔 CREDIT DIRECTION ALERT</span>
+            <span style="font-size: 10px; color: #fbbf24; font-weight: bold;">🔔 CREDIT DIRECTION ALERT</span>
             <span class="badge-yellow">WAIT</span>
         </div>
-        <div style="font-size: 13px; font-weight: bold; color: #fde68a; margin-top: 2px;">Put / Call Credit 대기</div>
-        <div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">신뢰할 수 있는 방향 신호가 없어 put·call credit을 추천하지 않습니다.</div>
+        <div style="font-size: 12px; font-weight: bold; color: #fde68a; margin-top: 1px;">Put / Call Credit 대기</div>
+        <div style="font-size: 10px; color: #9ca3af;">신뢰할 수 있는 방향 신호가 없어 추천하지 않습니다.</div>
     </div>
-    <div style="font-size: 10px; color: #6b7280; font-family: monospace; margin-top: 6px;">
+    <div style="font-size: 9px; color: #6b7280; font-family: monospace;">
         WHY NO DRAFT: <span style="color: #fbbf24;">stale data</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 4. 0DTE DECISION PANEL
+# 5. 0DTE DECISION PANEL
 st.markdown("""
 <div class="card-box" style="border: 1px solid #1e3a8a;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <span style="font-size: 12px; font-weight: bold; color: #93c5fd;">⚡ 0DTE DECISION PANEL</span>
-        <span style="font-size: 10px; color: #6b7280;">08/25 15:30 ET</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <span style="font-size: 11px; font-weight: bold; color: #93c5fd;">⚡ 0DTE DECISION PANEL</span>
+        <span style="font-size: 9px; color: #6b7280;">08/25 15:30 ET</span>
     </div>
-    <div style="background-color: #0d1e18; border: 1px solid #065f46; border-radius: 6px; padding: 8px; margin-bottom: 8px;">
-        <div style="display: flex; justify-content: space-between; font-size: 11px;">
+    <div style="background-color: #0d1e18; border: 1px solid #065f46; border-radius: 6px; padding: 6px; margin-bottom: 6px;">
+        <div style="display: flex; justify-content: space-between; font-size: 10px;">
             <span style="color: #6ee7b7; font-weight: bold;">0DTE TIME RISK</span>
-            <span style="color: #6ee7b7;">LOW • Market Closed</span>
+            <span style="color: #6ee7b7;">LOW • Closed</span>
         </div>
-        <div style="font-size: 11px; color: #d1d5db; margin-top: 2px;">정규장 외 시간 – 새로운 0DTE 진입은 피하세요.</div>
+        <div style="font-size: 10px; color: #d1d5db; margin-top: 1px;">정규장 외 시간 – 새로운 진입은 피하세요.</div>
     </div>
-    <div style="display: flex; gap: 6px;">
-        <div style="background-color: #1a2234; padding: 8px; border-radius: 6px; flex: 1;">
-            <div style="font-size: 10px; color: #9ca3af;">Expected Move used</div>
-            <div style="font-size: 12px; font-weight: bold; color: #f3f4f6;">±3.0pt</div>
-            <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">RTH session unavailable</div>
+    <div class="grid-2col" style="margin-bottom: 4px;">
+        <div style="background-color: #1a2234; padding: 6px; border-radius: 6px;">
+            <div style="font-size: 9px; color: #9ca3af;">Expected Move</div>
+            <div style="font-size: 11px; font-weight: bold; color: #f3f4f6;">±3.0pt</div>
+            <div style="font-size: 9px; color: #6b7280;">RTH unavailable</div>
         </div>
-        <div style="background-color: #1a2234; padding: 8px; border-radius: 6px; flex: 1;">
-            <div style="font-size: 10px; color: #9ca3af;">Intraday range / EM</div>
-            <div style="font-size: 12px; font-weight: bold; color: #f3f4f6;">—</div>
-            <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Regular-session unavailable</div>
+        <div style="background-color: #1a2234; padding: 6px; border-radius: 6px;">
+            <div style="font-size: 9px; color: #9ca3af;">Intraday range / EM</div>
+            <div style="font-size: 11px; font-weight: bold; color: #f3f4f6;">—</div>
+            <div style="font-size: 9px; color: #6b7280;">No data</div>
         </div>
     </div>
-    <div style="margin-top: 8px; font-size: 11px; color: #9ca3af;">
-        <b>OPENING RANGE</b> <span style="float: right; color: #fbbf24; font-size: 10px;">Starts 09:30 ET</span>
-        <div style="color: #6b7280; font-size: 10px;">Regular-session opening high and low</div>
+    <div style="font-size: 10px; color: #9ca3af;">
+        <b>OPENING RANGE</b> <span style="float: right; color: #fbbf24; font-size: 9px;">Starts 09:30 ET</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 5. Ticker Metrics
-m1, m2 = st.columns(2)
-with m1:
-    st.markdown("""
-    <div class="card-box">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">SPX INDEX</div>
-        <div style="font-size: 18px; font-weight: bold; color: #10b981; margin: 2px 0;">7677.28</div>
-        <div style="font-size: 11px; color: #10b981;">+24.42 (+0.32%)</div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("""
-    <div class="card-box">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">ES FUTURES</div>
-        <div style="font-size: 18px; font-weight: bold; color: #ef4444; margin: 2px 0;">7685.75</div>
-        <div style="font-size: 11px; color: #ef4444;">-6.25 (-0.08%)</div>
-    </div>
-    """, unsafe_allow_html=True)
-with m2:
-    st.markdown("""
-    <div class="card-box">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">VIX INDEX</div>
-        <div style="font-size: 18px; font-weight: bold; color: #10b981; margin: 2px 0;">15.45</div>
-        <div style="font-size: 11px; color: #10b981;">+0.32 (+2.12%)</div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("""
-    <div class="card-box">
-        <div style="font-size: 10px; color: #9ca3af; font-weight: bold;">FEAR & GREED</div>
-        <div style="font-size: 16px; font-weight: bold; color: #10b981; margin: 2px 0;">59 (Greed)</div>
-        <div style="font-size: 10px; color: #9ca3af;">1w: 55 | 1m: 41</div>
-    </div>
-    """, unsafe_allow_html=True)
-
 st.divider()
 
 # 6. Volume + CVD Section with Timeframe Selector
-st.markdown("#### 📊 VOLUME + CVD")
+st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
 tf_col1, tf_col2 = st.columns([2, 3])
 with tf_col1:
@@ -216,7 +226,7 @@ with tf_col1:
         label_visibility="collapsed"
     )
 with tf_col2:
-    st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 11px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
+    st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
 
 # Dynamic Chart Data Generation
 tf_map = {"1m": 60, "5m": 48, "15m": 32, "30m": 24, "1H": 20}
@@ -236,8 +246,8 @@ fig.add_trace(go.Scatter(x=dates, y=cvd, name="CVD", line=dict(color='#facc15', 
 
 fig.update_layout(
     template="plotly_dark",
-    height=240,
-    margin=dict(l=5, r=5, t=5, b=5),
+    height=200,
+    margin=dict(l=2, r=2, t=2, b=2),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
@@ -250,7 +260,7 @@ st.plotly_chart(fig, use_container_width=True)
 # Buy/Sell Ratio & Flow Signal
 buy_pct, sell_pct = 44, 56
 st.markdown(f"""
-<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 12px;">
+<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11px;">
     <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
     <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
 </div>
@@ -260,14 +270,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.markdown("""
-<div class="card-box" style="margin-top: 10px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-        <span style="font-weight: bold; font-size: 11px; color: #9ca3af;">WEIGHTED FLOW SIGNAL</span>
+<div class="card-box" style="margin-top: 6px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+        <span style="font-weight: bold; font-size: 10px; color: #9ca3af;">WEIGHTED FLOW SIGNAL</span>
         <span class="badge-green">📈 종합 상승</span>
     </div>
-    <p style="font-size: 12px; margin-bottom: 4px;"><b>현재가가 Gamma Flip 위 — Selling Pressure 가중치 50%↓</b></p>
-    <p style="font-size: 11px; color: #fbbf24; margin: 0;">
-        ⚠️ <b>Bullish Absorption</b> — 주가는 0.30% 상승했지만 CVD는 4.9% 하락. 매도 물량을 매수세가 흡수하는 흐름입니다.
+    <p style="font-size: 11px; margin-bottom: 2px;"><b>현재가가 Gamma Flip 위 — Selling Pressure 가중치 50%↓</b></p>
+    <p style="font-size: 10px; color: #fbbf24; margin: 0;">
+        ⚠️ <b>Bullish Absorption</b> — 주가는 상승했으나 CVD는 하락. 매도세 흡수 중.
     </p>
 </div>
 """, unsafe_allow_html=True)
