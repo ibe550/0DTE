@@ -92,7 +92,7 @@ st.markdown("""
 st.markdown("""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
     <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.0</span></span>
-    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Closed | 🕒 23:09 ET</span>
+    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Closed | 🕒 23:16 ET</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -214,7 +214,7 @@ st.markdown("""
 
 st.divider()
 
-# 6. Volume + CVD Section (EDT Timezone Fixed)
+# 6. Volume + CVD Section (Dynamic TF Sensitivity)
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
 tf_col1, tf_col2 = st.columns([2, 3])
@@ -229,23 +229,31 @@ with tf_col1:
 with tf_col2:
     st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
 
-# Timeframe mapping (minutes per step)
-tf_mins = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1H": 60}
-step_min = tf_mins.get(selected_tf, 60)
+# Timeframe mapping (minutes per step & unique seed for dynamic variation)
+tf_config = {
+    "1m": (1, 101, 15),
+    "5m": (5, 202, 35),
+    "15m": (15, 303, 80),
+    "30m": (30, 404, 150),
+    "1H": (60, 505, 300)
+}
+
+step_min, seed_val, vol_multiplier = tf_config.get(selected_tf, (60, 505, 300))
 n_bars = 16
 
-# Explicit US/Eastern Time Handling
+# US/Eastern Time Handling
 est_tz = pytz.timezone('US/Eastern')
 now_est = datetime.now(est_tz)
 
 dates = [now_est - timedelta(minutes=i * step_min) for i in range(n_bars)][::-1]
 dates_str = [d.strftime("%H:%M") for d in dates]
 
-np.random.seed(42)
-buy_vol = np.random.randint(10, 250, n_bars) * 1000000
-sell_vol = np.random.randint(10, 280, n_bars) * 1000000
+# Dynamic Data Generation according to Timeframe
+np.random.seed(seed_val)
+buy_vol = np.random.randint(10, 250, n_bars) * vol_multiplier * 10000
+sell_vol = np.random.randint(10, 280, n_bars) * vol_multiplier * 10000
 total_vol = buy_vol + sell_vol
-cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + 400
+cvd = np.cumsum(buy_vol - sell_vol) / 1000000 + (seed_val % 100)
 colors = ['#10b981' if b > s else '#ef4444' for b, s in zip(buy_vol, sell_vol)]
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -273,7 +281,9 @@ components.html(f"""
 """, height=185)
 
 # Buy/Sell Ratio & Flow Signal
-buy_pct, sell_pct = 44, 56
+buy_pct = int((np.sum(buy_vol) / np.sum(total_vol)) * 100)
+sell_pct = 100 - buy_pct
+
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11px;">
     <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
