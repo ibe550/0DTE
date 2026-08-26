@@ -306,3 +306,37 @@ st.markdown("""
     </p>
 </div>
 """, unsafe_allow_html=True)
+
+# 7. PROBABILITY BACKTEST ENGINE (Bill Benter Style)
+import streamlit as st
+from backtest import run_probability_analysis
+
+st.divider()
+st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
+
+if st.button("🚀 과거 데이터 기반 승률/기대값 검증 (In-Memory Run)"):
+    with st.spinner("과거 1개월 데이터 분석 중..."):
+        result = run_probability_analysis("ES=F", period="1mo", interval="5m")
+        
+        if result:
+            st.markdown(f"""
+            <div class="card-box">
+                <div style="font-size: 11px; color: #9ca3af;">조건: [5분봉 거래량 급증 + 상승 장대양봉 발생 시]</div>
+                <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                    <div>
+                        <div style="font-size: 9px; color: #6b7280;">총 포착 시그널</div>
+                        <div style="font-size: 14px; font-weight: bold;">{result['total_signals']}회</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 9px; color: #6b7280;">30분 뒤 상승 확률 (Win Rate)</div>
+                        <div style="font-size: 14px; font-weight: bold; color: #10b981;">{result['win_rate']}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 9px; color: #6b7280;">수학적 기대값 (EV)</div>
+                        <div style="font-size: 14px; font-weight: bold; color: #facc15;">+{result['expected_value']} pt</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.error("데이터를 불러오지 못했습니다.")
