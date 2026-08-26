@@ -128,14 +128,45 @@ def fetch_es_history(interval_str):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
-        df = df.tail(16).copy()
+        df = df.tail(100).copy()
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
         return df
     except Exception:
         return None
 
-# Session State 내 백테스트 결과 초기화
+# Calculate Support & Resistance Levels
+def calculate_support_resistance(current_price):
+    es_df = fetch_es_history("5m")
+    if es_df is not None and not es_df.empty:
+        high = es_df['High'].max()
+        low = es_df['Low'].min()
+        close = es_df['Close'].iloc[-1]
+        
+        # Standard Pivot Point Formula
+        pivot = (high + low + close) / 3
+        r1 = (2 * pivot) - low
+        s1 = (2 * pivot) - high
+        r2 = pivot + (high - low)
+        s2 = pivot - (high - low)
+    else:
+        # Default offset fallback
+        r2 = current_price + 30.0
+        r1 = current_price + 15.0
+        s1 = current_price - 15.0
+        s2 = current_price - 30.0
+
+    # 5pt 단위 SPX Strike 반올림
+    r2_strike = int(round(r2 / 5.0) * 5)
+    r1_strike = int(round(r1 / 5.0) * 5)
+    s1_strike = int(round(s1 / 5.0) * 5)
+    s2_strike = int(round(s2 / 5.0) * 5)
+    
+    return {
+        'R2': r2_strike, 'R1': r1_strike,
+        'S1': s1_strike, 'S2': s2_strike
+    }
+
 if "backtest_result" not in st.session_state:
     st.session_state["backtest_result"] = None
 
@@ -147,10 +178,12 @@ spx_p, spx_c, spx_pct = market_data['spx'] if market_data else (7677.28, 24.42, 
 vix_p, vix_c, vix_pct = market_data['vix'] if market_data else (15.45, 0.32, 2.12)
 es_p, es_c, es_pct = market_data['es'] if market_data else (7685.75, -6.25, -0.08)
 
+sr_levels = calculate_support_resistance(spx_p)
+
 # 1. Top Bar Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v12.2</span></span>
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v13.0</span></span>
     <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live (YFinance) | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
@@ -276,37 +309,35 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 4. DECISION SIGNAL (백테스트 확률 결과 연동)
+# 4. DECISION SIGNAL
 # ---------------------------------------------------------
 if result:
     win = result.get('win_rate', 0.0)
     loss = result.get('loss_rate', 0.0)
     ev_val = result.get('expected_value', 0.0)
-    
-    # 퀀트 신뢰도 산출 (상승/하락 확률 격차)
     confidence = min(round(abs(win - loss) * 2), 100)
     
     if win > loss and ev_val > 0:
         sig_title = "PUT CREDIT SPREAD (상승 우세)"
         sig_badge = '<span class="badge-green">BULLISH</span>'
         sig_color = "#10b981"
-        sig_desc = f"상승 확률({win}%)이 하락 확률({loss}%)보다 높으며 EV(+{ev_val}pt)가 양수입니다. <b>Put Credit Spread</b>가 유리합니다."
+        sig_desc = f"상승 확률({win}%)이 높고 EV(+{ev_val}pt)가 양수입니다. <b>Put Credit Spread</b> 권장."
     elif loss > win:
         sig_title = "CALL CREDIT SPREAD (하락/조정 우세)"
         sig_badge = '<span class="badge-red">BEARISH</span>'
         sig_color = "#ef4444"
-        sig_desc = f"하락 확률({loss}%)이 상승 확률({win}%)보다 높습니다. <b>Call Credit Spread</b> 진입을 고려하세요."
+        sig_desc = f"하락 확률({loss}%)이 상승 확률({win}%)보다 높습니다. <b>Call Credit Spread</b> 권장."
     else:
         sig_title = "관망 (NEUTRAL / WAIT)"
         sig_badge = '<span class="badge-yellow">WAIT</span>'
         sig_color = "#fbbf24"
-        sig_desc = "상승/하락 확률이 비슷하거나 기대값이 불분명합니다. 추가 시그널을 대기하세요."
+        sig_desc = "방향성이 불분명합니다. 추가 수급 확인 후 진입하세요."
 else:
     sig_title = "백테스트 검증 필요"
     sig_badge = '<span class="badge-yellow">⏱️ READY</span>'
     sig_color = "#fbbf24"
     confidence = 0
-    sig_desc = "상단 버튼을 눌러 승률/하락률을 분석하면 추천 전략이 자동 대입됩니다."
+    sig_desc = "상단 버튼을 눌러 승률/하락률을 검증해 주세요."
 
 st.markdown(f"""
 <div class="signal-box">
@@ -319,13 +350,60 @@ st.markdown(f"""
         <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: {sig_color};">{confidence}%</b></span>
     </div>
     <p style="font-size: 11px; color: #d1d5db; margin: 4px 0 2px 0;">{sig_desc}</p>
-    <div style="font-size: 10px; color: #f59e0b; margin-top: 4px;">
-        <span class="badge-green">ENGINE INTEGRATED</span> as of {now_est.strftime('%H:%M:%S')} ET
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# [신규 추가] 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES
+# ---------------------------------------------------------
+st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 6px;'>🎯 SUPPORT/RESISTANCE & RECOMMENDED STRIKES</div>", unsafe_allow_html=True)
+
+diff_r2 = round(sr_levels['R2'] - spx_p, 1)
+diff_s2 = round(spx_p - sr_levels['S2'], 1)
+
+st.markdown(f"""
+<div class="grid-2col">
+    <!-- Call Credit Side -->
+    <div class="card-box" style="border-left: 3px solid #ef4444;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 10px; color: #ef4444; font-weight: bold;">🔴 CALL CREDIT RANGE</span>
+            <span class="badge-red">SELL CALL</span>
+        </div>
+        <div style="margin-top: 6px;">
+            <div style="font-size: 9px; color: #9ca3af;">2차 저항선 (R2)</div>
+            <div style="font-size: 15px; font-weight: bold; color: #fca5a5;">{sr_levels['R2']} Strike</div>
+        </div>
+        <div style="margin-top: 4px; font-size: 10px; color: #6b7280;">
+            1차 저항 (R1): <b>{sr_levels['R1']}</b><br>
+            안전 버퍼: <b style="color: #ef4444;">+{diff_r2} pt</b> (+{round(diff_r2/spx_p*100, 2)}%)
+        </div>
+        <div style="margin-top: 6px; padding: 4px; background-color: #1f1315; border-radius: 4px; font-size: 9px; color: #fca5a5; text-align: center;">
+            💡 <b>{sr_levels['R1']} / {sr_levels['R2']} Call Sell</b> 권장
+        </div>
+    </div>
+
+    <!-- Put Credit Side -->
+    <div class="card-box" style="border-left: 3px solid #10b981;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 10px; color: #10b981; font-weight: bold;">🟢 PUT CREDIT RANGE</span>
+            <span class="badge-green">SELL PUT</span>
+        </div>
+        <div style="margin-top: 6px;">
+            <div style="font-size: 9px; color: #9ca3af;">2차 지지선 (S2)</div>
+            <div style="font-size: 15px; font-weight: bold; color: #6ee7b7;">{sr_levels['S2']} Strike</div>
+        </div>
+        <div style="margin-top: 4px; font-size: 10px; color: #6b7280;">
+            1차 지지 (S1): <b>{sr_levels['S1']}</b><br>
+            안전 버퍼: <b style="color: #10b981;">-{diff_s2} pt</b> (-{round(diff_s2/spx_p*100, 2)}%)
+        </div>
+        <div style="margin-top: 6px; padding: 4px; background-color: #0f1f19; border-radius: 4px; font-size: 9px; color: #6ee7b7; text-align: center;">
+            💡 <b>{sr_levels['S1']} / {sr_levels['S2']} Put Sell</b> 권장
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 5. Volume + CVD Section
+# 6. Volume + CVD Section
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD (ES=F Live)</div>", unsafe_allow_html=True)
 
 tf_col1, tf_col2 = st.columns([2, 3])
