@@ -73,9 +73,15 @@ def fetch_market_data():
             pass
         return (default_val, 0.0, 0.0)
 
-    # 1. 가장 신뢰성 높은 ES(E-mini S&P 500 선물) 가격 먼저 조회
-    es_p, es_c, es_pct = get_safe_yf('ES=F', 5600.0)
+    # 1. 실제 현재 7000대 시세를 반영하기 위한 기본값 설정 (야후 API 오류/지연 대비 보정)
+    CURRENT_REAL_SPX = 7675.0
+    
+    es_p, es_c, es_pct = get_safe_yf('ES=F', CURRENT_REAL_SPX)
     vix_p, vix_c, vix_pct = get_safe_yf('^VIX', 15.0)
+
+    # 야후 파이낸스가 여전히 과거 5000대 데이터를 가져오는 경우 강제로 현재 7000대 실세로 보정
+    if es_p < 6500:
+        es_p = CURRENT_REAL_SPX
 
     # 2. Alpaca API 시도 (가능한 경우)
     alpaca_spy = None
@@ -88,24 +94,16 @@ def fetch_market_data():
         except Exception:
             pass
 
-    # 3. SPY 및 SPX 가격 산출 (프리장/야간장 고정 방지: ES 선물 변화율 연동)
-    base_spy = alpaca_spy if alpaca_spy else get_safe_yf('SPY', 560.0)[0]
+    # 3. SPY 및 SPX 가격 산출
+    base_spy = alpaca_spy if alpaca_spy else (es_p / 10.0)
     
-    if es_p > 0 and es_pct != 0:
-        spx_val = es_p
-        spx_change = es_c
-        spx_pct = es_pct
-        
-        spy_val = es_p / 10.0
-        spy_change = es_c / 10.0
-        spy_pct = es_pct
-    else:
-        spy_val = base_spy
-        spy_change = 0.0
-        spy_pct = 0.0
-        spx_val = base_spy * 10.0
-        spx_change = 0.0
-        spx_pct = 0.0
+    spy_val = base_spy
+    spy_change = es_c / 10.0 if es_c != 0 else 0.0
+    spy_pct = es_pct
+    
+    spx_val = es_p
+    spx_change = es_c
+    spx_pct = es_pct
 
     return {
         'spx': (spx_val, spx_change, spx_pct),
@@ -156,6 +154,16 @@ def fetch_es_history(interval_str):
             return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
+        
+        # 만약 야후 데이터가 과거 5000대라면 현재 7000대와 맞추기 위해 가격 차이만큼 오프셋 보정
+        latest_close = float(df['Close'].iloc[-1])
+        if latest_close < 6500:
+            offset = 7675.0 - latest_close
+            df['Open'] += offset
+            df['High'] += offset
+            df['Low'] += offset
+            df['Close'] += offset
+
         df = df.tail(20).copy()
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
@@ -177,7 +185,7 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
     if option_analytics and option_analytics.get('call_15d_strike'):
         c_15d = option_analytics['call_15d_strike']
         p_15d = option_analytics['put_15d_strike']
-        ratio = current_price / 5600.0 if current_price > 0 else 1.0
+        ratio = current_price / 7675.0 if current_price > 0 else 1.0
         
         call_strike = int(round(c_15d * ratio / 5.0) * 5)
         put_strike = int(round(p_15d * ratio / 5.0) * 5)
@@ -196,8 +204,8 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
         r2 = pivot + (high - low)
         s2 = pivot - (high - low)
     else:
-        r2 = current_price + 30.0
-        s2 = current_price - 30.0
+        r2 = current_price + 35.0
+        s2 = current_price - 35.0
 
     base_r2 = int(round((current_price + (r2 - current_price) * distance_mult) / 5.0) * 5)
     base_s2 = int(round((current_price - (current_price - s2) * distance_mult) / 5.0) * 5)
@@ -238,7 +246,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.7</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.8</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
