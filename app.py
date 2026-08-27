@@ -77,39 +77,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TradingView tvDatafeed / YFinance Hybrid Data Engine (15s Cache)
+# Robust Real-time Fast Fetch Engine (5s Cache)
 # ---------------------------------------------------------
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=5)
 def fetch_market_data():
-    # 1순위: API 키 없이 TradingView 실시간 데이터 수신 시도
-    try:
-        from tvdatafeed import TvDatafeed, Interval
-        tv = TvDatafeed()
-        
-        spx_df = tv.get_hist(symbol='SPX', exchange='SP', interval=Interval.in_1_minute, n_bars=2)
-        vix_df = tv.get_hist(symbol='VIX', exchange='TVC', interval=Interval.in_1_minute, n_bars=2)
-        es_df = tv.get_hist(symbol='ES1!', exchange='CME', interval=Interval.in_1_minute, n_bars=2)
-
-        def parse_tv_df(df):
-            if df is not None and not df.empty:
-                price = float(df['close'].iloc[-1])
-                prev = float(df['close'].iloc[-2]) if len(df) > 1 else float(df['open'].iloc[-1])
-                change = price - prev
-                pct = (change / prev) * 100 if prev != 0 else 0.0
-                return (price, change, pct)
-            return (0.0, 0.0, 0.0)
-
-        spx = parse_tv_df(spx_df)
-        vix = parse_tv_df(vix_df)
-        es = parse_tv_df(es_df)
-
-        if spx[0] != 0.0 and vix[0] != 0.0:
-            return {'spx': spx, 'vix': vix, 'es': es if es[0] != 0.0 else spx, 'source': 'TradingView'}
-    except Exception:
-        pass
-
-    # 2순위: tvDatafeed 미설치 또는 실패 시 YFinance Fast Single Fetch 로직으로 우회
-    def get_yf_single(symbol):
+    def get_price(symbol):
         try:
             t = yf.Ticker(symbol)
             price = t.fast_info.last_price
@@ -127,16 +99,15 @@ def fetch_market_data():
         except Exception:
             return (0.0, 0.0, 0.0)
 
-    spx = get_yf_single('^SPX')
-    vix = get_yf_single('^VIX')
-    es = get_yf_single('ES=F')
+    spx = get_price('^SPX')
+    vix = get_price('^VIX')
+    es = get_price('ES=F')
 
     if spx[0] == 0.0 and es[0] != 0.0:
         spx = es
 
-    return {'spx': spx, 'vix': vix, 'es': es, 'source': 'YFinance'}
+    return {'spx': spx, 'vix': vix, 'es': es}
 
-# Fetch Timeframe Volume History from Yahoo Finance (ES=F)
 @st.cache_data(ttl=30)
 def fetch_es_history(interval_str):
     try:
@@ -157,7 +128,6 @@ def fetch_es_history(interval_str):
     except Exception:
         return None
 
-# Calculate Support & Resistance Levels
 def calculate_support_resistance(current_price):
     es_df = fetch_es_history("5m")
     if es_df is not None and not es_df.empty:
@@ -196,15 +166,14 @@ now_est = datetime.now(est_tz)
 spx_p, spx_c, spx_pct = market_data['spx']
 vix_p, vix_c, vix_pct = market_data['vix']
 es_p, es_c, es_pct = market_data['es']
-data_source = market_data.get('source', 'Live')
 
 sr_levels = calculate_support_resistance(spx_p)
 
 # 1. Top Bar Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v14.0</span></span>
-    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live ({data_source}) | 🕒 {now_est.strftime('%H:%M')} ET</span>
+    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v14.1</span></span>
+    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live | 🕒 {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -343,7 +312,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES (Streamlit Columns Native)
+# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES
 # ---------------------------------------------------------
 st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 6px;'>🎯 SUPPORT/RESISTANCE & RECOMMENDED STRIKES</div>", unsafe_allow_html=True)
 
