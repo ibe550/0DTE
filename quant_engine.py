@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from datetime import time as dtime
 
 class SimonsBenterQuantEngine:
     """
@@ -23,6 +24,38 @@ class SimonsBenterQuantEngine:
         current_price = price_series.iloc[-1]
         z_score = (current_price - sma) / std
         return round(z_score, 2)
+
+    @staticmethod
+    def detect_trading_session(now_et):
+        """
+        [0DTE 세션 리스크] 같은 변동성이라도 시간대에 따라 0DTE 옵션의 감마/세타
+        위험은 완전히 다르다. 장이 열려있는 동안에도:
+          - 개장 직후(09:30~10:00): 밤사이 갭/오더플로우 정리로 변동성 최고조
+          - 오전 추세(10:00~11:30): 방향성이 잡히는 구간, 상대적으로 평이
+          - 점심 눌림(11:30~13:30): 거래량/변동성이 뚜렷하게 줄어드는 구간
+          - 오후 재개(13:30~15:00): 거래량이 다시 붙기 시작
+          - 파워아워(15:00~16:00): 0DTE는 만기가 몇 시간 안 남아 감마가 극단적으로
+            커지는 구간 -> 작은 가격 움직임도 옵션가치를 크게 흔든다
+          - 장외(그 외): 유동성이 얇아 스프레드/슬리피지 위험이 커진다
+
+        반환: (session_name, session_distance_mult)
+        session_distance_mult는 detect_market_regime의 regime_mult와 곱해서
+        스트라이크 안전거리에 반영한다.
+        """
+        t = now_et.time()
+
+        if dtime(9, 30) <= t < dtime(10, 0):
+            return "OPEN_VOLATILITY", 1.3
+        elif dtime(10, 0) <= t < dtime(11, 30):
+            return "MORNING_TREND", 1.0
+        elif dtime(11, 30) <= t < dtime(13, 30):
+            return "LUNCH_LULL", 0.75
+        elif dtime(13, 30) <= t < dtime(15, 0):
+            return "AFTERNOON_TREND", 1.0
+        elif dtime(15, 0) <= t <= dtime(16, 0):
+            return "POWER_HOUR_GAMMA_RISK", 1.5
+        else:
+            return "AFTER_HOURS_THIN_LIQUIDITY", 1.4
 
     @staticmethod
     def detect_market_regime(df, vix_value):
