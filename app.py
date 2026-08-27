@@ -103,37 +103,57 @@ def fetch_alpaca_stock_snapshot(symbol="SPY"):
     return (None, None, None)
 
 
+def _get_reliable_prev_close(t, hist_daily=None):
+    """
+    fast_info의 previous_close는 ES=F 같은 선물에서 세션을 잘못 잡아
+    엉뚱한 값을 주는 경우가 있음(알려진 yfinance 이슈).
+    그래서 전일 종가는 항상 일봉 히스토리에서 별도로 계산한다.
+    """
+    try:
+        if hist_daily is None:
+            hist_daily = t.history(period="5d", interval="1d")
+        if hist_daily is not None and len(hist_daily) >= 2:
+            return float(hist_daily['Close'].iloc[-2])
+        elif hist_daily is not None and len(hist_daily) == 1:
+            return float(hist_daily['Close'].iloc[-1])
+    except Exception:
+        pass
+    return None
+
+
 def fetch_single_ticker(symbol, retries=2):
     """
     실시간에 가까운 가격 조회.
-    1) fast_info 우선 시도 (실시간에 가장 가까움)
-    2) 실패 시 1일 간격 history로 폴백
-    3) 그래도 실패하면 (None, None, None) 반환 -> 가짜 숫자를 만들지 않음
+    - 현재가: fast_info.last_price 우선 (실시간에 가장 가까움), 실패 시 일봉 마지막 종가
+    - 전일 종가(등락 계산 기준): 항상 일봉 히스토리에서 계산
+      (fast_info.previous_close는 선물에서 세션 오류로 등락률이 틀어지는 경우가 있어 사용하지 않음)
+    - 조회 실패 시 (None, None, None) 반환 -> 가짜 숫자를 만들지 않음
     """
     last_err = None
     for attempt in range(retries):
         try:
             t = yf.Ticker(symbol)
+            hist_daily = t.history(period="5d", interval="1d")
+            prev_close = _get_reliable_prev_close(t, hist_daily)
 
+            price = None
             try:
                 fi = t.fast_info
-                price = float(fi.get("last_price") or fi.get("lastPrice") or 0.0)
-                prev_close = float(fi.get("previous_close") or fi.get("previousClose") or 0.0)
-                if price > 0 and prev_close > 0:
-                    chg = price - prev_close
-                    pct = (chg / prev_close) * 100.0
-                    return (price, chg, pct)
+                fi_price = float(fi.get("last_price") or fi.get("lastPrice") or 0.0)
+                if fi_price > 0:
+                    price = fi_price
             except Exception:
                 pass
 
-            hist = t.history(period="5d", interval="1d")
-            if not hist.empty:
-                p = float(hist['Close'].iloc[-1])
-                prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else p
-                chg = p - prev
-                pct = (chg / prev) * 100.0 if prev != 0 else 0.0
-                if p > 0:
-                    return (p, chg, pct)
+            if price is None and hist_daily is not None and not hist_daily.empty:
+                price = float(hist_daily['Close'].iloc[-1])
+
+            if price is not None and price > 0 and prev_close and prev_close > 0:
+                chg = price - prev_close
+                pct = (chg / prev_close) * 100.0
+                return (price, chg, pct)
+            elif price is not None and price > 0:
+                return (price, 0.0, 0.0)
 
             last_err = "empty response"
         except Exception as e:
