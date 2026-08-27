@@ -25,7 +25,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Alpaca API Key (설정 시 실시간 0DTE Delta 수집, 미설정 시 피봇 계산으로 안전 작동)
+# Alpaca API Key
 ALPACA_API_KEY = st.secrets.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = st.secrets.get("ALPACA_SECRET_KEY", "")
 
@@ -47,7 +47,6 @@ st.markdown("""
 .badge-red { background-color: #991b1b; color: #fca5a5; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
 .badge-green { background-color: #065f46; color: #6ee7b7; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
 .badge-yellow { background-color: #78350f; color: #fde68a; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
-.risk-tag { background-color: #211522; border: 1px solid #4a284e; color: #d8b4fe; padding: 1px 4px; border-radius: 3px; font-size: 9px; font-weight: bold; display: inline-block; margin-right: 2px; }
 .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px; }
 .grid-4col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
 .metric-card { background-color: #121721; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 8px; }
@@ -135,7 +134,7 @@ def fetch_es_history(interval_str):
             return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-        df = df.tail(25).copy() # 바 개수를 깔끔하게 20~25개로 제한하여 굵직하게 표현
+        df = df.tail(20).copy() # 바 개수를 최적화하여 굵직하고 가독성 좋게 유지
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
         return df
@@ -188,7 +187,7 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
         'dyn_put_sell': f"{base_s2-5}/{base_s2}",
         'call_target': base_r2,
         'put_target': base_s2,
-        'adjust_note': "⚖️ Dynamic Pivot Strike 적용 중 (실시간 변동성 자동 반영)",
+        'adjust_note': "⚖️ Dynamic Pivot Strike 적용 중",
         'is_live_delta': False
     }
 
@@ -221,12 +220,12 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.2</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.3</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
-# --- 실시간 주요 지수 시세 Top Cards ---
+# --- Top Cards ---
 spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
 vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
 es_color = "#10b981" if es_c >= 0 else "#ef4444"
@@ -234,74 +233,23 @@ spy_color = "#10b981" if spy_c >= 0 else "#ef4444"
 
 st.markdown(f"""
 <div class="grid-4col">
-<div class="metric-card">
-<div class="metric-label">SPX 지수</div>
-<div class="metric-val">{spx_p:,.2f}</div>
-<div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">VIX 변동성</div>
-<div class="metric-val">{vix_p:,.2f}</div>
-<div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">ES 선물</div>
-<div class="metric-val">{es_p:,.2f}</div>
-<div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">SPY ETF</div>
-<div class="metric-val">{spy_p:,.2f}</div>
-<div class="metric-sub" style="color: {spy_color};">{spy_c:+.2f} ({spy_pct:+.2f}%)</div>
-</div>
+<div class="metric-card"><div class="metric-label">SPX 지수</div><div class="metric-val">{spx_p:,.2f}</div><div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div></div>
+<div class="metric-card"><div class="metric-label">VIX 변동성</div><div class="metric-val">{vix_p:,.2f}</div><div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div></div>
+<div class="metric-card"><div class="metric-label">ES 선물</div><div class="metric-val">{es_p:,.2f}</div><div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div></div>
+<div class="metric-card"><div class="metric-label">SPY ETF</div><div class="metric-val">{spy_p:,.2f}</div><div class="metric-sub" style="color: {spy_color};">{spy_c:+.2f} ({spy_pct:+.2f}%)</div></div>
 </div>
 """, unsafe_allow_html=True)
 
-# --- Market Regime / Anomaly / Delta Status Cards ---
 z_color = "#ef4444" if abs(z_score) > 2.0 else "#10b981"
-z_desc = "⚠️ |Z|>2.0 이탈위험" if abs(z_score) > 2.0 else "🛡️ ±2.0 내 통계안정"
+z_desc = "⚠️ |Z|>2.0 이탈위험" if abs(z_score) > 2.0 else "🛡️ ±2.0 통계안정"
 sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
 
 st.markdown(f"""
 <div class="grid-4col">
-<div class="metric-card">
-<div class="metric-label">REGIME</div>
-<div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div>
-<div class="metric-sub" style="color:#9ca3af;">Dist Mult: {distance_mult}x</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">Z-SCORE</div>
-<div class="metric-val" style="color: {z_color};">{z_score:+.2f}</div>
-<div class="metric-sub" style="color:#9ca3af;">{z_desc}</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">DELTA TARGET</div>
-<div class="metric-val">0.15 Δ</div>
-<div class="metric-sub" style="color:#10b981;">Target 85% Win</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">NEWS SCORE</div>
-<div class="metric-val" style="color: {sent_color};">{news_score:+.2f}</div>
-<div class="metric-sub" style="color:#9ca3af;">{news_sentiment['sentiment']}</div>
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Live Delta Analytics Banner ---
-if alpaca_analytics:
-    st.markdown(f"""
-<div class="card-box" style="border-left: 3px solid #3b82f6;">
-<div style="display: flex; justify-content: space-between; font-size: 10px;">
-<span style="color: #60a5fa; font-weight: bold;">📡 REAL-TIME 0DTE OPTION GREEKS (Alpaca)</span>
-<span style="color: #9ca3af;">Avg IV: <b>{alpaca_analytics['avg_iv']}%</b></span>
-</div>
-<div style="display: flex; justify-content: space-between; margin-top: 3px; font-size: 10px;">
-<span>Call 0.15Δ Strike: <b style="color:#fca5a5;">${alpaca_analytics['call_15d_strike']}</b> ({alpaca_analytics['call_15d_delta']:.2f}Δ)</span>
-<span>Put -0.15Δ Strike: <b style="color:#6ee7b7;">${alpaca_analytics['put_15d_strike']}</b> ({alpaca_analytics['put_15d_delta']:.2f}Δ)</span>
-</div>
-<div style="font-size: 9px; color: #9ca3af; margin-top: 2px;">
-🎯 Max Gamma Wall: <b>${alpaca_analytics['max_gex_strike']}</b> (주가 지지/저항 벽)
-</div>
+<div class="metric-card"><div class="metric-label">REGIME</div><div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div><div class="metric-sub" style="color:#9ca3af;">Dist Mult: {distance_mult}x</div></div>
+<div class="metric-card"><div class="metric-label">Z-SCORE</div><div class="metric-val" style="color: {z_color};">{z_score:+.2f}</div><div class="metric-sub" style="color:#9ca3af;">{z_desc}</div></div>
+<div class="metric-card"><div class="metric-label">DELTA TARGET</div><div class="metric-val">0.15 Δ</div><div class="metric-sub" style="color:#10b981;">Target 85% Win</div></div>
+<div class="metric-card"><div class="metric-label">NEWS SCORE</div><div class="metric-val" style="color: {sent_color};">{news_score:+.2f}</div><div class="metric-sub" style="color:#9ca3af;">{news_sentiment['sentiment']}</div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -332,24 +280,6 @@ if result:
 <div><div style="font-size: 8px; color: #6b7280;">▲ 상승</div><div style="font-size: 12px; font-weight: bold; color: #10b981;">{win_rate}%</div></div>
 <div><div style="font-size: 8px; color: #6b7280;">▼ 하락</div><div style="font-size: 12px; font-weight: bold; color: #ef4444;">{loss_rate}%</div></div>
 <div><div style="font-size: 8px; color: #6b7280;">EV</div><div style="font-size: 12px; font-weight: bold; color: #facc15;">+{ev}pt</div></div>
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Live News ---
-news_box_class = "news-box-alert" if news_sentiment['risk_level'] == "HIGH" else "news-box-neutral"
-
-st.markdown(f"""
-<div class="{news_box_class}">
-<div style="display: flex; justify-content: space-between; align-items: center;">
-<span style="color: {sent_color}; font-weight: bold; font-size: 10px;">⚡ REAL-TIME NEWS [{news_sentiment['sentiment']}]</span>
-<span style="color: #6b7280; font-size: 8px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
-</div>
-<div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
-{news_sentiment['title']}
-</div>
-<div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">
-🔍 {strikes['adjust_note']}
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -418,7 +348,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Volume & CVD Chart (오른쪽 스타일처럼 굵직하고 깔끔하게 개선) ---
+# --- Volume & CVD Chart (하단 시간 잘림 현상 방지 및 가독성 큼직하게 대폭 개선) ---
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
@@ -451,7 +381,6 @@ else:
     buy_pct, sell_pct = 56, 44
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
-# 굵직한 바 표현을 위해 width 속성 유사 효과 부여 및 세련된 디자인 적용
 fig.add_trace(go.Bar(
     x=dates_str, 
     y=total_vol, 
@@ -470,17 +399,17 @@ fig.add_trace(go.Scatter(
 
 fig.update_layout(
     template="plotly_dark",
-    height=170, # 높이를 약간 키워 시원하게 배치
-    margin=dict(l=0, r=0, t=10, b=0),
+    height=205, # 전체 차트 높이를 여유 있게 확장
+    margin=dict(l=0, r=0, t=10, b=32), # 하단 여백(b=32)을 주어 시간 텍스트가 잘리지 않도록 함
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
-    bargap=0.25, # 바 간격을 넓혀 굵직하게 보이도록 조정
+    bargap=0.2, 
     xaxis=dict(
         showgrid=False, 
         fixedrange=True, 
         type='category', 
-        tickfont=dict(size=8, color='#9ca3af'),
+        tickfont=dict(size=10, color='#e1e6ed', weight='bold'), # 글자 크기를 키우고(10px) 색상을 선명하게 변경
         nticks=6
     ),
     yaxis=dict(
@@ -494,16 +423,16 @@ fig.update_layout(
         showgrid=False, 
         title=None, 
         fixedrange=True, 
-        showticklabels=False # 오른쪽 복잡한 숫자축 숨겨서 오른쪽 스타일처럼 깔끔하게 정리
+        showticklabels=False
     )
 )
 
 html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
 components.html(f"""
-<div style="pointer-events: none; user-select: none; width:100%; height:170px;">
+<div style="pointer-events: none; user-select: none; width:100%; height:205px;">
 {html_fig}
 </div>
-""", height=175)
+""", height=210)
 
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 2px;">
