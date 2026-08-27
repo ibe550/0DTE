@@ -1,3 +1,13 @@
+import sys
+import os
+
+# external_0dte 폴더 경로 추가
+sys.path.append(os.path.join(os.path.dirname(__file__), 'external_0dte'))
+
+import streamlit as st
+import pandas as pd
+# (이하 기존 app.py 코드 쭉 이어짐...)
+
 import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
