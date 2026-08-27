@@ -11,12 +11,23 @@ import yfinance as yf
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 
+# --- Alpaca 옵션 데이터 연동 모듈 불러오기 (없거나 키가 없어도 안전하게 작동) ---
+try:
+    from alpaca_options import AlpacaOptionEngine
+    HAS_ALPACA_MODULE = True
+except ImportError:
+    HAS_ALPACA_MODULE = False
+
 st.set_page_config(
     page_title="SPX 0DTE DEFENDER",
     page_icon="🛡️",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+# Alpaca API Key (현재 비어있으므로 Fallback 피봇 계산 모드로 자동 동작)
+ALPACA_API_KEY = st.secrets.get("ALPACA_API_KEY", "")
+ALPACA_SECRET_KEY = st.secrets.get("ALPACA_SECRET_KEY", "")
 
 st.markdown("""
 <style>
@@ -71,11 +82,12 @@ def fetch_market_data():
     spx = get_price('^SPX')
     vix = get_price('^VIX')
     es = get_price('ES=F')
+    spy = get_price('SPY')
 
     if spx[0] == 0.0 and es[0] != 0.0:
         spx = es
 
-    return {'spx': spx, 'vix': vix, 'es': es}
+    return {'spx': spx, 'vix': vix, 'es': es, 'spy': spy}
 
 @st.cache_data(ttl=30)
 def fetch_latest_news_sentiment():
@@ -110,26 +122,18 @@ def fetch_latest_news_sentiment():
         sentiment = "NEUTRAL"
         risk_level = "LOW"
 
-    return {
-        "title": title,
-        "sentiment": sentiment,
-        "risk_level": risk_level,
-        "link": link
-    }
+    return {"title": title, "sentiment": sentiment, "risk_level": risk_level, "link": link}
 
 @st.cache_data(ttl=15)
 def fetch_es_history(interval_str):
     try:
         yf_interval = "60m" if interval_str == "1H" else interval_str
         period = "1d" if interval_str in ["1m", "5m"] else "5d"
-        
         df = yf.download(tickers="ES=F", period=period, interval=yf_interval, progress=False)
         if df.empty:
             return None
-        
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-            
         df = df.tail(100).copy()
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
@@ -137,62 +141,59 @@ def fetch_es_history(interval_str):
     except Exception:
         return None
 
-def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0):
+# --- Alpaca 옵션 체인 실시간 데이터 획득 ---
+@st.cache_data(ttl=10)
+def fetch_alpaca_0dte_analytics(spy_price):
+    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
+        try:
+            engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+            return engine.get_0dte_chain_analytics(symbol="SPY", current_price=spy_price)
+        except Exception:
+            return None
+    return None
+
+def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, option_analytics=None):
+    # Alpaca 실시간 Delta 데이터가 존재하는 경우 적용
+    if option_analytics and option_analytics.get('call_15d_strike'):
+        c_15d = option_analytics['call_15d_strike']
+        p_15d = option_analytics['put_15d_strike']
+        
+        # SPY Delta 기준을 SPX 지수 포인트 비율로 환산
+        ratio = current_price / 560.0 if current_price > 0 else 10.0
+        
+        call_strike = int(round(c_15d * ratio / 5.0) * 5)
+        put_strike = int(round(p_15d * ratio / 5.0) * 5)
+        
+        return {
+            'dyn_call_sell': f"{call_strike+5}/{call_strike}",
+            'dyn_put_sell': f"{put_strike-5}/{put_strike}",
+            'call_target': call_strike,
+            'put_target': put_strike,
+            'adjust_note': f"🎯 Alpaca Live Delta 0.15 수집됨 (IV: {option_analytics['avg_iv']}%)",
+            'is_live_delta': True
+        }
+
+    # API Key 미설정 시 피봇 및 변동성 기반 추정 계산 모드 (Fallback)
     es_df = fetch_es_history("5m")
     if es_df is not None and not es_df.empty:
-        high = es_df['High'].max()
-        low = es_df['Low'].min()
-        close = es_df['Close'].iloc[-1]
-        
+        high, low, close = es_df['High'].max(), es_df['Low'].min(), es_df['Close'].iloc[-1]
         pivot = (high + low + close) / 3
-        r1 = (2 * pivot) - low
-        s1 = (2 * pivot) - high
         r2 = pivot + (high - low)
         s2 = pivot - (high - low)
     else:
         r2 = current_price + 30.0
-        r1 = current_price + 15.0
-        s1 = current_price - 15.0
         s2 = current_price - 30.0
 
     base_r2 = int(round((current_price + (r2 - current_price) * distance_mult) / 5.0) * 5)
-    base_r1 = int(round((current_price + (r1 - current_price) * distance_mult) / 5.0) * 5)
-    base_s1 = int(round((current_price - (current_price - s1) * distance_mult) / 5.0) * 5)
     base_s2 = int(round((current_price - (current_price - s2) * distance_mult) / 5.0) * 5)
 
-    sentiment = news_sentiment['sentiment']
-    if distance_mult > 1.4:
-        adjust_note = "🚨 변동성 급증: 행수가격 안전거리(Buffer) 1.6배 확장"
-        call_strike = base_r2 + 15
-        call_short = base_r2 + 20
-        put_strike = base_s2 - 15
-        put_short = base_s2 - 10
-    elif sentiment == "BEARISH":
-        call_strike = base_r1
-        call_short = base_r1 + 5
-        put_strike = base_s2 - 10
-        put_short = base_s2 - 5
-        adjust_note = "⚠️ 악재 뉴스: Put 지지선 하향"
-    elif sentiment == "BULLISH":
-        call_strike = base_r2 + 10
-        call_short = base_r2 + 15
-        put_strike = base_s1
-        put_short = base_s1 - 5
-        adjust_note = "🚀 호재 뉴스: Call 저항선 상향"
-    else:
-        call_strike = base_r2
-        call_short = base_r1
-        put_strike = base_s2
-        put_short = base_s1
-        adjust_note = "⚖️ Dynamic Pivot Strike 적용 중"
-
     return {
-        'R2': base_r2, 'R1': base_r1, 'S1': base_s1, 'S2': base_s2,
-        'dyn_call_sell': f"{call_short}/{call_strike}",
-        'dyn_put_sell': f"{put_short}/{put_strike}",
-        'call_target': call_strike,
-        'put_target': put_strike,
-        'adjust_note': adjust_note
+        'dyn_call_sell': f"{base_r2+5}/{base_r2}",
+        'dyn_put_sell': f"{base_s2-5}/{base_s2}",
+        'call_target': base_r2,
+        'put_target': base_s2,
+        'adjust_note': "⚖️ Dynamic Pivot Strike 적용 중 (실시간 변동성 자동 반영)",
+        'is_live_delta': False
     }
 
 if "backtest_result" not in st.session_state:
@@ -200,13 +201,13 @@ if "backtest_result" not in st.session_state:
 
 market_data = fetch_market_data()
 news_sentiment = fetch_latest_news_sentiment()
-
 est_tz = pytz.timezone('US/Eastern')
 now_est = datetime.now(est_tz)
 
 spx_p, spx_c, spx_pct = market_data['spx']
 vix_p, vix_c, vix_pct = market_data['vix']
 es_p, es_c, es_pct = market_data['es']
+spy_p, spy_c, spy_pct = market_data['spy']
 
 es_df = fetch_es_history("5m")
 news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
@@ -218,25 +219,38 @@ else:
     regime, distance_mult = "NORMAL_VOLATILITY", 1.0
     z_score = 0.0
 
-strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult)
+# Alpaca 옵션 데이터 실시간 조회 (키 없으면 None)
+alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
+strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca_analytics)
 
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.1 Core</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.2</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
-# --- Backtest Controls ---
-tf_option = st.radio(
-    "예측 타임프레임 선택",
-    ["10분 뒤", "30분 뒤", "1시간 뒤"],
-    index=1,
-    horizontal=True,
-    label_visibility="collapsed"
-)
+# --- Live Delta Analytics Banner (Alpaca 연동 시에만 상단 표시) ---
+if alpaca_analytics:
+    st.markdown(f"""
+<div class="card-box" style="border-left: 3px solid #3b82f6;">
+<div style="display: flex; justify-content: space-between; font-size: 10px;">
+<span style="color: #60a5fa; font-weight: bold;">📡 REAL-TIME 0DTE OPTION GREEKS (Alpaca)</span>
+<span style="color: #9ca3af;">Avg IV: <b>{alpaca_analytics['avg_iv']}%</b></span>
+</div>
+<div style="display: flex; justify-content: space-between; margin-top: 3px; font-size: 10px;">
+<span>Call 0.15Δ Strike: <b style="color:#fca5a5;">${alpaca_analytics['call_15d_strike']}</b> ({alpaca_analytics['call_15d_delta']:.2f}Δ)</span>
+<span>Put -0.15Δ Strike: <b style="color:#6ee7b7;">${alpaca_analytics['put_15d_strike']}</b> ({alpaca_analytics['put_15d_delta']:.2f}Δ)</span>
+</div>
+<div style="font-size: 9px; color: #9ca3af; margin-top: 2px;">
+🎯 Max Gamma Wall: <b>${alpaca_analytics['max_gex_strike']}</b> (주가 지지/저항 벽)
+</div>
+</div>
+""", unsafe_allow_html=True)
 
+# --- Backtest Controls ---
+tf_option = st.radio("타임프레임", ["10분 뒤", "30분 뒤", "1시간 뒤"], index=1, horizontal=True, label_visibility="collapsed")
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
@@ -254,7 +268,6 @@ if result:
     loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
     total_signals = result.get('total_signals', 0)
     ev = result.get('expected_value', 0.0)
-    kelly_allocation = SimonsBenterQuantEngine.calculate_fractional_kelly(win_rate=win_rate, reward_to_risk_ratio=0.3)
 
     st.markdown(f"""
 <div class="card-box">
@@ -266,17 +279,15 @@ if result:
 </div>
 </div>
 """, unsafe_allow_html=True)
-else:
-    kelly_allocation = 0.0
 
-# --- Live News Sentiment ---
+# --- Live News ---
 news_box_class = "news-box-alert" if news_sentiment['risk_level'] == "HIGH" else "news-box-neutral"
 sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
 
 st.markdown(f"""
 <div class="{news_box_class}">
 <div style="display: flex; justify-content: space-between; align-items: center;">
-<span style="color: {sent_color}; font-weight: bold; font-size: 10px;">⚡ REAL-TIME NEWS / EARNINGS [{news_sentiment['sentiment']}]</span>
+<span style="color: {sent_color}; font-weight: bold; font-size: 10px;">⚡ REAL-TIME NEWS [{news_sentiment['sentiment']}]</span>
 <span style="color: #6b7280; font-size: 8px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
 </div>
 <div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
@@ -284,72 +295,6 @@ st.markdown(f"""
 </div>
 <div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">
 🔍 {strikes['adjust_note']}
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Quant Metrics ---
-if abs(z_score) >= 2.0:
-    z_desc = "⚠️ 극단치 (반전주의)"
-elif abs(z_score) >= 1.0:
-    z_desc = "👀 약간 이탈"
-else:
-    z_desc = "✅ 정상 범위"
-
-if kelly_allocation == 0:
-    kelly_desc = "🚫 관망 추천 (진입 금지)"
-else:
-    kelly_desc = f"🎯 잔고의 {kelly_allocation}% 진입"
-
-n_desc = "실적/호재 우세" if news_score > 0 else ("악재 우세" if news_score < 0 else "중립")
-
-st.markdown(f"""
-<div class="card-box" style="border-left: 3px solid #8b5cf6;">
-<div style="font-size: 10px; color: #a78bfa; font-weight: bold;">🧪 QUANT STATISTICAL METRICS</div>
-<div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px;">
-<span>시장 상태: <b>{regime}</b></span>
-<span>주가위치: <b>{z_score} σ ({z_desc})</b></span>
-</div>
-<div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
-<span>뉴스/실적점수: <b>{news_score} pts ({n_desc})</b></span>
-<span>추천 비중: <b style="color: #facc15;">{kelly_desc}</b></span>
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="card-box" style="padding: 4px 6px;">
-<span style="color: #f43f5e; font-weight: bold; font-size: 9px;">⚡ RISKS: </span>
-<span class="risk-tag">EARNINGS</span><span class="risk-tag">NVDA</span><span class="risk-tag">FED</span><span class="risk-tag">CPI</span><span class="risk-tag">WAR</span>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Market Cards ---
-spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
-es_color = "#10b981" if es_c >= 0 else "#ef4444"
-vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
-
-st.markdown(f"""
-<div class="grid-2col">
-<div class="metric-card">
-<div class="metric-label">SPX INDEX</div>
-<div class="metric-val">{spx_p:.2f}</div>
-<div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">ES FUTURES (야간)</div>
-<div class="metric-val">{es_p:.2f}</div>
-<div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">VIX INDEX</div>
-<div class="metric-val">{vix_p:.2f}</div>
-<div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div>
-</div>
-<div class="metric-card">
-<div class="metric-label">FEAR & GREED</div>
-<div class="metric-val" style="font-size: 14px;">59 (Greed)</div>
-<div class="metric-sub" style="color: #9ca3af;">1w: 55 | 1m: 41</div>
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -377,24 +322,11 @@ if result:
         sig_color = "#fbbf24"
         sig_desc = "방향성 불분명. 수급 추가 확인 필요."
 else:
-    if regime == "EARNINGS_SURGE_EVENT":
-        sig_title = "EARNINGS SURGE ALERT"
-        sig_badge = '<span class="badge-yellow">VOLATILITY</span>'
-        sig_color = "#facc15"
-        confidence = 75
-        sig_desc = "야간 선물/실적 변동성 감지. 행수가격 안전거리 자동 확대됨."
-    elif news_sentiment['sentiment'] == "BEARISH":
-        sig_title = "CALL CREDIT SPREAD (뉴스 우세)"
-        sig_badge = '<span class="badge-red">NEWS ALERT</span>'
-        sig_color = "#ef4444"
-        confidence = 65
-        sig_desc = "악재 뉴스 감지됨. 상승 제한 가능성 유의."
-    else:
-        sig_title = "백테스트 검증 필요"
-        sig_badge = '<span class="badge-yellow">⏱️ READY</span>'
-        sig_color = "#fbbf24"
-        confidence = 0
-        sig_desc = "상단 버튼을 눌러 승률을 검증하세요."
+    sig_title = "백테스트 검증 필요"
+    sig_badge = '<span class="badge-yellow">⏱️ READY</span>'
+    sig_color = "#fbbf24"
+    confidence = 0
+    sig_desc = "상단 버튼을 눌러 승률을 검증하세요."
 
 st.markdown(f"""
 <div class="signal-box">
@@ -434,14 +366,7 @@ st.markdown(f"""
 # --- Volume & CVD Chart ---
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
 
-selected_tf = st.radio(
-    "TF",
-    ["1m", "5m", "15m", "30m", "1H"],
-    index=2,
-    horizontal=True,
-    label_visibility="collapsed"
-)
-
+selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
 es_df_chart = fetch_es_history(selected_tf)
 
 if es_df_chart is not None and not es_df_chart.empty:
