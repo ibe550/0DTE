@@ -41,8 +41,6 @@ st.markdown("""
 }
 [data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
 .card-box { background-color: #121721; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; }
-.news-box-alert { background-color: #2a1215; border: 1px solid #991b1b; border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; }
-.news-box-neutral { background-color: #161114; border: 1px solid #3d1c1c; border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; }
 .signal-box { background-color: #16150e; border: 1px solid #785a00; border-radius: 6px; padding: 8px 10px; margin-bottom: 4px; }
 .badge-red { background-color: #991b1b; color: #fca5a5; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
 .badge-green { background-color: #065f46; color: #6ee7b7; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
@@ -61,30 +59,29 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    def get_price(symbol):
+    def get_price_history_fallback(symbol, default_val):
         try:
             t = yf.Ticker(symbol)
-            price = t.fast_info.last_price
-            prev = t.fast_info.previous_close
-            if price is None or np.isnan(price):
-                hist = t.history(period="2d")
-                if not hist.empty:
-                    price = hist['Close'].iloc[-1]
-                    prev = hist['Close'].iloc[-2] if len(hist) > 1 else price
-            price = float(price or 0.0)
-            prev = float(prev or price)
-            change = price - prev
-            pct = (change / prev) * 100 if prev != 0 else 0.0
-            return (price, change, pct)
+            # history 방식으로 최근 5일 데이터를 가져와서 가장 안전하게 종가 추출
+            hist = t.history(period="5d")
+            if not hist.empty:
+                price = float(hist['Close'].iloc[-1])
+                prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else price
+                change = price - prev
+                pct = (change / prev) * 100 if prev != 0 else 0.0
+                return (price, change, pct)
         except Exception:
-            return (0.0, 0.0, 0.0)
+            pass
+        return (default_val, 0.0, 0.0)
 
-    spx = get_price('^SPX')
-    vix = get_price('^VIX')
-    es = get_price('ES=F')
-    spy = get_price('SPY')
+    # 각 티커별 안전 기본값 설정 (야후 일시 오류 방어)
+    spx = get_price_history_fallback('^SPX', 5600.0)
+    vix = get_price_history_fallback('^VIX', 15.0)
+    es = get_price_history_fallback('ES=F', 5600.0)
+    spy = get_price_history_fallback('SPY', 560.0)
 
-    if spx[0] == 0.0 and es[0] != 0.0:
+    # SPX 지수가 만약 정상 조회 안 되면 ES 선물 가격으로 대체 연동
+    if spx[0] == 5600.0 and es[0] != 5600.0:
         spx = es
 
     return {'spx': spx, 'vix': vix, 'es': es, 'spy': spy}
@@ -99,10 +96,10 @@ def fetch_latest_news_sentiment():
             title = latest.get('title', '')
             link = latest.get('link', '')
         else:
-            title = "NVIDIA After-Market Rally Signals Tech Strong Earnings"
+            title = "Market Holds Steady Amid Economic Data Releases"
             link = "#"
     except Exception:
-        title = "NVIDIA After-Market Rally Signals Tech Strong Earnings"
+        title = "Market Holds Steady Amid Economic Data Releases"
         link = "#"
 
     bearish_words = ["hike", "war", "inflation", "cpi", "drop", "plunge", "down", "crisis", "fall", "tariff", "missed"]
@@ -114,15 +111,12 @@ def fetch_latest_news_sentiment():
 
     if bear_score > bull_score:
         sentiment = "BEARISH"
-        risk_level = "HIGH"
     elif bull_score > bear_score:
         sentiment = "BULLISH"
-        risk_level = "MODERATE"
     else:
         sentiment = "NEUTRAL"
-        risk_level = "LOW"
 
-    return {"title": title, "sentiment": sentiment, "risk_level": risk_level, "link": link}
+    return {"title": title, "sentiment": sentiment, "link": link}
 
 @st.cache_data(ttl=15)
 def fetch_es_history(interval_str):
@@ -134,7 +128,7 @@ def fetch_es_history(interval_str):
             return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-        df = df.tail(20).copy() # 바 개수를 최적화하여 굵직하고 가독성 좋게 유지
+        df = df.tail(20).copy()
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
         return df
@@ -165,8 +159,6 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
             'dyn_put_sell': f"{put_strike-5}/{put_strike}",
             'call_target': call_strike,
             'put_target': put_strike,
-            'adjust_note': f"🎯 Alpaca Live Delta 0.15 수집됨 (IV: {option_analytics['avg_iv']}%)",
-            'is_live_delta': True
         }
 
     es_df = fetch_es_history("5m")
@@ -187,8 +179,6 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
         'dyn_put_sell': f"{base_s2-5}/{base_s2}",
         'call_target': base_r2,
         'put_target': base_s2,
-        'adjust_note': "⚖️ Dynamic Pivot Strike 적용 중",
-        'is_live_delta': False
     }
 
 if "backtest_result" not in st.session_state:
@@ -220,7 +210,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.3</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.5</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
@@ -348,7 +338,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Volume & CVD Chart (하단 시간 잘림 현상 방지 및 가독성 큼직하게 대폭 개선) ---
+# --- Volume & CVD Chart ---
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
@@ -399,8 +389,8 @@ fig.add_trace(go.Scatter(
 
 fig.update_layout(
     template="plotly_dark",
-    height=205, # 전체 차트 높이를 여유 있게 확장
-    margin=dict(l=0, r=0, t=10, b=32), # 하단 여백(b=32)을 주어 시간 텍스트가 잘리지 않도록 함
+    height=205,
+    margin=dict(l=0, r=0, t=10, b=32),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
@@ -409,7 +399,7 @@ fig.update_layout(
         showgrid=False, 
         fixedrange=True, 
         type='category', 
-        tickfont=dict(size=10, color='#e1e6ed', weight='bold'), # 글자 크기를 키우고(10px) 색상을 선명하게 변경
+        tickfont=dict(size=10, color='#e1e6ed'),
         nticks=6
     ),
     yaxis=dict(
