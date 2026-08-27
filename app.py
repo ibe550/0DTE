@@ -414,7 +414,6 @@ fig.add_trace(go.Scatter(
 fig.update_layout(
     template="plotly_dark",
     height=205,
-...
     margin=dict(l=0, r=0, t=10, b=32),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
