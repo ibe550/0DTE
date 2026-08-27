@@ -107,88 +107,75 @@ def fetch_alpaca_stock_snapshot(symbol="SPY"):
     return (None, None, None, None)
 
 
-def _get_reliable_prev_close(t, hist_daily=None):
+YF_TICKERS = ['^GSPC', 'ES=F', '^VIX', 'SPY']
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def fetch_yf_batch():
     """
-    fast_info의 previous_close는 ES=F 같은 선물에서 세션을 잘못 잡아
-    엉뚱한 값을 주는 경우가 있음(알려진 yfinance 이슈).
-    그래서 전일 종가는 항상 일봉 히스토리에서 별도로 계산한다.
+    4개 티커를 한 번의 HTTP 요청으로 가져온다 (야후 파이낸스 Rate Limit 완화 목적).
+    개별 Ticker().fast_info / .history() 호출을 여러 번 하면 429(Too Many Requests)가
+    훨씬 자주 발생하므로, yf.download()로 배치 조회한다.
+    일봉(1d) 기준이라 정확히 실시간 tick은 아니지만, 장중에는 당일 봉이
+    계속 갱신되므로 충분히 현재가에 가깝다.
+
+    반환: ({ticker: (price, chg, pct) or (None, None, None)}, [에러메시지...])
     """
+    results = {t: (None, None, None) for t in YF_TICKERS}
+    errors = []
     try:
-        if hist_daily is None:
-            hist_daily = t.history(period="5d", interval="1d")
-        if hist_daily is not None and len(hist_daily) >= 2:
-            return float(hist_daily['Close'].iloc[-2])
-        elif hist_daily is not None and len(hist_daily) == 1:
-            return float(hist_daily['Close'].iloc[-1])
-    except Exception:
-        pass
-    return None
+        df = yf.download(
+            tickers=YF_TICKERS,
+            period="5d",
+            interval="1d",
+            group_by="ticker",
+            threads=False,
+            progress=False,
+            auto_adjust=False,
+        )
+    except Exception as e:
+        return results, [f"yfinance batch: {e}"]
 
+    if df is None or df.empty:
+        return results, ["yfinance batch: empty response (rate limited일 가능성)"]
 
-def fetch_single_ticker(symbol, retries=2):
-    """
-    실시간에 가까운 가격 조회.
-    - 현재가: fast_info.last_price 우선 (실시간에 가장 가까움), 실패 시 일봉 마지막 종가
-    - 전일 종가(등락 계산 기준): 항상 일봉 히스토리에서 계산
-      (fast_info.previous_close는 선물에서 세션 오류로 등락률이 틀어지는 경우가 있어 사용하지 않음)
-    - 조회 실패 시 (None, None, None, error_msg) 반환 -> 가짜 숫자를 만들지 않음
-
-    주의: 이 함수는 @st.cache_data 함수 내부에서 호출되므로
-    절대 st.session_state를 직접 건드리지 않는다 (캐시/세션 상태 충돌 방지).
-    """
-    last_err = None
-    for attempt in range(retries):
+    for sym in YF_TICKERS:
         try:
-            t = yf.Ticker(symbol)
-            hist_daily = t.history(period="5d", interval="1d")
-            prev_close = _get_reliable_prev_close(t, hist_daily)
-
-            price = None
-            try:
-                fi = t.fast_info
-                fi_price = float(fi.get("last_price") or fi.get("lastPrice") or 0.0)
-                if fi_price > 0:
-                    price = fi_price
-            except Exception:
-                pass
-
-            if price is None and hist_daily is not None and not hist_daily.empty:
-                price = float(hist_daily['Close'].iloc[-1])
-
-            if price is not None and price > 0 and prev_close and prev_close > 0:
-                chg = price - prev_close
-                pct = (chg / prev_close) * 100.0
-                return (price, chg, pct, None)
-            elif price is not None and price > 0:
-                return (price, 0.0, 0.0, None)
-
-            last_err = "empty response"
+            sub = df[sym] if isinstance(df.columns, pd.MultiIndex) else df
+            closes = sub['Close'].dropna()
+            if len(closes) >= 2:
+                price = float(closes.iloc[-1])
+                prev = float(closes.iloc[-2])
+                chg = price - prev
+                pct = (chg / prev) * 100.0 if prev else 0.0
+                results[sym] = (price, chg, pct)
+            elif len(closes) == 1:
+                results[sym] = (float(closes.iloc[-1]), 0.0, 0.0)
+            else:
+                errors.append(f"{sym}: no data (rate limited일 가능성)")
         except Exception as e:
-            last_err = str(e)
-        time.sleep(0.5)
+            errors.append(f"{sym}: {e}")
 
-    return (None, None, None, f"{symbol}: {last_err}")
+    return results, errors
 
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=20)
 def fetch_market_data():
     # 주의: 이 함수는 @st.cache_data로 캐시되므로 내부에서 st.session_state를
-    # 절대 읽거나 쓰지 않는다. 대신 에러는 로컬 리스트에 모아서 반환값으로 전달한다.
+    # 절대 읽거나 쓰지 않는다. 에러는 로컬 리스트에 모아서 반환값으로 전달한다.
     errors = []
 
     alp_spy_p, alp_spy_c, alp_spy_pct, alp_err = fetch_alpaca_stock_snapshot("SPY")
     if alp_err:
         errors.append(alp_err)
 
-    # 주의: Yahoo Finance에서 S&P500 지수 티커는 ^SPX가 아니라 ^GSPC 입니다.
-    spx_p, spx_c, spx_pct, spx_err = fetch_single_ticker('^GSPC')
-    es_p, es_c, es_pct, es_err = fetch_single_ticker('ES=F')
-    vix_p, vix_c, vix_pct, vix_err = fetch_single_ticker('^VIX')
-    spy_p, spy_c, spy_pct, spy_err = fetch_single_ticker('SPY')
+    yf_results, yf_errors = fetch_yf_batch()
+    errors.extend(yf_errors)
 
-    for e in (spx_err, es_err, vix_err, spy_err):
-        if e:
-            errors.append(e)
+    spx_p, spx_c, spx_pct = yf_results['^GSPC']
+    es_p, es_c, es_pct = yf_results['ES=F']
+    vix_p, vix_c, vix_pct = yf_results['^VIX']
+    spy_p, spy_c, spy_pct = yf_results['SPY']
 
     if alp_spy_p is not None:
         spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
@@ -209,7 +196,7 @@ def fetch_market_data():
     }
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def fetch_latest_news_sentiment():
     try:
         ticker = yf.Ticker("ES=F")
@@ -242,7 +229,7 @@ def fetch_latest_news_sentiment():
     return {"title": title, "sentiment": sentiment, "link": link}
 
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=30)
 def fetch_es_history(interval_str):
     try:
         yf_interval = "60m" if interval_str == "1H" else interval_str
