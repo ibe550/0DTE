@@ -9,6 +9,11 @@ import pytz
 import yfinance as yf
 from backtest import run_probability_analysis
 
+# ---------------------------------------------------------
+# 외부 퀀트 엔진 모듈 불러오기
+# ---------------------------------------------------------
+from quant_engine import SimonsBenterQuantEngine
+
 # Page Configuration
 st.set_page_config(
     page_title="SPX 0DTE DEFENDER",
@@ -201,7 +206,7 @@ def fetch_es_history(interval_str):
     except Exception:
         return None
 
-def calculate_dynamic_strikes(current_price, news_sentiment):
+def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0):
     es_df = fetch_es_history("5m")
     if es_df is not None and not es_df.empty:
         high = es_df['High'].max()
@@ -219,10 +224,11 @@ def calculate_dynamic_strikes(current_price, news_sentiment):
         s1 = current_price - 15.0
         s2 = current_price - 30.0
 
-    base_r2 = int(round(r2 / 5.0) * 5)
-    base_r1 = int(round(r1 / 5.0) * 5)
-    base_s1 = int(round(s1 / 5.0) * 5)
-    base_s2 = int(round(s2 / 5.0) * 5)
+    # 퀀트 마켓 레짐 거리에 따른 피봇 조정
+    base_r2 = int(round((current_price + (r2 - current_price) * distance_mult) / 5.0) * 5)
+    base_r1 = int(round((current_price + (r1 - current_price) * distance_mult) / 5.0) * 5)
+    base_s1 = int(round((current_price - (current_price - s1) * distance_mult) / 5.0) * 5)
+    base_s2 = int(round((current_price - (current_price - s2) * distance_mult) / 5.0) * 5)
 
     sentiment = news_sentiment['sentiment']
     if sentiment == "BEARISH":
@@ -230,13 +236,13 @@ def calculate_dynamic_strikes(current_price, news_sentiment):
         call_short = base_r1 + 5
         put_strike = base_s2 - 10
         put_short = base_s2 - 5
-        adjust_note = "⚠️ 악재 뉴스 감지: Put 지지선 10pt 추가 하향(안전 확보)"
+        adjust_note = "⚠️ 악재 감지: Put 지지선 추가 하향 (안전 확보)"
     elif sentiment == "BULLISH":
         call_strike = base_r2 + 10
         call_short = base_r2 + 15
         put_strike = base_s1
         put_short = base_s1 - 5
-        adjust_note = "🚀 호재 뉴스 감지: Call 저항선 10pt 추가 상향(안전 확보)"
+        adjust_note = "🚀 호재 감지: Call 저항선 추가 상향 (안전 확보)"
     else:
         call_strike = base_r2
         call_short = base_r1
@@ -266,12 +272,25 @@ spx_p, spx_c, spx_pct = market_data['spx']
 vix_p, vix_c, vix_pct = market_data['vix']
 es_p, es_c, es_pct = market_data['es']
 
-strikes = calculate_dynamic_strikes(spx_p, news_sentiment)
+# ---------------------------------------------------------
+# 퀀트 엔진 연동 및 고급 데이터 계산
+# ---------------------------------------------------------
+es_df = fetch_es_history("5m")
+news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
+
+if es_df is not None and not es_df.empty:
+    regime, distance_mult = SimonsBenterQuantEngine.detect_market_regime(es_df, vix_p)
+    z_score = SimonsBenterQuantEngine.calculate_zscore_anomaly(es_df['Close'])
+else:
+    regime, distance_mult = "NORMAL_VOLATILITY", 1.0
+    z_score = 0.0
+
+strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult)
 
 # 1. Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v15.0 News-AI</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v16.0 Quant Engine</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
@@ -297,9 +316,12 @@ if st.button(f"🚀 [{tf_option}] 승률/기대값 검증", use_container_width=
 
 result = st.session_state["backtest_result"]
 
+# 백테스트 결과를 기반으로 켈리 비중 계산
+win_rate = result.get('win_rate', 0.0) if result else 65.0
+loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1)) if result else 35.0
+kelly_allocation = SimonsBenterQuantEngine.calculate_fractional_kelly(win_rate=win_rate, reward_to_risk_ratio=0.3)
+
 if result:
-    win_rate = result.get('win_rate', 0.0)
-    loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
     total_signals = result.get('total_signals', 0)
     ev = result.get('expected_value', 0.0)
 
@@ -341,6 +363,23 @@ st.markdown(f"""
 </div>
 <div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">
 🔍 {strikes['adjust_note']}
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# Simons & Benter 퀀트 모듈 통계 UI
+# ---------------------------------------------------------
+st.markdown(f"""
+<div class="card-box" style="border-left: 3px solid #8b5cf6;">
+<div style="font-size: 10px; color: #a78bfa; font-weight: bold;">🧪 QUANT STATISTICAL METRICS (Simons/Benter)</div>
+<div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px;">
+<span>Market Regime: <b>{regime}</b></span>
+<span>Z-Score: <b>{z_score} σ</b></span>
+</div>
+<div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
+<span>News Multi-Score: <b>{news_score} pts</b></span>
+<span>Kelly Sizing: <b style="color: #facc15;">{kelly_allocation}% Balance</b></span>
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -464,13 +503,13 @@ selected_tf = st.radio(
     label_visibility="collapsed"
 )
 
-es_df = fetch_es_history(selected_tf)
+es_df_chart = fetch_es_history(selected_tf)
 
-if es_df is not None and not es_df.empty:
-    dates_str = [d.strftime("%H:%M") for d in es_df.index]
-    total_vol = es_df['Volume'].values
-    close_vals = es_df['Close'].values
-    open_vals = es_df['Open'].values
+if es_df_chart is not None and not es_df_chart.empty:
+    dates_str = [d.strftime("%H:%M") for d in es_df_chart.index]
+    total_vol = es_df_chart['Volume'].values
+    close_vals = es_df_chart['Close'].values
+    open_vals = es_df_chart['Open'].values
     delta = close_vals - open_vals
     
     buy_mask = delta >= 0
