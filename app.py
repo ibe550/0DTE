@@ -206,8 +206,6 @@ es_p, es_c, es_pct = market_data['es']
 spy_p, spy_c, spy_pct = market_data['spy']
 
 es_df = fetch_es_history("5m")
-
-# --- [정의 누락 방지] news_score 및 지표 계산을 렌더링보다 상단으로 배치 ---
 news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
 
 if es_df is not None and not es_df.empty:
@@ -259,8 +257,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Market Regime / Anomaly / Delta Status Cards ---
+# --- Market Regime / Anomaly / Delta Status Cards (Z-Score 설명 포함) ---
 z_color = "#ef4444" if abs(z_score) > 2.0 else "#10b981"
+z_desc = "⚠️ |Z|>2.0 이탈위험" if abs(z_score) > 2.0 else "🛡️ ±2.0 내 통계안정"
 sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
 
 st.markdown(f"""
@@ -273,7 +272,7 @@ st.markdown(f"""
 <div class="metric-card">
 <div class="metric-label">Z-SCORE</div>
 <div class="metric-val" style="color: {z_color};">{z_score:+.2f}</div>
-<div class="metric-sub" style="color:#9ca3af;">{'⚠️ Anomaly' if abs(z_score) > 2.0 else 'Normal'}</div>
+<div class="metric-sub" style="color:#9ca3af;">{z_desc}</div>
 </div>
 <div class="metric-card">
 <div class="metric-label">DELTA TARGET</div>
