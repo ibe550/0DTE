@@ -391,11 +391,16 @@ es_df = fetch_es_history("5m")
 news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
 
 if es_df is not None and not es_df.empty:
-    regime, distance_mult = SimonsBenterQuantEngine.detect_market_regime(es_df, vix_p if vix_p is not None else 15.0)
+    regime, regime_mult = SimonsBenterQuantEngine.detect_market_regime(es_df, vix_p if vix_p is not None else 15.0)
     z_score = SimonsBenterQuantEngine.calculate_zscore_anomaly(es_df['Close'])
 else:
-    regime, distance_mult = "NORMAL_VOLATILITY", 1.0
+    regime, regime_mult = "NORMAL_VOLATILITY", 1.0
     z_score = 0.0
+
+# 0DTE는 같은 변동성이라도 시간대(세션)에 따라 감마/세타 위험이 다르므로
+# 레짐 배수와 세션 배수를 곱해서 최종 안전거리 배수를 만든다.
+session_name, session_mult = SimonsBenterQuantEngine.detect_trading_session(now_est)
+distance_mult = round(regime_mult * session_mult, 2)
 
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
 strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_mult, alpaca_analytics)
@@ -439,7 +444,7 @@ sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b98
 
 st.markdown(f"""
 <div class="grid-4col">
-<div class="metric-card"><div class="metric-label">REGIME</div><div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div><div class="metric-sub" style="color:#9ca3af;">Dist Mult: {distance_mult}x</div></div>
+<div class="metric-card"><div class="metric-label">REGIME</div><div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div><div class="metric-sub" style="color:#9ca3af;">{session_name} · {distance_mult}x</div></div>
 <div class="metric-card"><div class="metric-label">Z-SCORE</div><div class="metric-val" style="color: {z_color};">{z_score:+.2f}</div><div class="metric-sub" style="color:#9ca3af;">{z_desc}</div></div>
 <div class="metric-card"><div class="metric-label">DELTA TARGET</div><div class="metric-val">0.15 Δ</div><div class="metric-sub" style="color:#10b981;">Target 85% Win</div></div>
 <div class="metric-card"><div class="metric-label">NEWS SCORE</div><div class="metric-val" style="color: {sent_color};">{news_score:+.2f}</div><div class="metric-sub" style="color:#9ca3af;">{news_sentiment['sentiment']}</div></div>
@@ -506,6 +511,27 @@ if result:
 </div>
 <div style="margin-top:2px;">분석 구간: {period_str}</div>
 {low_conf_warning}
+</div>
+""", unsafe_allow_html=True)
+
+    # --- 켈리 공식 기반 포지션 사이징 (신규: 기존에 정의만 되고 안 쓰이던 함수를 연결) ---
+    avg_win = result.get('avg_win', 0.0)
+    avg_loss = result.get('avg_loss', 0.0)
+    if avg_loss and avg_loss > 0:
+        reward_to_risk = avg_win / avg_loss
+        kelly_pct = SimonsBenterQuantEngine.calculate_fractional_kelly(
+            win_rate, reward_to_risk, fraction=0.25
+        )
+        kelly_color = "#10b981" if kelly_pct > 0 else "#9ca3af"
+        kelly_desc = (f"손익비 {round(reward_to_risk, 2)} · 1/4 켈리 기준"
+                       if kelly_pct > 0 else "승률/손익비 조합상 배팅 근거 부족 (0% 권장)")
+        st.markdown(f"""
+<div class="card-box" style="display:flex; justify-content:space-between; align-items:center; font-size:10px;">
+<span style="color:#9ca3af;">💰 권장 포지션 크기 (Kelly)</span>
+<span style="text-align:right;">
+<b style="font-size:14px; color:{kelly_color};">{kelly_pct}%</b>
+<div style="font-size:9px; color:#9ca3af;">{kelly_desc}</div>
+</span>
 </div>
 """, unsafe_allow_html=True)
 
