@@ -218,36 +218,35 @@ def fetch_market_data():
     if alp_err:
         errors.append(alp_err)
 
-    # 1순위: Twelve Data (SPX, VIX) - 한 번의 호출로 2개 심볼 조회
-    td_results, td_errors = fetch_twelvedata_quotes("SPX,VIX")
-    errors.extend(td_errors)
-    spx_p, spx_c, spx_pct = td_results.get("SPX", (None, None, None))
-    vix_p, vix_c, vix_pct = td_results.get("VIX", (None, None, None))
-
-    # 2순위(폴백): yfinance - ES 선물만. SPX/VIX/SPY는 Twelve Data/Alpaca가
-    # 실패했을 때만 백업으로 추가 조회한다 (요청 수를 최대한 아끼기 위함).
-    need_yf_backup = spx_p is None or vix_p is None or alp_spy_p is None
-    yf_symbols = list(YF_TICKERS)  # ['ES=F']
-    if spx_p is None:
-        yf_symbols.append('^GSPC')
-    if vix_p is None:
-        yf_symbols.append('^VIX')
+    # 2순위: Twelve Data (SPY) - Alpaca 실패했을 때만 보조 실시간 소스로 사용.
+    # 주의: Twelve Data 무료(Basic) 플랜은 지수(SPX, VIX)를 지원하지 않는다
+    # (유료 Grow 플랜부터 지원). 그래서 SPX/VIX에는 사용하지 않는다.
+    td_spy_p = td_spy_c = td_spy_pct = None
     if alp_spy_p is None:
+        td_results, td_errors = fetch_twelvedata_quotes("SPY")
+        errors.extend(td_errors)
+        td_spy_p, td_spy_c, td_spy_pct = td_results.get("SPY", (None, None, None))
+
+    spy_p, spy_c, spy_pct = (alp_spy_p, alp_spy_c, alp_spy_pct) if alp_spy_p is not None \
+        else (td_spy_p, td_spy_c, td_spy_pct)
+
+    # SPX/VIX/ES: 무료로 지수·선물을 실제 값으로 주는 곳이 마땅치 않아 야후를 사용.
+    # 배치 조회 + 캐시로 rate limit 위험은 최대한 줄여둔 상태.
+    yf_symbols = ['^GSPC', '^VIX'] + YF_TICKERS  # YF_TICKERS = ['ES=F']
+    if spy_p is None:
         yf_symbols.append('SPY')
 
     yf_results, yf_errors = fetch_yf_batch(tuple(yf_symbols))
     errors.extend(yf_errors)
 
+    spx_p, spx_c, spx_pct = yf_results.get('^GSPC', (None, None, None))
+    vix_p, vix_c, vix_pct = yf_results.get('^VIX', (None, None, None))
     es_p, es_c, es_pct = yf_results.get('ES=F', (None, None, None))
-    spy_p, spy_c, spy_pct = (alp_spy_p, alp_spy_c, alp_spy_pct) if alp_spy_p is not None \
-        else yf_results.get('SPY', (None, None, None))
 
-    if spx_p is None:
-        spx_p, spx_c, spx_pct = yf_results.get('^GSPC', (None, None, None))
-    if vix_p is None:
-        vix_p, vix_c, vix_pct = yf_results.get('^VIX', (None, None, None))
+    if spy_p is None:
+        spy_p, spy_c, spy_pct = yf_results.get('SPY', (None, None, None))
 
-    # 마지막 안전망: 그래도 SPX가 없으면 SPY 기반 근사치 (근사치임을 명확히 인지)
+    # 안전망: SPX를 못 구했으면 SPY 기반 근사치 (SPY는 SPX의 1/10 트래킹이라 오차가 작음)
     if spx_p is None and spy_p is not None:
         spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
