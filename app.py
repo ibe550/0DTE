@@ -29,6 +29,7 @@ st.set_page_config(
 
 ALPACA_API_KEY = st.secrets.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = st.secrets.get("ALPACA_SECRET_KEY", "")
+TWELVEDATA_API_KEY = st.secrets.get("TWELVEDATA_API_KEY", "")
 
 st.markdown("""
 <style>
@@ -107,25 +108,72 @@ def fetch_alpaca_stock_snapshot(symbol="SPY"):
     return (None, None, None, None)
 
 
-YF_TICKERS = ['^GSPC', 'ES=F', '^VIX', 'SPY']
+@st.cache_data(ttl=20, show_spinner=False)
+def fetch_twelvedata_quotes(symbols_csv):
+    """
+    Twelve Data /quote 엔드포인트로 여러 심볼을 한 번에 조회 (콤마로 구분).
+    무료 티어: 분당 8회, 하루 800회 -> 심볼을 한 번에 묶어서 호출 횟수를 아낀다.
+    반환: ({symbol: (price, chg, pct) or (None,None,None)}, [에러메시지...])
+    """
+    symbols = symbols_csv.split(",")
+    results = {s: (None, None, None) for s in symbols}
+    if not TWELVEDATA_API_KEY:
+        return results, []  # 키 없으면 조용히 스킵 (에러 아님, 다음 소스로 폴백)
+
+    try:
+        resp = requests.get(
+            "https://api.twelvedata.com/quote",
+            params={"symbol": symbols_csv, "apikey": TWELVEDATA_API_KEY},
+            timeout=5,
+        )
+        data = resp.json()
+    except Exception as e:
+        return results, [f"TwelveData: {e}"]
+
+    # 심볼이 1개면 바로 딕셔너리, 여러 개면 {symbol: {...}} 형태로 옴
+    if len(symbols) == 1:
+        data = {symbols[0]: data}
+
+    errors = []
+    for sym in symbols:
+        entry = data.get(sym, {})
+        if not isinstance(entry, dict) or entry.get("status") == "error" or "close" not in entry:
+            errors.append(f"TwelveData({sym}): {entry.get('message', 'no data')}")
+            continue
+        try:
+            price = float(entry["close"])
+            prev_close = float(entry.get("previous_close", price))
+            chg = float(entry.get("change", price - prev_close))
+            pct = float(entry.get("percent_change", (chg / prev_close * 100.0) if prev_close else 0.0))
+            results[sym] = (price, chg, pct)
+        except Exception as e:
+            errors.append(f"TwelveData({sym}): parse error {e}")
+
+    return results, errors
+
+
+YF_TICKERS = ['ES=F']
 
 
 @st.cache_data(ttl=20, show_spinner=False)
-def fetch_yf_batch():
+def fetch_yf_batch(tickers):
     """
-    4개 티커를 한 번의 HTTP 요청으로 가져온다 (야후 파이낸스 Rate Limit 완화 목적).
-    개별 Ticker().fast_info / .history() 호출을 여러 번 하면 429(Too Many Requests)가
-    훨씬 자주 발생하므로, yf.download()로 배치 조회한다.
+    티커들을 한 번의 HTTP 요청으로 가져온다 (야후 파이낸스 Rate Limit 완화 목적).
+    Twelve Data/Alpaca가 실패했을 때만 폴백으로 호출되므로 평소엔 거의 안 쓰인다.
     일봉(1d) 기준이라 정확히 실시간 tick은 아니지만, 장중에는 당일 봉이
     계속 갱신되므로 충분히 현재가에 가깝다.
 
+    tickers: 튜플 (캐시 키로 쓰이려면 리스트가 아니라 해시 가능한 타입이어야 함)
     반환: ({ticker: (price, chg, pct) or (None, None, None)}, [에러메시지...])
     """
-    results = {t: (None, None, None) for t in YF_TICKERS}
+    tickers = list(tickers)
+    results = {t: (None, None, None) for t in tickers}
     errors = []
+    if not tickers:
+        return results, errors
     try:
         df = yf.download(
-            tickers=YF_TICKERS,
+            tickers=tickers,
             period="5d",
             interval="1d",
             group_by="ticker",
@@ -139,7 +187,7 @@ def fetch_yf_batch():
     if df is None or df.empty:
         return results, ["yfinance batch: empty response (rate limited일 가능성)"]
 
-    for sym in YF_TICKERS:
+    for sym in tickers:
         try:
             sub = df[sym] if isinstance(df.columns, pd.MultiIndex) else df
             closes = sub['Close'].dropna()
@@ -165,27 +213,47 @@ def fetch_market_data():
     # 절대 읽거나 쓰지 않는다. 에러는 로컬 리스트에 모아서 반환값으로 전달한다.
     errors = []
 
+    # 1순위: Alpaca (SPY, 실시간)
     alp_spy_p, alp_spy_c, alp_spy_pct, alp_err = fetch_alpaca_stock_snapshot("SPY")
     if alp_err:
         errors.append(alp_err)
 
-    yf_results, yf_errors = fetch_yf_batch()
+    # 1순위: Twelve Data (SPX, VIX) - 한 번의 호출로 2개 심볼 조회
+    td_results, td_errors = fetch_twelvedata_quotes("SPX,VIX")
+    errors.extend(td_errors)
+    spx_p, spx_c, spx_pct = td_results.get("SPX", (None, None, None))
+    vix_p, vix_c, vix_pct = td_results.get("VIX", (None, None, None))
+
+    # 2순위(폴백): yfinance - ES 선물만. SPX/VIX/SPY는 Twelve Data/Alpaca가
+    # 실패했을 때만 백업으로 추가 조회한다 (요청 수를 최대한 아끼기 위함).
+    need_yf_backup = spx_p is None or vix_p is None or alp_spy_p is None
+    yf_symbols = list(YF_TICKERS)  # ['ES=F']
+    if spx_p is None:
+        yf_symbols.append('^GSPC')
+    if vix_p is None:
+        yf_symbols.append('^VIX')
+    if alp_spy_p is None:
+        yf_symbols.append('SPY')
+
+    yf_results, yf_errors = fetch_yf_batch(tuple(yf_symbols))
     errors.extend(yf_errors)
 
-    spx_p, spx_c, spx_pct = yf_results['^GSPC']
-    es_p, es_c, es_pct = yf_results['ES=F']
-    vix_p, vix_c, vix_pct = yf_results['^VIX']
-    spy_p, spy_c, spy_pct = yf_results['SPY']
+    es_p, es_c, es_pct = yf_results.get('ES=F', (None, None, None))
+    spy_p, spy_c, spy_pct = (alp_spy_p, alp_spy_c, alp_spy_pct) if alp_spy_p is not None \
+        else yf_results.get('SPY', (None, None, None))
 
-    if alp_spy_p is not None:
-        spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
+    if spx_p is None:
+        spx_p, spx_c, spx_pct = yf_results.get('^GSPC', (None, None, None))
+    if vix_p is None:
+        vix_p, vix_c, vix_pct = yf_results.get('^VIX', (None, None, None))
 
-    # SPX/ES 조회가 실패했을 때만 SPY 기반 근사치 사용 (SPY도 없으면 그대로 None)
+    # 마지막 안전망: 그래도 SPX가 없으면 SPY 기반 근사치 (근사치임을 명확히 인지)
     if spx_p is None and spy_p is not None:
         spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
-    if es_p is None and spy_p is not None:
-        es_p, es_c, es_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
+    # ES 선물도 못 구했으면 SPX로 근사 (실제 선물 베이시스는 반영 안 된 근사치)
+    if es_p is None and spx_p is not None:
+        es_p, es_c, es_pct = spx_p, spx_c, spx_pct
 
     return {
         'spx': (spx_p, spx_c, spx_pct),
