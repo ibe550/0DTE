@@ -4,4 +4,3 @@ numpy
 pytz
 yfinance
 plotly
-git+https://github.com/ynot123/tvdatafeed.git
