@@ -59,21 +59,6 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    spy_price, spy_change, spy_pct = 560.0, 0.0, 0.0
-    vix_val, vix_change, vix_pct = 15.0, 0.0, 0.0
-    
-    # 1단계: Alpaca API를 통한 정확한 SPY 및 VIX 실시간 시세 조회 시도
-    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
-        try:
-            engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
-            # Alpaca를 통해 최신 SPY 주가 가져오기
-            alpaca_chain = engine.get_0dte_chain_analytics(symbol="SPY", current_price=None)
-            if alpaca_chain and alpaca_chain.get('underlying_price'):
-                spy_price = float(alpaca_chain['underlying_price'])
-        except Exception:
-            pass
-
-    # 2단계: 야후 파이낸스 오류 방어를 위한 다중 백업 안전 장치 (SPY, VIX, ES)
     def get_safe_yf(symbol, default_val):
         try:
             t = yf.Ticker(symbol)
@@ -88,26 +73,45 @@ def fetch_market_data():
             pass
         return (default_val, 0.0, 0.0)
 
-    spy_yf = get_safe_yf('SPY', 560.0)
-    if spy_price == 560.0:
-        spy_price = spy_yf[0]
+    # 1. 가장 신뢰성 높은 ES(E-mini S&P 500 선물) 가격 먼저 조회
+    es_p, es_c, es_pct = get_safe_yf('ES=F', 5600.0)
+    vix_p, vix_c, vix_pct = get_safe_yf('^VIX', 15.0)
+
+    # 2. Alpaca API 시도 (가능한 경우)
+    alpaca_spy = None
+    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
+        try:
+            engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+            alpaca_chain = engine.get_0dte_chain_analytics(symbol="SPY", current_price=None)
+            if alpaca_chain and alpaca_chain.get('underlying_price'):
+                alpaca_spy = float(alpaca_chain['underlying_price'])
+        except Exception:
+            pass
+
+    # 3. SPY 및 SPX 가격 산출 (프리장/야간장 고정 방지: ES 선물 변화율 연동)
+    base_spy = alpaca_spy if alpaca_spy else get_safe_yf('SPY', 560.0)[0]
     
-    spy_change = spy_yf[1]
-    spy_pct = spy_yf[2]
-
-    # SPX는 SPY * 10 연동 (가장 정확함) 또는 ES 선물 연동
-    es = get_safe_yf('ES=F', spy_price * 10)
-    spx_val = spy_price * 10.0
-    spx_change = spy_change * 10.0
-    spx_pct = spy_pct
-
-    vix = get_safe_yf('^VIX', 15.0)
+    if es_p > 0 and es_pct != 0:
+        spx_val = es_p
+        spx_change = es_c
+        spx_pct = es_pct
+        
+        spy_val = es_p / 10.0
+        spy_change = es_c / 10.0
+        spy_pct = es_pct
+    else:
+        spy_val = base_spy
+        spy_change = 0.0
+        spy_pct = 0.0
+        spx_val = base_spy * 10.0
+        spx_change = 0.0
+        spx_pct = 0.0
 
     return {
         'spx': (spx_val, spx_change, spx_pct),
-        'vix': vix,
-        'es': es,
-        'spy': (spy_price, spy_change, spy_pct)
+        'vix': (vix_p, vix_c, vix_pct),
+        'es': (es_p, es_c, es_pct),
+        'spy': (spy_val, spy_change, spy_pct)
     }
 
 @st.cache_data(ttl=30)
@@ -173,7 +177,7 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
     if option_analytics and option_analytics.get('call_15d_strike'):
         c_15d = option_analytics['call_15d_strike']
         p_15d = option_analytics['put_15d_strike']
-        ratio = current_price / 560.0 if current_price > 0 else 10.0
+        ratio = current_price / 5600.0 if current_price > 0 else 1.0
         
         call_strike = int(round(c_15d * ratio / 5.0) * 5)
         put_strike = int(round(p_15d * ratio / 5.0) * 5)
@@ -234,7 +238,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.6</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.7</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
