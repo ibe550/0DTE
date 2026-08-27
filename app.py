@@ -142,7 +142,6 @@ def fetch_es_history(interval_str):
     except Exception:
         return None
 
-# --- Alpaca 옵션 체인 실시간 데이터 획득 ---
 @st.cache_data(ttl=10)
 def fetch_alpaca_0dte_analytics(spy_price):
     if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
@@ -207,6 +206,8 @@ es_p, es_c, es_pct = market_data['es']
 spy_p, spy_c, spy_pct = market_data['spy']
 
 es_df = fetch_es_history("5m")
+
+# --- [정의 누락 방지] news_score 및 지표 계산을 렌더링보다 상단으로 배치 ---
 news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
 
 if es_df is not None and not es_df.empty:
@@ -227,7 +228,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- [복구 완료] 기존 실시간 주요 지수 시세 Top Cards ---
+# --- 실시간 주요 지수 시세 Top Cards ---
 spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
 vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
 es_color = "#10b981" if es_c >= 0 else "#ef4444"
@@ -258,8 +259,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- [복구 완료] Market Regime / Anomaly / Delta Status Cards ---
+# --- Market Regime / Anomaly / Delta Status Cards ---
 z_color = "#ef4444" if abs(z_score) > 2.0 else "#10b981"
+sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
+
 st.markdown(f"""
 <div class="grid-4col">
 <div class="metric-card">
@@ -336,7 +339,6 @@ if result:
 
 # --- Live News ---
 news_box_class = "news-box-alert" if news_sentiment['risk_level'] == "HIGH" else "news-box-neutral"
-sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
 
 st.markdown(f"""
 <div class="{news_box_class}">
