@@ -17,67 +17,99 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for UI styling
+# ---------------------------------------------------------
+# Mobile Optimized CSS (여백 및 폰트 축소, 모바일 2열 그리드)
+# ---------------------------------------------------------
 st.markdown("""
 <style>
+/* 기본 배경 및 여백 제거 */
 .stApp { background-color: #0b0e14; color: #e1e6ed; }
 .block-container {
-    padding-top: 0.8rem !important;
-    padding-bottom: 1rem !important;
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.4rem !important;
     max-width: 100% !important;
 }
+
+/* Streamlit 기본 위젯 간격 축소 */
+[data-testid="stVerticalBlock"] > div {
+    gap: 0.3rem !important;
+}
+
+/* 카드 및 박스 스타일 지정 */
 .card-box {
     background-color: #121721;
     border: 1px solid #1f2937;
-    border-radius: 8px;
-    padding: 10px;
-    margin-bottom: 8px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
 }
 .news-box {
     background-color: #161114;
     border: 1px solid #3d1c1c;
-    border-radius: 8px;
-    padding: 10px;
-    margin-bottom: 8px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
 }
 .signal-box {
     background-color: #16150e;
     border: 1px solid #785a00;
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 8px;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
 }
-.badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
-.badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
-.badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+
+/* 뱃지 및 태그 */
+.badge-red { background-color: #991b1b; color: #fca5a5; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
+.badge-green { background-color: #065f46; color: #6ee7b7; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
+.badge-yellow { background-color: #78350f; color: #fde68a; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
 .risk-tag {
     background-color: #211522;
     border: 1px solid #4a284e;
     color: #d8b4fe;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
     font-weight: bold;
     display: inline-block;
     margin-right: 2px;
-    margin-bottom: 2px;
 }
+
+/* 모바일 전용 2열 타일 레이아웃 */
+.grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.metric-card {
+    background-color: #121721;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+.metric-label { font-size: 10px; color: #9ca3af; font-weight: bold; }
+.metric-val { font-size: 16px; font-weight: bold; color: #ffffff; line-height: 1.2; }
+.metric-sub { font-size: 10px; margin-top: 2px; }
+
+/* 프로그레스 바 */
 .bar-container {
     width: 100%;
     background-color: #ef4444;
-    height: 6px;
+    height: 5px;
     border-radius: 3px;
     overflow: hidden;
-    margin: 4px 0;
+    margin: 3px 0;
 }
 .bar-fill { height: 100%; background-color: #10b981; }
+
+hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Robust Real-time Fast Fetch Engine (5s Cache)
+# Real-time Fast Fetch Engine
 # ---------------------------------------------------------
 @st.cache_data(ttl=5)
 def fetch_market_data():
@@ -146,14 +178,11 @@ def calculate_support_resistance(current_price):
         s1 = current_price - 15.0
         s2 = current_price - 30.0
 
-    r2_strike = int(round(r2 / 5.0) * 5)
-    r1_strike = int(round(r1 / 5.0) * 5)
-    s1_strike = int(round(s1 / 5.0) * 5)
-    s2_strike = int(round(s2 / 5.0) * 5)
-    
     return {
-        'R2': r2_strike, 'R1': r1_strike,
-        'S1': s1_strike, 'S2': s2_strike
+        'R2': int(round(r2 / 5.0) * 5),
+        'R1': int(round(r1 / 5.0) * 5),
+        'S1': int(round(s1 / 5.0) * 5),
+        'S2': int(round(s2 / 5.0) * 5)
     }
 
 if "backtest_result" not in st.session_state:
@@ -169,19 +198,15 @@ es_p, es_c, es_pct = market_data['es']
 
 sr_levels = calculate_support_resistance(spx_p)
 
-# 1. Top Bar Header
+# 1. Header
 st.markdown(f"""
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; font-size: 15px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 2px 4px; border-radius: 4px; font-size: 10px; color: #9ca3af;">v14.1</span></span>
-    <span style="background-color: #1f2937; padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #9ca3af;">● Live | 🕒 {now_est.strftime('%H:%M')} ET</span>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+    <span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v14.2 Mobile</span></span>
+    <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# REALTIME PROBABILITY ENGINE
-# ---------------------------------------------------------
-st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 8px;'>🎲 REALTIME PROBABILITY ENGINE</div>", unsafe_allow_html=True)
-
+# 2. Probability Engine
 tf_option = st.radio(
     "예측 타임프레임 선택",
     ["10분 뒤", "30분 뒤", "1시간 뒤"],
@@ -193,14 +218,12 @@ tf_option = st.radio(
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
-if st.button(f"🚀 [{tf_option}] 승률/하락률 및 기대값 검증"):
-    with st.spinner("과거 데이터 분석 및 양방향 확률 산출 중..."):
+if st.button(f"🚀 [{tf_option}] 승률/기대값 검증", use_container_width=True):
+    with st.spinner("과거 데이터 분석 중..."):
         res = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
         if res:
             res["tf_option"] = tf_option
             st.session_state["backtest_result"] = res
-        else:
-            st.error("분석할 수 있는 데이터가 없거나 시그널이 발생하지 않았습니다.")
 
 result = st.session_state["backtest_result"]
 
@@ -213,62 +236,76 @@ if result:
 
     st.markdown(f"""
 <div class="card-box">
-    <div style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">
-        필터: [거래량 급증 + 양봉 + ATR 변동성] → <b>{tf_name} 결과 예측</b>
-    </div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; text-align: center;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; text-align: center;">
         <div>
-            <div style="font-size: 9px; color: #6b7280;">총 시그널</div>
-            <div style="font-size: 13px; font-weight: bold; color: #e1e6ed;">{total_signals}회</div>
+            <div style="font-size: 8px; color: #6b7280;">총시그널</div>
+            <div style="font-size: 12px; font-weight: bold;">{total_signals}회</div>
         </div>
         <div>
-            <div style="font-size: 9px; color: #6b7280;">▲ 상승 확률</div>
-            <div style="font-size: 13px; font-weight: bold; color: #10b981;">{win_rate}%</div>
+            <div style="font-size: 8px; color: #6b7280;">▲ 상승</div>
+            <div style="font-size: 12px; font-weight: bold; color: #10b981;">{win_rate}%</div>
         </div>
         <div>
-            <div style="font-size: 9px; color: #6b7280;">▼ 하락 확률</div>
-            <div style="font-size: 13px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
+            <div style="font-size: 8px; color: #6b7280;">▼ 하락</div>
+            <div style="font-size: 12px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
         </div>
         <div>
-            <div style="font-size: 9px; color: #6b7280;">기대값 (EV)</div>
-            <div style="font-size: 13px; font-weight: bold; color: #facc15;">+{ev}pt</div>
+            <div style="font-size: 8px; color: #6b7280;">EV</div>
+            <div style="font-size: 12px; font-weight: bold; color: #facc15;">+{ev}pt</div>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-st.divider()
-
-# 2. Breaking News & Risks
+# 3. News & Risk
 st.markdown(f"""
 <div class="news-box">
-    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-        <span style="color: #ef4444; font-weight: bold; font-size: 11px;">⚠️ BREAKING NEWS</span>
-        <span style="color: #6b7280; font-size: 9px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: #ef4444; font-weight: bold; font-size: 10px;">⚠️ NEWS</span>
+        <span style="color: #6b7280; font-size: 8px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
     </div>
-    <p style="font-size: 11px; margin: 0; color: #e5e7eb;">Case for BoC rate hike crumbling as trade war ramps up</p>
+    <div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Case for BoC rate hike crumbling as trade war ramps up</div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
-<div class="card-box" style="padding: 6px 10px;">
-    <span style="color: #f43f5e; font-weight: bold; font-size: 10px;">⚡ RISKS:</span>
+<div class="card-box" style="padding: 4px 6px;">
+    <span style="color: #f43f5e; font-weight: bold; font-size: 9px;">⚡ RISKS: </span>
     <span class="risk-tag">INFLATION</span><span class="risk-tag">FED</span><span class="risk-tag">FOMC</span><span class="risk-tag">WAR</span><span class="risk-tag">CPI</span>
 </div>
 """, unsafe_allow_html=True)
 
-# 3. Ticker Metrics Grid
-col_m1, col_m2 = st.columns(2)
-with col_m1:
-    st.metric(label="SPX INDEX", value=f"{spx_p:.2f}", delta=f"{spx_c:+.2f} ({spx_pct:+.2f}%)")
-    st.metric(label="ES FUTURES", value=f"{es_p:.2f}", delta=f"{es_c:+.2f} ({es_pct:+.2f}%)")
-with col_m2:
-    st.metric(label="VIX INDEX", value=f"{vix_p:.2f}", delta=f"{vix_c:+.2f} ({vix_pct:+.2f}%)", delta_color="inverse")
-    st.metric(label="FEAR & GREED", value="59 (Greed)", delta="1w: 55 | 1m: 41")
+# 4. Ticker Metrics Grid (모바일 2열 고정)
+spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
+es_color = "#10b981" if es_c >= 0 else "#ef4444"
+vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
 
-# ---------------------------------------------------------
-# 4. DECISION SIGNAL
-# ---------------------------------------------------------
+st.markdown(f"""
+<div class="grid-2col">
+    <div class="metric-card">
+        <div class="metric-label">SPX INDEX</div>
+        <div class="metric-val">{spx_p:.2f}</div>
+        <div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">ES FUTURES</div>
+        <div class="metric-val">{es_p:.2f}</div>
+        <div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">VIX INDEX</div>
+        <div class="metric-val">{vix_p:.2f}</div>
+        <div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">FEAR & GREED</div>
+        <div class="metric-val" style="font-size: 14px;">59 (Greed)</div>
+        <div class="metric-sub" style="color: #9ca3af;">1w: 55 | 1m: 41</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 5. Decision Signal
 if result:
     win = result.get('win_rate', 0.0)
     loss = result.get('loss_rate', 0.0)
@@ -276,79 +313,72 @@ if result:
     confidence = min(round(abs(win - loss) * 2), 100)
     
     if win > loss and ev_val > 0:
-        sig_title = "PUT CREDIT SPREAD (상승 우세)"
+        sig_title = "PUT CREDIT SPREAD"
         sig_badge = '<span class="badge-green">BULLISH</span>'
         sig_color = "#10b981"
-        sig_desc = f"상승 확률({win}%)이 높고 EV(+{ev_val}pt)가 양수입니다. <b>Put Credit Spread</b> 권장."
+        sig_desc = f"상승 확률({win}%) 우세. Put Credit Spread 권장."
     elif loss > win:
-        sig_title = "CALL CREDIT SPREAD (하락/조정 우세)"
+        sig_title = "CALL CREDIT SPREAD"
         sig_badge = '<span class="badge-red">BEARISH</span>'
         sig_color = "#ef4444"
-        sig_desc = f"하락 확률({loss}%)이 상승 확률({win}%)보다 높습니다. <b>Call Credit Spread</b> 권장."
+        sig_desc = f"하락 확률({loss}%) 우세. Call Credit Spread 권장."
     else:
-        sig_title = "관망 (NEUTRAL / WAIT)"
+        sig_title = "관망 (NEUTRAL)"
         sig_badge = '<span class="badge-yellow">WAIT</span>'
         sig_color = "#fbbf24"
-        sig_desc = "방향성이 불분명합니다. 추가 수급 확인 후 진입하세요."
+        sig_desc = "방향성 불분명. 수급 추가 확인 필요."
 else:
     sig_title = "백테스트 검증 필요"
     sig_badge = '<span class="badge-yellow">⏱️ READY</span>'
     sig_color = "#fbbf24"
     confidence = 0
-    sig_desc = "상단 버튼을 눌러 승률/하락률을 검증해 주세요."
+    sig_desc = "상단 버튼을 눌러 승률을 검증하세요."
 
 st.markdown(f"""
 <div class="signal-box">
     <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 11px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
+        <span style="font-size: 10px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
         {sig_badge}
     </div>
-    <div style="margin-top: 4px;">
-        <span style="font-size: 17px; font-weight: bold; color: {sig_color};">{sig_title}</span>
-        <span style="float: right; font-size: 10px; color: #9ca3af;">CONFIDENCE <b style="font-size: 14px; color: {sig_color};">{confidence}%</b></span>
+    <div style="margin-top: 2px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 15px; font-weight: bold; color: {sig_color};">{sig_title}</span>
+        <span style="font-size: 9px; color: #9ca3af;">CONF <b style="font-size: 12px; color: {sig_color};">{confidence}%</b></span>
     </div>
-    <p style="font-size: 11px; color: #d1d5db; margin: 4px 0 2px 0;">{sig_desc}</p>
+    <div style="font-size: 10px; color: #d1d5db; margin-top: 2px;">{sig_desc}</div>
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# 5. SUPPORT & RESISTANCE / RECOMMENDED STRIKES
-# ---------------------------------------------------------
-st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 6px;'>🎯 SUPPORT/RESISTANCE & RECOMMENDED STRIKES</div>", unsafe_allow_html=True)
-
+# 6. Support / Resistance (모바일 2열 카드)
 diff_r2 = round(sr_levels['R2'] - spx_p, 1)
 diff_s2 = round(spx_p - sr_levels['S2'], 1)
-pct_r2 = round((diff_r2 / spx_p) * 100, 2) if spx_p else 0.0
-pct_s2 = round((diff_s2 / spx_p) * 100, 2) if spx_p else 0.0
 
-col_sr1, col_sr2 = st.columns(2)
+st.markdown(f"""
+<div class="grid-2col">
+    <div class="metric-card" style="border-left: 3px solid #ef4444;">
+        <div style="font-size: 10px; font-weight: bold; color: #fca5a5;">🔴 CALL CREDIT</div>
+        <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{sr_levels['R2']} Strike</div>
+        <div style="font-size: 9px; color: #10b981;">+{diff_r2} pt (R2)</div>
+        <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">💡 <b>{sr_levels['R1']}/{sr_levels['R2']} Call Sell</b></div>
+    </div>
+    <div class="metric-card" style="border-left: 3px solid #10b981;">
+        <div style="font-size: 10px; font-weight: bold; color: #6ee7b7;">🟢 PUT CREDIT</div>
+        <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{sr_levels['S2']} Strike</div>
+        <div style="font-size: 9px; color: #ef4444;">-{diff_s2} pt (S2)</div>
+        <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">💡 <b>{sr_levels['S1']}/{sr_levels['S2']} Put Sell</b></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-with col_sr1:
-    st.markdown("### 🔴 CALL CREDIT")
-    st.metric(label="2차 저항선 (R2)", value=f"{sr_levels['R2']} Strike", delta=f"+{diff_r2} pt (+{pct_r2}%)")
-    st.caption(f"1차 저항 (R1): {sr_levels['R1']}")
-    st.info(f"💡 **{sr_levels['R1']} / {sr_levels['R2']} Call Sell** 권장")
+# 7. Volume + CVD Chart
+st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
 
-with col_sr2:
-    st.markdown("### 🟢 PUT CREDIT")
-    st.metric(label="2차 지지선 (S2)", value=f"{sr_levels['S2']} Strike", delta=f"-{diff_s2} pt (-{pct_s2}%)")
-    st.caption(f"1차 지지 (S1): {sr_levels['S1']}")
-    st.success(f"💡 **{sr_levels['S1']} / {sr_levels['S2']} Put Sell** 권장")
-
-# 6. Volume + CVD Section
-st.markdown("<div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>📊 VOLUME + CVD (ES=F Live)</div>", unsafe_allow_html=True)
-
-tf_col1, tf_col2 = st.columns([2, 3])
-with tf_col1:
-    selected_tf = st.radio(
-        "TF",
-        ["1m", "5m", "15m", "30m", "1H"],
-        index=2,
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-with tf_col2:
-    st.markdown("<div style='background-color: #7f1d1d; color: #fca5a5; padding: 4px; border-radius: 6px; font-weight: bold; font-size: 10px; text-align: center;'>↓ Selling Pressure</div>", unsafe_allow_html=True)
+selected_tf = st.radio(
+    "TF",
+    ["1m", "5m", "15m", "30m", "1H"],
+    index=2,
+    horizontal=True,
+    label_visibility="collapsed"
+)
 
 es_df = fetch_es_history(selected_tf)
 
@@ -379,30 +409,30 @@ else:
     buy_pct, sell_pct = 48, 52
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_trace(go.Bar(x=dates_str, y=total_vol, name="Volume", marker_color=colors, opacity=0.85), secondary_y=False)
-fig.add_trace(go.Scatter(x=dates_str, y=cvd, name="CVD", line=dict(color='#facc15', width=2)), secondary_y=True)
+fig.add_trace(go.Bar(x=dates_str, y=total_vol, name="Vol", marker_color=colors, opacity=0.85), secondary_y=False)
+fig.add_trace(go.Scatter(x=dates_str, y=cvd, name="CVD", line=dict(color='#facc15', width=1.5)), secondary_y=True)
 
 fig.update_layout(
     template="plotly_dark",
-    height=180,
+    height=140,
     margin=dict(l=0, r=0, t=0, b=0),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
-    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True, type='category'),
-    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True),
-    yaxis2=dict(showgrid=False, title=None, fixedrange=True)
+    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True, type='category', tickfont=dict(size=8)),
+    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True, tickfont=dict(size=8)),
+    yaxis2=dict(showgrid=False, title=None, fixedrange=True, tickfont=dict(size=8))
 )
 
 html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
 components.html(f"""
-<div style="pointer-events: none; user-select: none; width:100%; height:180px;">
+<div style="pointer-events: none; user-select: none; width:100%; height:140px;">
     {html_fig}
 </div>
-""", height=185)
+""", height=145)
 
 st.markdown(f"""
-<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 11px;">
+<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: -5px;">
     <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
     <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
 </div>
