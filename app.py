@@ -12,7 +12,7 @@ import requests
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 
-# --- Alpaca 옵션 및 실시간 데이터 연동 모듈 불러오기 ---
+# --- Alpaca 옵션 모듈 연동 체크 ---
 try:
     from alpaca_options import AlpacaOptionEngine
     HAS_ALPACA_MODULE = True
@@ -26,6 +26,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Streamlit secrets에서 Alpaca 키 조회
 ALPACA_API_KEY = st.secrets.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = st.secrets.get("ALPACA_SECRET_KEY", "")
 
@@ -57,8 +58,8 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-def fetch_alpaca_market_data(symbol="SPY"):
-    """Alpaca API를 통해 실시간 데이터 및 전일 대비 변동률 수신"""
+def fetch_alpaca_stock_snapshot(symbol="SPY"):
+    """Streamlit Cloud IP 차단에 영향 받지 않는 Alpaca API 실시간 데이터 조회"""
     if not (ALPACA_API_KEY and ALPACA_SECRET_KEY):
         return (0.0, 0.0, 0.0)
     try:
@@ -67,21 +68,21 @@ def fetch_alpaca_market_data(symbol="SPY"):
             "APCA-API-KEY-ID": ALPACA_API_KEY,
             "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY
         }
-        resp = requests.get(url, headers=headers, timeout=3)
+        resp = requests.get(url, headers=headers, timeout=4)
         if resp.status_code == 200:
             data = resp.json()
             latest_trade = data.get("latestTrade", {})
             prev_daily = data.get("prevDailyBar", {})
             
-            p = float(latest_trade.get("p", 0.0))
+            price = float(latest_trade.get("p", 0.0))
             prev_close = float(prev_daily.get("c", 0.0))
             
-            if p > 0 and prev_close > 0:
-                chg = p - prev_close
+            if price > 0 and prev_close > 0:
+                chg = price - prev_close
                 pct = (chg / prev_close) * 100.0
-                return (p, chg, pct)
-            elif p > 0:
-                return (p, 0.0, 0.0)
+                return (price, chg, pct)
+            elif price > 0:
+                return (price, 0.0, 0.0)
     except Exception:
         pass
     return (0.0, 0.0, 0.0)
@@ -103,20 +104,20 @@ def fetch_single_ticker(symbol):
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    # 1. Alpaca API로 SPY 실시간 데이터 수신 시도 (가장 우선)
-    alp_spy_p, alp_spy_c, alp_spy_pct = fetch_alpaca_market_data("SPY")
+    # 1. Alpaca API로 SPY 데이터 수신 (Streamlit Cloud 환경 최적화)
+    alp_spy_p, alp_spy_c, alp_spy_pct = fetch_alpaca_stock_snapshot("SPY")
     
-    # 2. 야후 파이낸스 시도
+    # 2. Yahoo Finance 수신 시도
     spx_p, spx_c, spx_pct = fetch_single_ticker('^SPX')
     es_p, es_c, es_pct = fetch_single_ticker('ES=F')
     vix_p, vix_c, vix_pct = fetch_single_ticker('^VIX')
     spy_p, spy_c, spy_pct = fetch_single_ticker('SPY')
 
-    # Alpaca 데이터가 수신되면 야후 SPY를 대체
+    # Alpaca 수신 성공 시 SPY 데이터 교체
     if alp_spy_p > 0:
         spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
 
-    # 3. 지수 상호 보정 (SPY 기반 SPX/ES 10배 정밀 실시간 추정)
+    # 3. SPY 시세 기반으로 SPX/ES 10배 정밀 보정
     if spx_p == 0.0 and spy_p > 0:
         spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
@@ -256,7 +257,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v21.0</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v22.0</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
