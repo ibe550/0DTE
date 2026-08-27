@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
+import time
 import yfinance as yf
 import requests
 
@@ -57,9 +58,25 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
+
+# ============================================================
+# 시세 조회 (수정됨: 가짜 fallback 제거, ^SPX -> ^GSPC, fast_info 사용)
+# ============================================================
+
+def fmt(val, fmt_str="{:,.2f}"):
+    """None이면 'N/A' 문자열, 아니면 포맷된 숫자 문자열을 반환."""
+    return fmt_str.format(val) if val is not None else "N/A"
+
+
+def safe(val, default=0.0):
+    """색상/부호 비교용: None이면 default로 대체."""
+    return val if val is not None else default
+
+
 def fetch_alpaca_stock_snapshot(symbol="SPY"):
+    """Alpaca 스냅샷 조회. 실패 시 (None, None, None) 반환."""
     if not (ALPACA_API_KEY and ALPACA_SECRET_KEY):
-        return (0.0, 0.0, 0.0)
+        return (None, None, None)
     try:
         url = f"https://data.alpaca.markets/v2/stocks/{symbol}/snapshot"
         headers = {
@@ -67,70 +84,96 @@ def fetch_alpaca_stock_snapshot(symbol="SPY"):
             "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY
         }
         resp = requests.get(url, headers=headers, timeout=4)
-        if resp.status_code == 200:
-            data = resp.json()
-            latest_trade = data.get("latestTrade", {})
-            prev_daily = data.get("prevDailyBar", {})
-            
-            price = float(latest_trade.get("p", 0.0))
-            prev_close = float(prev_daily.get("c", 0.0))
-            
-            if price > 0 and prev_close > 0:
-                chg = price - prev_close
-                pct = (chg / prev_close) * 100.0
-                return (price, chg, pct)
-            elif price > 0:
-                return (price, 0.0, 0.0)
-    except Exception:
-        pass
-    return (0.0, 0.0, 0.0)
+        resp.raise_for_status()
+        data = resp.json()
+        latest_trade = data.get("latestTrade", {})
+        prev_daily = data.get("prevDailyBar", {})
 
-def fetch_single_ticker(symbol):
-    try:
-        t = yf.Ticker(symbol)
-        hist = t.history(period="5d")
-        if not hist.empty and len(hist) >= 1:
-            p = float(hist['Close'].iloc[-1])
-            prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else p
-            chg = p - prev
-            pct = (chg / prev) * 100.0 if prev != 0 else 0.0
-            if p > 0:
-                return (p, chg, pct)
-    except Exception:
-        pass
-    return (0.0, 0.0, 0.0)
+        price = float(latest_trade.get("p", 0.0))
+        prev_close = float(prev_daily.get("c", 0.0))
+
+        if price > 0 and prev_close > 0:
+            chg = price - prev_close
+            pct = (chg / prev_close) * 100.0
+            return (price, chg, pct)
+        elif price > 0:
+            return (price, 0.0, 0.0)
+    except Exception as e:
+        st.session_state.setdefault("data_errors", []).append(f"Alpaca({symbol}): {e}")
+    return (None, None, None)
+
+
+def fetch_single_ticker(symbol, retries=2):
+    """
+    실시간에 가까운 가격 조회.
+    1) fast_info 우선 시도 (실시간에 가장 가까움)
+    2) 실패 시 1일 간격 history로 폴백
+    3) 그래도 실패하면 (None, None, None) 반환 -> 가짜 숫자를 만들지 않음
+    """
+    last_err = None
+    for attempt in range(retries):
+        try:
+            t = yf.Ticker(symbol)
+
+            try:
+                fi = t.fast_info
+                price = float(fi.get("last_price") or fi.get("lastPrice") or 0.0)
+                prev_close = float(fi.get("previous_close") or fi.get("previousClose") or 0.0)
+                if price > 0 and prev_close > 0:
+                    chg = price - prev_close
+                    pct = (chg / prev_close) * 100.0
+                    return (price, chg, pct)
+            except Exception:
+                pass
+
+            hist = t.history(period="5d", interval="1d")
+            if not hist.empty:
+                p = float(hist['Close'].iloc[-1])
+                prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else p
+                chg = p - prev
+                pct = (chg / prev) * 100.0 if prev != 0 else 0.0
+                if p > 0:
+                    return (p, chg, pct)
+
+            last_err = "empty response"
+        except Exception as e:
+            last_err = str(e)
+        time.sleep(0.5)
+
+    st.session_state.setdefault("data_errors", []).append(f"{symbol}: {last_err}")
+    return (None, None, None)
+
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
+    st.session_state["data_errors"] = []
+
     alp_spy_p, alp_spy_c, alp_spy_pct = fetch_alpaca_stock_snapshot("SPY")
-    
-    spx_p, spx_c, spx_pct = fetch_single_ticker('^SPX')
+
+    # 주의: Yahoo Finance에서 S&P500 지수 티커는 ^SPX가 아니라 ^GSPC 입니다.
+    spx_p, spx_c, spx_pct = fetch_single_ticker('^GSPC')
     es_p, es_c, es_pct = fetch_single_ticker('ES=F')
     vix_p, vix_c, vix_pct = fetch_single_ticker('^VIX')
     spy_p, spy_c, spy_pct = fetch_single_ticker('SPY')
 
-    if alp_spy_p > 0:
+    if alp_spy_p is not None:
         spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
 
-    # 지수 0.0 방지 및 자동 보정
-    if spy_p == 0.0:
-        spy_p, spy_c, spy_pct = 505.20, +1.25, +0.25
-
-    if spx_p == 0.0:
+    # SPX/ES 조회가 실패했을 때만 SPY 기반 근사치 사용 (SPY도 없으면 그대로 None)
+    if spx_p is None and spy_p is not None:
         spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
-    if es_p == 0.0:
+    if es_p is None and spy_p is not None:
         es_p, es_c, es_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
-
-    if vix_p == 0.0:
-        vix_p, vix_c, vix_pct = 15.50, -0.20, -1.27
 
     return {
         'spx': (spx_p, spx_c, spx_pct),
         'vix': (vix_p, vix_c, vix_pct),
         'es': (es_p, es_c, es_pct),
-        'spy': (spy_p, spy_c, spy_pct)
+        'spy': (spy_p, spy_c, spy_pct),
+        'errors': st.session_state.get("data_errors", []),
     }
+
 
 @st.cache_data(ttl=30)
 def fetch_latest_news_sentiment():
@@ -164,6 +207,7 @@ def fetch_latest_news_sentiment():
 
     return {"title": title, "sentiment": sentiment, "link": link}
 
+
 @st.cache_data(ttl=15)
 def fetch_es_history(interval_str):
     try:
@@ -173,7 +217,7 @@ def fetch_es_history(interval_str):
         df = t.history(period=period, interval=yf_interval)
         if df.empty:
             return None
-        
+
         df = df.tail(20).copy()
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
@@ -181,9 +225,10 @@ def fetch_es_history(interval_str):
     except Exception:
         return None
 
+
 @st.cache_data(ttl=10)
 def fetch_alpaca_0dte_analytics(spy_price):
-    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
+    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY and spy_price:
         try:
             engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
             return engine.get_0dte_chain_analytics(symbol="SPY", current_price=spy_price)
@@ -191,15 +236,23 @@ def fetch_alpaca_0dte_analytics(spy_price):
             return None
     return None
 
+
 def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distance_mult=1.0, option_analytics=None):
-    """뉴스 감정 및 뉴스 점수를 반영한 완전 동적 Strike 계산 함수"""
+    if current_price is None:
+        return {
+            'dyn_call_sell': "N/A",
+            'dyn_put_sell': "N/A",
+            'call_target': None,
+            'put_target': None,
+        }
+
     if option_analytics and option_analytics.get('call_15d_strike'):
         c_15d = option_analytics['call_15d_strike']
         p_15d = option_analytics['put_15d_strike']
-        
+
         call_strike = int(round((c_15d * 10.0) / 5.0) * 5)
         put_strike = int(round((p_15d * 10.0) / 5.0) * 5)
-        
+
         return {
             'dyn_call_sell': f"{call_strike+5}/{call_strike}",
             'dyn_put_sell': f"{put_strike-5}/{put_strike}",
@@ -207,16 +260,14 @@ def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distanc
             'put_target': put_strike,
         }
 
-    # 기본 변동성 거리 (최소 25pt ~ 최대 55pt)
     base_span = 30.0 * distance_mult
 
-    # 뉴스 점수(news_score) 가중치 반영
-    if news_score > 0:  # 호재
-        call_offset = base_span * (1.0 + (news_score * 0.2))  # 상방 공간 확대
-        put_offset = max(18.0, base_span * (1.0 - (news_score * 0.15))) # 하방 바짝 붙임
-    elif news_score < 0: # 악재
-        call_offset = max(18.0, base_span * (1.0 - (abs(news_score) * 0.15))) # 상방 바짝 붙임
-        put_offset = base_span * (1.0 + (abs(news_score) * 0.2)) # 하방 공간 확대
+    if news_score > 0:
+        call_offset = base_span * (1.0 + (news_score * 0.2))
+        put_offset = max(18.0, base_span * (1.0 - (news_score * 0.15)))
+    elif news_score < 0:
+        call_offset = max(18.0, base_span * (1.0 - (abs(news_score) * 0.15)))
+        put_offset = base_span * (1.0 + (abs(news_score) * 0.2))
     else:
         call_offset = base_span
         put_offset = base_span
@@ -231,6 +282,7 @@ def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distanc
         'put_target': put_target,
     }
 
+
 if "backtest_result" not in st.session_state:
     st.session_state["backtest_result"] = None
 
@@ -243,12 +295,13 @@ spx_p, spx_c, spx_pct = market_data['spx']
 vix_p, vix_c, vix_pct = market_data['vix']
 es_p, es_c, es_pct = market_data['es']
 spy_p, spy_c, spy_pct = market_data['spy']
+data_errors = market_data.get('errors', [])
 
 es_df = fetch_es_history("5m")
 news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
 
 if es_df is not None and not es_df.empty:
-    regime, distance_mult = SimonsBenterQuantEngine.detect_market_regime(es_df, vix_p)
+    regime, distance_mult = SimonsBenterQuantEngine.detect_market_regime(es_df, vix_p if vix_p is not None else 15.0)
     z_score = SimonsBenterQuantEngine.calculate_zscore_anomaly(es_df['Close'])
 else:
     regime, distance_mult = "NORMAL_VOLATILITY", 1.0
@@ -260,23 +313,33 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v23.0</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v24.1</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
+# --- 데이터 오류 배너 (신규) ---
+if data_errors:
+    err_text = " / ".join(data_errors[:3])
+    st.markdown(f"""
+    <div style="background-color:#3f1d1d; border:1px solid #7f1d1d; border-radius:6px;
+                padding:4px 8px; margin-bottom:4px; font-size:10px; color:#fca5a5;">
+    ⚠️ 일부 시세 조회 실패 (표시값은 N/A 또는 근사치일 수 있음): {err_text}
+    </div>
+    """, unsafe_allow_html=True)
+
 # --- Top Cards ---
-spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
-vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
-es_color = "#10b981" if es_c >= 0 else "#ef4444"
-spy_color = "#10b981" if spy_c >= 0 else "#ef4444"
+spx_color = "#10b981" if safe(spx_c) >= 0 else "#ef4444"
+vix_color = "#ef4444" if safe(vix_c) >= 0 else "#10b981"
+es_color = "#10b981" if safe(es_c) >= 0 else "#ef4444"
+spy_color = "#10b981" if safe(spy_c) >= 0 else "#ef4444"
 
 st.markdown(f"""
 <div class="grid-4col">
-<div class="metric-card"><div class="metric-label">SPX 지수</div><div class="metric-val">{spx_p:,.2f}</div><div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div></div>
-<div class="metric-card"><div class="metric-label">VIX 변동성</div><div class="metric-val">{vix_p:,.2f}</div><div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div></div>
-<div class="metric-card"><div class="metric-label">ES 선물</div><div class="metric-val">{es_p:,.2f}</div><div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div></div>
-<div class="metric-card"><div class="metric-label">SPY ETF</div><div class="metric-val">{spy_p:,.2f}</div><div class="metric-sub" style="color: {spy_color};">{spy_c:+.2f} ({spy_pct:+.2f}%)</div></div>
+<div class="metric-card"><div class="metric-label">SPX 지수</div><div class="metric-val">{fmt(spx_p)}</div><div class="metric-sub" style="color: {spx_color};">{fmt(spx_c, '{:+.2f}')} ({fmt(spx_pct, '{:+.2f}')}%)</div></div>
+<div class="metric-card"><div class="metric-label">VIX 변동성</div><div class="metric-val">{fmt(vix_p)}</div><div class="metric-sub" style="color: {vix_color};">{fmt(vix_c, '{:+.2f}')} ({fmt(vix_pct, '{:+.2f}')}%)</div></div>
+<div class="metric-card"><div class="metric-label">ES 선물</div><div class="metric-val">{fmt(es_p)}</div><div class="metric-sub" style="color: {es_color};">{fmt(es_c, '{:+.2f}')} ({fmt(es_pct, '{:+.2f}')}%)</div></div>
+<div class="metric-card"><div class="metric-label">SPY ETF</div><div class="metric-val">{fmt(spy_p)}</div><div class="metric-sub" style="color: {spy_color};">{fmt(spy_c, '{:+.2f}')} ({fmt(spy_pct, '{:+.2f}')}%)</div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -330,7 +393,7 @@ if result:
     loss = result.get('loss_rate', 0.0)
     ev_val = result.get('expected_value', 0.0)
     confidence = min(round(abs(win - loss) * 2), 100)
-    
+
     if win > loss and ev_val > 0:
         sig_title = "PUT CREDIT SPREAD"
         sig_badge = '<span class="badge-green">BULLISH</span>'
@@ -368,21 +431,31 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- Dynamic Recommended Strikes ---
-diff_r2 = round(strikes['call_target'] - spx_p, 1)
-diff_s2 = round(spx_p - strikes['put_target'], 1)
+if spx_p is not None and strikes['call_target'] is not None:
+    diff_r2 = round(strikes['call_target'] - spx_p, 1)
+    diff_s2 = round(spx_p - strikes['put_target'], 1)
+    call_target_str = strikes['call_target']
+    put_target_str = strikes['put_target']
+    diff_r2_str = f"+{diff_r2} pt 차이"
+    diff_s2_str = f"-{diff_s2} pt 차이"
+else:
+    call_target_str = "N/A"
+    put_target_str = "N/A"
+    diff_r2_str = "데이터 없음"
+    diff_s2_str = "데이터 없음"
 
 st.markdown(f"""
 <div class="grid-2col">
 <div class="metric-card" style="border-left: 3px solid #ef4444;">
 <div style="font-size: 10px; font-weight: bold; color: #fca5a5;">🔴 CALL CREDIT SPREAD</div>
-<div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{strikes['call_target']} Strike</div>
-<div style="font-size: 9px; color: #10b981;">+{diff_r2} pt 차이</div>
+<div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{call_target_str} Strike</div>
+<div style="font-size: 9px; color: #10b981;">{diff_r2_str}</div>
 <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_call_sell']} Call Sell</b></div>
 </div>
 <div class="metric-card" style="border-left: 3px solid #10b981;">
 <div style="font-size: 10px; font-weight: bold; color: #6ee7b7;">🟢 PUT CREDIT SPREAD</div>
-<div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{strikes['put_target']} Strike</div>
-<div style="font-size: 9px; color: #ef4444;">-{diff_s2} pt 차이</div>
+<div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{put_target_str} Strike</div>
+<div style="font-size: 9px; color: #ef4444;">{diff_s2_str}</div>
 <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_put_sell']} Put Sell</b></div>
 </div>
 </div>
@@ -400,40 +473,42 @@ if es_df_chart is not None and not es_df_chart.empty:
     close_vals = es_df_chart['Close'].values
     open_vals = es_df_chart['Open'].values
     delta = close_vals - open_vals
-    
+
     buy_mask = delta >= 0
     buy_vol = np.where(buy_mask, total_vol * 0.55, total_vol * 0.45)
     sell_vol = total_vol - buy_vol
-    
+
     cvd = np.cumsum(buy_vol - sell_vol) / 1000
     colors = ['#10b981' if b else '#ef4444' for b in buy_mask]
-    
+
     total_buy = np.sum(buy_vol)
     total_sum = np.sum(total_vol) if np.sum(total_vol) > 0 else 1
     buy_pct = int((total_buy / total_sum) * 100)
     sell_pct = 100 - buy_pct
+    chart_data_is_live = True
 else:
     n_bars = 15
     dates_str = [(now_est - timedelta(hours=i)).strftime("%m/%d %H:%M") for i in range(n_bars)][::-1]
-    total_vol = np.random.randint(200, 800, n_bars) * 100000
-    cvd = np.cumsum(np.random.randint(-50, 50, n_bars))
-    colors = ['#10b981' if i % 2 == 0 else '#ef4444' for i in range(n_bars)]
-    buy_pct, sell_pct = 56, 44
+    total_vol = np.zeros(n_bars)
+    cvd = np.zeros(n_bars)
+    colors = ['#374151' for _ in range(n_bars)]
+    buy_pct, sell_pct = 0, 0
+    chart_data_is_live = False
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
 fig.add_trace(go.Bar(
-    x=dates_str, 
-    y=total_vol, 
-    name="Volume", 
-    marker_color=colors, 
+    x=dates_str,
+    y=total_vol,
+    name="Volume",
+    marker_color=colors,
     opacity=0.9,
     marker_line_width=0
 ), secondary_y=False)
 
 fig.add_trace(go.Scatter(
-    x=dates_str, 
-    y=cvd, 
-    name="CVD", 
+    x=dates_str,
+    y=cvd,
+    name="CVD",
     line=dict(color='#facc15', width=2)
 ), secondary_y=True)
 
@@ -444,25 +519,25 @@ fig.update_layout(
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
-    bargap=0.2, 
+    bargap=0.2,
     xaxis=dict(
-        showgrid=False, 
-        fixedrange=True, 
-        type='category', 
+        showgrid=False,
+        fixedrange=True,
+        type='category',
         tickfont=dict(size=10, color='#e1e6ed'),
         nticks=6
     ),
     yaxis=dict(
-        showgrid=True, 
-        gridcolor='#1f2937', 
-        title=None, 
-        fixedrange=True, 
+        showgrid=True,
+        gridcolor='#1f2937',
+        title=None,
+        fixedrange=True,
         tickfont=dict(size=8, color='#9ca3af')
     ),
     yaxis2=dict(
-        showgrid=False, 
-        title=None, 
-        fixedrange=True, 
+        showgrid=False,
+        title=None,
+        fixedrange=True,
         showticklabels=False
     )
 )
@@ -474,12 +549,19 @@ components.html(f"""
 </div>
 """, height=210)
 
-st.markdown(f"""
-<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 2px;">
-<span style="color: #10b981;">▲ Buy {buy_pct}%</span>
-<span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
-</div>
-<div class="bar-container">
-<div class="bar-fill" style="width: {buy_pct}%;"></div>
-</div>
-""", unsafe_allow_html=True)
+if chart_data_is_live:
+    st.markdown(f"""
+    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 2px;">
+    <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
+    <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
+    </div>
+    <div class="bar-container">
+    <div class="bar-fill" style="width: {buy_pct}%;"></div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div style="font-size: 10px; color: #9ca3af; text-align:center; margin-top:2px;">
+    ES=F 데이터를 불러오지 못했습니다.
+    </div>
+    """, unsafe_allow_html=True)
