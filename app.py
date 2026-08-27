@@ -11,7 +11,7 @@ import yfinance as yf
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 
-# --- Alpaca 옵션 데이터 연동 모듈 불러오기 ---
+# --- Alpaca 옵션 및 실시간 데이터 연동 모듈 불러오기 ---
 try:
     from alpaca_options import AlpacaOptionEngine
     HAS_ALPACA_MODULE = True
@@ -59,32 +59,56 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    def get_price_history_fallback(symbol, default_val):
+    spy_price, spy_change, spy_pct = 560.0, 0.0, 0.0
+    vix_val, vix_change, vix_pct = 15.0, 0.0, 0.0
+    
+    # 1단계: Alpaca API를 통한 정확한 SPY 및 VIX 실시간 시세 조회 시도
+    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
+        try:
+            engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+            # Alpaca를 통해 최신 SPY 주가 가져오기
+            alpaca_chain = engine.get_0dte_chain_analytics(symbol="SPY", current_price=None)
+            if alpaca_chain and alpaca_chain.get('underlying_price'):
+                spy_price = float(alpaca_chain['underlying_price'])
+        except Exception:
+            pass
+
+    # 2단계: 야후 파이낸스 오류 방어를 위한 다중 백업 안전 장치 (SPY, VIX, ES)
+    def get_safe_yf(symbol, default_val):
         try:
             t = yf.Ticker(symbol)
-            # history 방식으로 최근 5일 데이터를 가져와서 가장 안전하게 종가 추출
             hist = t.history(period="5d")
             if not hist.empty:
-                price = float(hist['Close'].iloc[-1])
-                prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else price
-                change = price - prev
-                pct = (change / prev) * 100 if prev != 0 else 0.0
-                return (price, change, pct)
+                p = float(hist['Close'].iloc[-1])
+                prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else p
+                chg = p - prev
+                pct = (chg / prev) * 100 if prev != 0 else 0.0
+                return (p, chg, pct)
         except Exception:
             pass
         return (default_val, 0.0, 0.0)
 
-    # 각 티커별 안전 기본값 설정 (야후 일시 오류 방어)
-    spx = get_price_history_fallback('^SPX', 5600.0)
-    vix = get_price_history_fallback('^VIX', 15.0)
-    es = get_price_history_fallback('ES=F', 5600.0)
-    spy = get_price_history_fallback('SPY', 560.0)
+    spy_yf = get_safe_yf('SPY', 560.0)
+    if spy_price == 560.0:
+        spy_price = spy_yf[0]
+    
+    spy_change = spy_yf[1]
+    spy_pct = spy_yf[2]
 
-    # SPX 지수가 만약 정상 조회 안 되면 ES 선물 가격으로 대체 연동
-    if spx[0] == 5600.0 and es[0] != 5600.0:
-        spx = es
+    # SPX는 SPY * 10 연동 (가장 정확함) 또는 ES 선물 연동
+    es = get_safe_yf('ES=F', spy_price * 10)
+    spx_val = spy_price * 10.0
+    spx_change = spy_change * 10.0
+    spx_pct = spy_pct
 
-    return {'spx': spx, 'vix': vix, 'es': es, 'spy': spy}
+    vix = get_safe_yf('^VIX', 15.0)
+
+    return {
+        'spx': (spx_val, spx_change, spx_pct),
+        'vix': vix,
+        'es': es,
+        'spy': (spy_price, spy_change, spy_pct)
+    }
 
 @st.cache_data(ttl=30)
 def fetch_latest_news_sentiment():
@@ -210,7 +234,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.5</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.6</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
@@ -390,6 +414,7 @@ fig.add_trace(go.Scatter(
 fig.update_layout(
     template="plotly_dark",
     height=205,
+...
     margin=dict(l=0, r=0, t=10, b=32),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
