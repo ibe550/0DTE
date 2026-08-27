@@ -135,7 +135,7 @@ def fetch_es_history(interval_str):
             return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-        df = df.tail(100).copy()
+        df = df.tail(25).copy() # 바 개수를 깔끔하게 20~25개로 제한하여 굵직하게 표현
         est_tz = pytz.timezone('US/Eastern')
         df.index = df.index.tz_convert(est_tz)
         return df
@@ -257,7 +257,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Market Regime / Anomaly / Delta Status Cards (Z-Score 설명 포함) ---
+# --- Market Regime / Anomaly / Delta Status Cards ---
 z_color = "#ef4444" if abs(z_score) > 2.0 else "#10b981"
 z_desc = "⚠️ |Z|>2.0 이탈위험" if abs(z_score) > 2.0 else "🛡️ ±2.0 내 통계안정"
 sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
@@ -287,7 +287,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Live Delta Analytics Banner (Alpaca 연동 시에만 상단 표시) ---
+# --- Live Delta Analytics Banner ---
 if alpaca_analytics:
     st.markdown(f"""
 <div class="card-box" style="border-left: 3px solid #3b82f6;">
@@ -418,14 +418,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Volume & CVD Chart ---
+# --- Volume & CVD Chart (오른쪽 스타일처럼 굵직하고 깔끔하게 개선) ---
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
 es_df_chart = fetch_es_history(selected_tf)
 
 if es_df_chart is not None and not es_df_chart.empty:
-    dates_str = [d.strftime("%H:%M") for d in es_df_chart.index]
+    dates_str = [d.strftime("%m/%d %H:%M") for d in es_df_chart.index]
     total_vol = es_df_chart['Volume'].values
     close_vals = es_df_chart['Close'].values
     open_vals = es_df_chart['Open'].values
@@ -443,38 +443,70 @@ if es_df_chart is not None and not es_df_chart.empty:
     buy_pct = int((total_buy / total_sum) * 100)
     sell_pct = 100 - buy_pct
 else:
-    n_bars = 16
-    dates_str = [(now_est - timedelta(minutes=i*15)).strftime("%H:%M") for i in range(n_bars)][::-1]
-    total_vol = np.random.randint(100, 1000, n_bars) * 100
+    n_bars = 15
+    dates_str = [(now_est - timedelta(hours=i)).strftime("%m/%d %H:%M") for i in range(n_bars)][::-1]
+    total_vol = np.random.randint(200, 800, n_bars) * 100000
     cvd = np.cumsum(np.random.randint(-50, 50, n_bars))
     colors = ['#10b981' if i % 2 == 0 else '#ef4444' for i in range(n_bars)]
-    buy_pct, sell_pct = 48, 52
+    buy_pct, sell_pct = 56, 44
 
 fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_trace(go.Bar(x=dates_str, y=total_vol, name="Vol", marker_color=colors, opacity=0.85), secondary_y=False)
-fig.add_trace(go.Scatter(x=dates_str, y=cvd, name="CVD", line=dict(color='#facc15', width=1.5)), secondary_y=True)
+# 굵직한 바 표현을 위해 width 속성 유사 효과 부여 및 세련된 디자인 적용
+fig.add_trace(go.Bar(
+    x=dates_str, 
+    y=total_vol, 
+    name="Volume", 
+    marker_color=colors, 
+    opacity=0.9,
+    marker_line_width=0
+), secondary_y=False)
+
+fig.add_trace(go.Scatter(
+    x=dates_str, 
+    y=cvd, 
+    name="CVD", 
+    line=dict(color='#facc15', width=2)
+), secondary_y=True)
 
 fig.update_layout(
     template="plotly_dark",
-    height=140,
-    margin=dict(l=0, r=0, t=0, b=0),
+    height=170, # 높이를 약간 키워 시원하게 배치
+    margin=dict(l=0, r=0, t=10, b=0),
     paper_bgcolor='#0b0e14',
     plot_bgcolor='#121721',
     showlegend=False,
-    xaxis=dict(showgrid=True, gridcolor='#1f2937', fixedrange=True, type='category', tickfont=dict(size=8)),
-    yaxis=dict(showgrid=True, gridcolor='#1f2937', title=None, fixedrange=True, tickfont=dict(size=8)),
-    yaxis2=dict(showgrid=False, title=None, fixedrange=True, tickfont=dict(size=8))
+    bargap=0.25, # 바 간격을 넓혀 굵직하게 보이도록 조정
+    xaxis=dict(
+        showgrid=False, 
+        fixedrange=True, 
+        type='category', 
+        tickfont=dict(size=8, color='#9ca3af'),
+        nticks=6
+    ),
+    yaxis=dict(
+        showgrid=True, 
+        gridcolor='#1f2937', 
+        title=None, 
+        fixedrange=True, 
+        tickfont=dict(size=8, color='#9ca3af')
+    ),
+    yaxis2=dict(
+        showgrid=False, 
+        title=None, 
+        fixedrange=True, 
+        showticklabels=False # 오른쪽 복잡한 숫자축 숨겨서 오른쪽 스타일처럼 깔끔하게 정리
+    )
 )
 
 html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
 components.html(f"""
-<div style="pointer-events: none; user-select: none; width:100%; height:140px;">
+<div style="pointer-events: none; user-select: none; width:100%; height:170px;">
 {html_fig}
 </div>
-""", height=145)
+""", height=175)
 
 st.markdown(f"""
-<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: -5px;">
+<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 2px;">
 <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
 <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
 </div>
