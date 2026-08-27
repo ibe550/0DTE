@@ -4,8 +4,6 @@ numpy
 pytz
 yfinance
 plotly
-import sys
-import os
-
-# external_0dte 폴더 경로를 시스템 경로에 등록
-sys.path.append(os.path.join(os.path.dirname(__file__), 'external_0dte'))
+scipy
+statsmodels
+quantstats
