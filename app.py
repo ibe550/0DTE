@@ -224,7 +224,6 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0):
         s1 = current_price - 15.0
         s2 = current_price - 30.0
 
-    # 퀀트 마켓 레짐 거리에 따른 피봇 조정
     base_r2 = int(round((current_price + (r2 - current_price) * distance_mult) / 5.0) * 5)
     base_r1 = int(round((current_price + (r1 - current_price) * distance_mult) / 5.0) * 5)
     base_s1 = int(round((current_price - (current_price - s1) * distance_mult) / 5.0) * 5)
@@ -273,7 +272,7 @@ vix_p, vix_c, vix_pct = market_data['vix']
 es_p, es_c, es_pct = market_data['es']
 
 # ---------------------------------------------------------
-# 퀀트 엔진 연동 및 고급 데이터 계산
+# 퀀트 엔진 연동 및 계산
 # ---------------------------------------------------------
 es_df = fetch_es_history("5m")
 news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
@@ -316,14 +315,13 @@ if st.button(f"🚀 [{tf_option}] 승률/기대값 검증", use_container_width=
 
 result = st.session_state["backtest_result"]
 
-# 백테스트 결과를 기반으로 켈리 비중 계산
-win_rate = result.get('win_rate', 0.0) if result else 65.0
-loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1)) if result else 35.0
-kelly_allocation = SimonsBenterQuantEngine.calculate_fractional_kelly(win_rate=win_rate, reward_to_risk_ratio=0.3)
-
+# 켈리 비중 계산 (백테스트 결과가 있으면 적용, 없으면 0)
 if result:
+    win_rate = result.get('win_rate', 0.0)
+    loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
     total_signals = result.get('total_signals', 0)
     ev = result.get('expected_value', 0.0)
+    kelly_allocation = SimonsBenterQuantEngine.calculate_fractional_kelly(win_rate=win_rate, reward_to_risk_ratio=0.3)
 
     st.markdown(f"""
 <div class="card-box">
@@ -347,6 +345,8 @@ if result:
 </div>
 </div>
 """, unsafe_allow_html=True)
+else:
+    kelly_allocation = 0.0
 
 # 3. Dynamic News Alert Box
 news_box_class = "news-box-alert" if news_sentiment['risk_level'] == "HIGH" else "news-box-neutral"
@@ -368,18 +368,32 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Simons & Benter 퀀트 모듈 통계 UI
+# Simons & Benter 퀀트 진단 UI (쉬운 한글 설명 적용)
 # ---------------------------------------------------------
+if abs(z_score) >= 2.0:
+    z_desc = "⚠️ 극단치 (반전주의)"
+elif abs(z_score) >= 1.0:
+    z_desc = "👀 약간 이탈"
+else:
+    z_desc = "✅ 정상 범위"
+
+if kelly_allocation == 0:
+    kelly_desc = "🚫 관망 추천 (진입 금지)"
+else:
+    kelly_desc = f"🎯 잔고의 {kelly_allocation}% 진입"
+
+n_desc = "악재 우세" if news_score < 0 else ("호재 우세" if news_score > 0 else "중립")
+
 st.markdown(f"""
 <div class="card-box" style="border-left: 3px solid #8b5cf6;">
-<div style="font-size: 10px; color: #a78bfa; font-weight: bold;">🧪 QUANT STATISTICAL METRICS (Simons/Benter)</div>
+<div style="font-size: 10px; color: #a78bfa; font-weight: bold;">🧪 QUANT STATISTICAL METRICS (퀀트 진단)</div>
 <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px;">
-<span>Market Regime: <b>{regime}</b></span>
-<span>Z-Score: <b>{z_score} σ</b></span>
+<span>시장 상태: <b>{regime}</b></span>
+<span>주가위치: <b>{z_score} σ ({z_desc})</b></span>
 </div>
 <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
-<span>News Multi-Score: <b>{news_score} pts</b></span>
-<span>Kelly Sizing: <b style="color: #facc15;">{kelly_allocation}% Balance</b></span>
+<span>뉴스 점수: <b>{news_score} pts ({n_desc})</b></span>
+<span>추천 비중: <b style="color: #facc15;">{kelly_desc}</b></span>
 </div>
 </div>
 """, unsafe_allow_html=True)
