@@ -11,7 +11,7 @@ import yfinance as yf
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 
-# --- Alpaca 옵션 데이터 연동 모듈 불러오기 (없거나 키가 없어도 안전하게 작동) ---
+# --- Alpaca 옵션 데이터 연동 모듈 불러오기 ---
 try:
     from alpaca_options import AlpacaOptionEngine
     HAS_ALPACA_MODULE = True
@@ -25,7 +25,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Alpaca API Key (현재 비어있으므로 Fallback 피봇 계산 모드로 자동 동작)
+# Alpaca API Key (설정 시 실시간 0DTE Delta 수집, 미설정 시 피봇 계산으로 안전 작동)
 ALPACA_API_KEY = st.secrets.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = st.secrets.get("ALPACA_SECRET_KEY", "")
 
@@ -49,10 +49,11 @@ st.markdown("""
 .badge-yellow { background-color: #78350f; color: #fde68a; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
 .risk-tag { background-color: #211522; border: 1px solid #4a284e; color: #d8b4fe; padding: 1px 4px; border-radius: 3px; font-size: 9px; font-weight: bold; display: inline-block; margin-right: 2px; }
 .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px; }
+.grid-4col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
 .metric-card { background-color: #121721; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 8px; }
 .metric-label { font-size: 10px; color: #9ca3af; font-weight: bold; }
-.metric-val { font-size: 16px; font-weight: bold; color: #ffffff; line-height: 1.2; }
-.metric-sub { font-size: 10px; margin-top: 2px; }
+.metric-val { font-size: 15px; font-weight: bold; color: #ffffff; line-height: 1.2; }
+.metric-sub { font-size: 9px; margin-top: 2px; }
 .bar-container { width: 100%; background-color: #ef4444; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0; }
 .bar-fill { height: 100%; background-color: #10b981; }
 hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
@@ -153,12 +154,9 @@ def fetch_alpaca_0dte_analytics(spy_price):
     return None
 
 def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, option_analytics=None):
-    # Alpaca 실시간 Delta 데이터가 존재하는 경우 적용
     if option_analytics and option_analytics.get('call_15d_strike'):
         c_15d = option_analytics['call_15d_strike']
         p_15d = option_analytics['put_15d_strike']
-        
-        # SPY Delta 기준을 SPX 지수 포인트 비율로 환산
         ratio = current_price / 560.0 if current_price > 0 else 10.0
         
         call_strike = int(round(c_15d * ratio / 5.0) * 5)
@@ -173,7 +171,6 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
             'is_live_delta': True
         }
 
-    # API Key 미설정 시 피봇 및 변동성 기반 추정 계산 모드 (Fallback)
     es_df = fetch_es_history("5m")
     if es_df is not None and not es_df.empty:
         high, low, close = es_df['High'].max(), es_df['Low'].min(), es_df['Close'].iloc[-1]
@@ -219,7 +216,6 @@ else:
     regime, distance_mult = "NORMAL_VOLATILITY", 1.0
     z_score = 0.0
 
-# Alpaca 옵션 데이터 실시간 조회 (키 없으면 None)
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
 strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca_analytics)
 
@@ -228,6 +224,64 @@ st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
 <span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.2</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
+</div>
+""", unsafe_allow_html=True)
+
+# --- [복구 완료] 기존 실시간 주요 지수 시세 Top Cards ---
+spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
+vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
+es_color = "#10b981" if es_c >= 0 else "#ef4444"
+spy_color = "#10b981" if spy_c >= 0 else "#ef4444"
+
+st.markdown(f"""
+<div class="grid-4col">
+<div class="metric-card">
+<div class="metric-label">SPX 지수</div>
+<div class="metric-val">{spx_p:,.2f}</div>
+<div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">VIX 변동성</div>
+<div class="metric-val">{vix_p:,.2f}</div>
+<div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">ES 선물</div>
+<div class="metric-val">{es_p:,.2f}</div>
+<div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">SPY ETF</div>
+<div class="metric-val">{spy_p:,.2f}</div>
+<div class="metric-sub" style="color: {spy_color};">{spy_c:+.2f} ({spy_pct:+.2f}%)</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+# --- [복구 완료] Market Regime / Anomaly / Delta Status Cards ---
+z_color = "#ef4444" if abs(z_score) > 2.0 else "#10b981"
+st.markdown(f"""
+<div class="grid-4col">
+<div class="metric-card">
+<div class="metric-label">REGIME</div>
+<div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div>
+<div class="metric-sub" style="color:#9ca3af;">Dist Mult: {distance_mult}x</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">Z-SCORE</div>
+<div class="metric-val" style="color: {z_color};">{z_score:+.2f}</div>
+<div class="metric-sub" style="color:#9ca3af;">{'⚠️ Anomaly' if abs(z_score) > 2.0 else 'Normal'}</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">DELTA TARGET</div>
+<div class="metric-val">0.15 Δ</div>
+<div class="metric-sub" style="color:#10b981;">Target 85% Win</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">NEWS SCORE</div>
+<div class="metric-val" style="color: {sent_color};">{news_score:+.2f}</div>
+<div class="metric-sub" style="color:#9ca3af;">{news_sentiment['sentiment']}</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
