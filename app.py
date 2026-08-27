@@ -465,6 +465,12 @@ if result:
     loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
     total_signals = result.get('total_signals', 0)
     ev = result.get('expected_value', 0.0)
+    bullish_signals = result.get('bullish_signals')
+    bearish_signals = result.get('bearish_signals')
+    confidence_level = result.get('confidence_level')
+    margin_of_error = result.get('margin_of_error')
+    date_start = result.get('date_start')
+    date_end = result.get('date_end')
 
     st.markdown(f"""
 <div class="card-box">
@@ -474,6 +480,32 @@ if result:
 <div><div style="font-size: 8px; color: #6b7280;">▼ 하락</div><div style="font-size: 12px; font-weight: bold; color: #ef4444;">{loss_rate}%</div></div>
 <div><div style="font-size: 8px; color: #6b7280;">EV</div><div style="font-size: 12px; font-weight: bold; color: #facc15;">+{ev}pt</div></div>
 </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # --- 신뢰도 / 표본 구성 안내 (신규) ---
+    if confidence_level is not None:
+        conf_colors = {"LOW": "#ef4444", "MEDIUM": "#facc15", "HIGH": "#10b981"}
+        conf_labels = {"LOW": "낮음", "MEDIUM": "보통", "HIGH": "높음"}
+        conf_color = conf_colors.get(confidence_level, "#9ca3af")
+        conf_label = conf_labels.get(confidence_level, confidence_level)
+
+        low_conf_warning = ""
+        if confidence_level == "LOW":
+            low_conf_warning = ("<div style='margin-top:2px; color:#fca5a5;'>"
+                                 "⚠️ 표본이 30개 미만이라 승률/하락률이 노이즈일 가능성이 높습니다. "
+                                 "참고용으로만 활용하세요.</div>")
+
+        period_str = f"{date_start} ~ {date_end}" if date_start and date_end else ""
+
+        st.markdown(f"""
+<div class="card-box" style="font-size: 9px; color: #9ca3af;">
+<div style="display:flex; justify-content:space-between;">
+<span>신뢰도: <b style="color:{conf_color};">{conf_label}</b> (오차범위 ±{margin_of_error}%p, 95% 신뢰구간)</span>
+<span>상승신호 {bullish_signals}회 / 하락신호 {bearish_signals}회</span>
+</div>
+<div style="margin-top:2px;">분석 구간: {period_str}</div>
+{low_conf_warning}
 </div>
 """, unsafe_allow_html=True)
 
