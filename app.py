@@ -1,9 +1,3 @@
-import sys
-import os
-
-# external_0dte 경로 등록
-sys.path.append(os.path.join(os.path.dirname(__file__), 'external_0dte'))
-
 import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
@@ -13,12 +7,12 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 import yfinance as yf
-from backtest import run_probability_analysis
 
+from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 
 st.set_page_config(
-    page_title="SPX 0DTE DEFENDER & RESEARCH",
+    page_title="SPX 0DTE DEFENDER",
     page_icon="🛡️",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -168,7 +162,7 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0):
 
     sentiment = news_sentiment['sentiment']
     if distance_mult > 1.4:
-        adjust_note = "🚨 실적 발표/장외 폭동 감지: 행수가격 안전거리(Buffer) 1.6배 자동 확대"
+        adjust_note = "🚨 변동성 급증: 행수가격 안전거리(Buffer) 1.6배 확장"
         call_strike = base_r2 + 15
         call_short = base_r2 + 20
         put_strike = base_s2 - 15
@@ -178,19 +172,19 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0):
         call_short = base_r1 + 5
         put_strike = base_s2 - 10
         put_short = base_s2 - 5
-        adjust_note = "⚠️ 악재 뉴스 감지: Put 지지선 추가 하향"
+        adjust_note = "⚠️ 악재 뉴스: Put 지지선 하향"
     elif sentiment == "BULLISH":
         call_strike = base_r2 + 10
         call_short = base_r2 + 15
         put_strike = base_s1
         put_short = base_s1 - 5
-        adjust_note = "🚀 실적 호재/상승 감지: Call 저항선 추가 상향"
+        adjust_note = "🚀 호재 뉴스: Call 저항선 상향"
     else:
         call_strike = base_r2
         call_short = base_r1
         put_strike = base_s2
         put_short = base_s1
-        adjust_note = "⚖️ Standard Dynamic Pivot Strike 적용"
+        adjust_note = "⚖️ Dynamic Pivot Strike 적용 중"
 
     return {
         'R2': base_r2, 'R1': base_r1, 'S1': base_s1, 'S2': base_s2,
@@ -226,15 +220,15 @@ else:
 
 strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult)
 
-# --- 상단 타이틀 ---
+# --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.0 Full Suite</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.1 Core</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
-# --- 백테스트 검증 버튼 ---
+# --- Backtest Controls ---
 tf_option = st.radio(
     "예측 타임프레임 선택",
     ["10분 뒤", "30분 뒤", "1시간 뒤"],
@@ -246,7 +240,7 @@ tf_option = st.radio(
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
-if st.button(f"🚀 [{tf_option}] 승률/기대값 검증", use_container_width=True):
+if st.button(f"🚀 [{tf_option}] 승률/기대값 검증 실행", use_container_width=True):
     with st.spinner("과거 데이터 분석 중..."):
         res = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
         if res:
@@ -275,7 +269,7 @@ if result:
 else:
     kelly_allocation = 0.0
 
-# --- 실시간 뉴스 및 지표 ---
+# --- Live News Sentiment ---
 news_box_class = "news-box-alert" if news_sentiment['risk_level'] == "HIGH" else "news-box-neutral"
 sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
 
@@ -294,7 +288,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 퀀트 지표 (Z-Score & Kelly) ---
+# --- Quant Metrics ---
 if abs(z_score) >= 2.0:
     z_desc = "⚠️ 극단치 (반전주의)"
 elif abs(z_score) >= 1.0:
@@ -311,7 +305,7 @@ n_desc = "실적/호재 우세" if news_score > 0 else ("악재 우세" if news_
 
 st.markdown(f"""
 <div class="card-box" style="border-left: 3px solid #8b5cf6;">
-<div style="font-size: 10px; color: #a78bfa; font-weight: bold;">🧪 QUANT STATISTICAL METRICS (장외 반영)</div>
+<div style="font-size: 10px; color: #a78bfa; font-weight: bold;">🧪 QUANT STATISTICAL METRICS</div>
 <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px;">
 <span>시장 상태: <b>{regime}</b></span>
 <span>주가위치: <b>{z_score} σ ({z_desc})</b></span>
@@ -330,7 +324,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 시장지수 4개 그리드 ---
+# --- Market Cards ---
 spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
 es_color = "#10b981" if es_c >= 0 else "#ef4444"
 vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
@@ -360,7 +354,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 시그널 박스 ---
+# --- Decision Signal Box ---
 if result:
     win = result.get('win_rate', 0.0)
     loss = result.get('loss_rate', 0.0)
@@ -388,7 +382,7 @@ else:
         sig_badge = '<span class="badge-yellow">VOLATILITY</span>'
         sig_color = "#facc15"
         confidence = 75
-        sig_desc = "장외/야간 선물 폭등 감지. 옵션 행수가격 안전거리 자동 확대됨."
+        sig_desc = "야간 선물/실적 변동성 감지. 행수가격 안전거리 자동 확대됨."
     elif news_sentiment['sentiment'] == "BEARISH":
         sig_title = "CALL CREDIT SPREAD (뉴스 우세)"
         sig_badge = '<span class="badge-red">NEWS ALERT</span>'
@@ -416,7 +410,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 추천 행수가격 ---
+# --- Recommended Strikes ---
 diff_r2 = round(strikes['call_target'] - spx_p, 1)
 diff_s2 = round(spx_p - strikes['put_target'], 1)
 
@@ -437,7 +431,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- VOLUME + CVD 차트 ---
+# --- Volume & CVD Chart ---
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio(
@@ -508,70 +502,3 @@ st.markdown(f"""
 <div class="bar-fill" style="width: {buy_pct}%;"></div>
 </div>
 """, unsafe_allow_html=True)
-
-# --- 🔬 외부 0DTE STRATEGY LAB (하단 통합 연동 섹션) ---
-st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("### 🔬 0DTE STRATEGY RESEARCH (VilkovGR Engine)")
-st.caption("외부 `external_0dte` 모듈을 통해 옵션 트레이딩 규칙(손절/익절/델타)별 성과를 시뮬레이션합니다.")
-
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    strategy_type = st.selectbox("전략 선택", ["Iron Condor", "Put Credit Spread", "Call Credit Spread"])
-with col_b:
-    delta_choice = st.select_slider("타겟 Delta", options=[0.05, 0.10, 0.15, 0.20, 0.25], value=0.15)
-with col_c:
-    stop_loss_ratio = st.selectbox("손절 배율", ["100% (1x Premium)", "200% (2x Premium)", "300% (3x Premium)", "손절 없음"], index=1)
-
-if st.button("📊 0DTE 전략 백테스트 시뮬레이션 실행", use_container_width=True):
-    with st.spinner("0DTE 시뮬레이션 계산 중..."):
-        np.random.seed(int(delta_choice * 100))
-        sim_days = 60
-        
-        base_win_rate = 0.90 - (delta_choice * 0.8)
-        if "200%" in stop_loss_ratio:
-            win_rate_sim = base_win_rate * 100
-            mdd_sim = -5.4
-            sharpe_sim = 1.85
-        elif "100%" in stop_loss_ratio:
-            win_rate_sim = (base_win_rate - 0.08) * 100
-            mdd_sim = -3.2
-            sharpe_sim = 1.42
-        else:
-            win_rate_sim = (base_win_rate + 0.05) * 100
-            mdd_sim = -14.8
-            sharpe_sim = 0.95
-
-        cum_val = 10000
-        curve = [cum_val]
-
-        for _ in range(sim_days):
-            win = np.random.rand() < (win_rate_sim / 100.0)
-            if win:
-                cum_val += 150
-            else:
-                mult = 2.0 if "200%" in stop_loss_ratio else (1.0 if "100%" in stop_loss_ratio else 4.0)
-                cum_val -= (150 * mult)
-            curve.append(cum_val)
-
-        st.markdown(f"""
-        <div class="card-box" style="margin-top: 6px;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; text-align: center;">
-            <div><div style="font-size: 8px; color: #9ca3af;">예상 승률</div><div style="font-size: 12px; font-weight: bold; color: #10b981;">{win_rate_sim:.1f}%</div></div>
-            <div><div style="font-size: 8px; color: #9ca3af;">샤프 지수</div><div style="font-size: 12px; font-weight: bold; color: #facc15;">{sharpe_sim}</div></div>
-            <div><div style="font-size: 8px; color: #9ca3af;">최대 낙폭</div><div style="font-size: 12px; font-weight: bold; color: #ef4444;">{mdd_sim}%</div></div>
-            <div><div style="font-size: 8px; color: #9ca3af;">기간</div><div style="font-size: 12px; font-weight: bold;">{sim_days}일</div></div>
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        fig_lab = go.Figure()
-        fig_lab.add_trace(go.Scatter(y=curve, mode='lines', name='Equity Curve', line=dict(color='#10b981', width=2)))
-        fig_lab.update_layout(
-            title=dict(text=f"0DTE {strategy_type} (Delta {delta_choice}) 수익 곡선", font=dict(size=11)),
-            template="plotly_dark",
-            height=200,
-            margin=dict(l=10, r=10, t=30, b=10),
-            paper_bgcolor='#0b0e14',
-            plot_bgcolor='#121721'
-        )
-        st.plotly_chart(fig_lab, use_container_width=True)
