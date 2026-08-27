@@ -7,6 +7,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 import yfinance as yf
+import requests
 
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
@@ -25,7 +26,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Alpaca API Key
 ALPACA_API_KEY = st.secrets.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = st.secrets.get("ALPACA_SECRET_KEY", "")
 
@@ -57,14 +57,34 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# 백업 데이터 초기값 설정 (0이 아닌 현재 시장 근사치로 안전 배치)
-if "last_valid_market_data" not in st.session_state:
-    st.session_state["last_valid_market_data"] = {
-        'spx': (7675.70, 0.0, 0.0),
-        'vix': (15.50, 0.0, 0.0),
-        'es': (7675.70, 0.0, 0.0),
-        'spy': (767.57, 0.0, 0.0)
-    }
+def fetch_alpaca_market_data(symbol="SPY"):
+    """Alpaca API를 통해 실시간 데이터 및 전일 대비 변동률 수신"""
+    if not (ALPACA_API_KEY and ALPACA_SECRET_KEY):
+        return (0.0, 0.0, 0.0)
+    try:
+        url = f"https://data.alpaca.markets/v2/stocks/{symbol}/snapshot"
+        headers = {
+            "APCA-API-KEY-ID": ALPACA_API_KEY,
+            "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY
+        }
+        resp = requests.get(url, headers=headers, timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            latest_trade = data.get("latestTrade", {})
+            prev_daily = data.get("prevDailyBar", {})
+            
+            p = float(latest_trade.get("p", 0.0))
+            prev_close = float(prev_daily.get("c", 0.0))
+            
+            if p > 0 and prev_close > 0:
+                chg = p - prev_close
+                pct = (chg / prev_close) * 100.0
+                return (p, chg, pct)
+            elif p > 0:
+                return (p, 0.0, 0.0)
+    except Exception:
+        pass
+    return (0.0, 0.0, 0.0)
 
 def fetch_single_ticker(symbol):
     try:
@@ -83,55 +103,35 @@ def fetch_single_ticker(symbol):
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    # 1. 단일 개별 수신 방식 적용 (MultiIndex 오류 원천 차단)
+    # 1. Alpaca API로 SPY 실시간 데이터 수신 시도 (가장 우선)
+    alp_spy_p, alp_spy_c, alp_spy_pct = fetch_alpaca_market_data("SPY")
+    
+    # 2. 야후 파이낸스 시도
     spx_p, spx_c, spx_pct = fetch_single_ticker('^SPX')
     es_p, es_c, es_pct = fetch_single_ticker('ES=F')
     vix_p, vix_c, vix_pct = fetch_single_ticker('^VIX')
     spy_p, spy_c, spy_pct = fetch_single_ticker('SPY')
 
-    # 2. Alpaca API 시도
-    if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
-        try:
-            engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
-            alpaca_chain = engine.get_0dte_chain_analytics(symbol="SPY", current_price=None)
-            if alpaca_chain and alpaca_chain.get('underlying_price'):
-                alp_spy = float(alpaca_chain['underlying_price'])
-                if alp_spy > 0:
-                    spy_p = alp_spy
-        except Exception:
-            pass
+    # Alpaca 데이터가 수신되면 야후 SPY를 대체
+    if alp_spy_p > 0:
+        spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
 
-    # 3. 데이터 보정 logic (SPX/ES/SPY 상호 연동)
-    if spx_p == 0.0:
-        if es_p > 0:
-            spx_p, spx_c, spx_pct = es_p, es_c, es_pct
-        elif spy_p > 0:
-            spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
+    # 3. 지수 상호 보정 (SPY 기반 SPX/ES 10배 정밀 실시간 추정)
+    if spx_p == 0.0 and spy_p > 0:
+        spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
-    if es_p == 0.0 and spx_p > 0:
-        es_p, es_c, es_pct = spx_p, spx_c, spx_pct
+    if es_p == 0.0 and spy_p > 0:
+        es_p, es_c, es_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
-    if spy_p == 0.0 and spx_p > 0:
-        spy_p, spy_c, spy_pct = spx_p / 10.0, spx_c / 10.0, spx_pct
+    if vix_p == 0.0:
+        vix_p, vix_c, vix_pct = 15.50, 0.0, 0.0
 
-    current_data = {
+    return {
         'spx': (spx_p, spx_c, spx_pct),
         'vix': (vix_p, vix_c, vix_pct),
         'es': (es_p, es_c, es_pct),
         'spy': (spy_p, spy_c, spy_pct)
     }
-
-    # 4. 세션 기반 0.0 방어 보정
-    last_data = st.session_state.get("last_valid_market_data")
-    final_data = {}
-    for k in ['spx', 'vix', 'es', 'spy']:
-        if current_data[k][0] > 0:
-            final_data[k] = current_data[k]
-        else:
-            final_data[k] = last_data[k]
-
-    st.session_state["last_valid_market_data"] = final_data
-    return final_data
 
 @st.cache_data(ttl=30)
 def fetch_latest_news_sentiment():
@@ -256,7 +256,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v20.0</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v21.0</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
