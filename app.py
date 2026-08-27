@@ -74,9 +74,13 @@ def safe(val, default=0.0):
 
 
 def fetch_alpaca_stock_snapshot(symbol="SPY"):
-    """Alpaca 스냅샷 조회. 실패 시 (None, None, None) 반환."""
+    """
+    Alpaca 스냅샷 조회. 실패 시 (None, None, None, error_msg) 반환.
+    주의: 이 함수는 @st.cache_data 함수 내부에서 호출되므로
+    절대 st.session_state를 직접 건드리지 않는다 (캐시/세션 상태 충돌 방지).
+    """
     if not (ALPACA_API_KEY and ALPACA_SECRET_KEY):
-        return (None, None, None)
+        return (None, None, None, None)
     try:
         url = f"https://data.alpaca.markets/v2/stocks/{symbol}/snapshot"
         headers = {
@@ -95,12 +99,12 @@ def fetch_alpaca_stock_snapshot(symbol="SPY"):
         if price > 0 and prev_close > 0:
             chg = price - prev_close
             pct = (chg / prev_close) * 100.0
-            return (price, chg, pct)
+            return (price, chg, pct, None)
         elif price > 0:
-            return (price, 0.0, 0.0)
+            return (price, 0.0, 0.0, None)
     except Exception as e:
-        st.session_state.setdefault("data_errors", []).append(f"Alpaca({symbol}): {e}")
-    return (None, None, None)
+        return (None, None, None, f"Alpaca({symbol}): {e}")
+    return (None, None, None, None)
 
 
 def _get_reliable_prev_close(t, hist_daily=None):
@@ -127,7 +131,10 @@ def fetch_single_ticker(symbol, retries=2):
     - 현재가: fast_info.last_price 우선 (실시간에 가장 가까움), 실패 시 일봉 마지막 종가
     - 전일 종가(등락 계산 기준): 항상 일봉 히스토리에서 계산
       (fast_info.previous_close는 선물에서 세션 오류로 등락률이 틀어지는 경우가 있어 사용하지 않음)
-    - 조회 실패 시 (None, None, None) 반환 -> 가짜 숫자를 만들지 않음
+    - 조회 실패 시 (None, None, None, error_msg) 반환 -> 가짜 숫자를 만들지 않음
+
+    주의: 이 함수는 @st.cache_data 함수 내부에서 호출되므로
+    절대 st.session_state를 직접 건드리지 않는다 (캐시/세션 상태 충돌 방지).
     """
     last_err = None
     for attempt in range(retries):
@@ -151,30 +158,37 @@ def fetch_single_ticker(symbol, retries=2):
             if price is not None and price > 0 and prev_close and prev_close > 0:
                 chg = price - prev_close
                 pct = (chg / prev_close) * 100.0
-                return (price, chg, pct)
+                return (price, chg, pct, None)
             elif price is not None and price > 0:
-                return (price, 0.0, 0.0)
+                return (price, 0.0, 0.0, None)
 
             last_err = "empty response"
         except Exception as e:
             last_err = str(e)
         time.sleep(0.5)
 
-    st.session_state.setdefault("data_errors", []).append(f"{symbol}: {last_err}")
-    return (None, None, None)
+    return (None, None, None, f"{symbol}: {last_err}")
 
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    st.session_state["data_errors"] = []
+    # 주의: 이 함수는 @st.cache_data로 캐시되므로 내부에서 st.session_state를
+    # 절대 읽거나 쓰지 않는다. 대신 에러는 로컬 리스트에 모아서 반환값으로 전달한다.
+    errors = []
 
-    alp_spy_p, alp_spy_c, alp_spy_pct = fetch_alpaca_stock_snapshot("SPY")
+    alp_spy_p, alp_spy_c, alp_spy_pct, alp_err = fetch_alpaca_stock_snapshot("SPY")
+    if alp_err:
+        errors.append(alp_err)
 
     # 주의: Yahoo Finance에서 S&P500 지수 티커는 ^SPX가 아니라 ^GSPC 입니다.
-    spx_p, spx_c, spx_pct = fetch_single_ticker('^GSPC')
-    es_p, es_c, es_pct = fetch_single_ticker('ES=F')
-    vix_p, vix_c, vix_pct = fetch_single_ticker('^VIX')
-    spy_p, spy_c, spy_pct = fetch_single_ticker('SPY')
+    spx_p, spx_c, spx_pct, spx_err = fetch_single_ticker('^GSPC')
+    es_p, es_c, es_pct, es_err = fetch_single_ticker('ES=F')
+    vix_p, vix_c, vix_pct, vix_err = fetch_single_ticker('^VIX')
+    spy_p, spy_c, spy_pct, spy_err = fetch_single_ticker('SPY')
+
+    for e in (spx_err, es_err, vix_err, spy_err):
+        if e:
+            errors.append(e)
 
     if alp_spy_p is not None:
         spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
@@ -191,7 +205,7 @@ def fetch_market_data():
         'vix': (vix_p, vix_c, vix_pct),
         'es': (es_p, es_c, es_pct),
         'spy': (spy_p, spy_c, spy_pct),
-        'errors': st.session_state.get("data_errors", []),
+        'errors': errors,
     }
 
 
@@ -305,6 +319,8 @@ def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distanc
 
 if "backtest_result" not in st.session_state:
     st.session_state["backtest_result"] = None
+if "data_errors" not in st.session_state:
+    st.session_state["data_errors"] = []
 
 market_data = fetch_market_data()
 news_sentiment = fetch_latest_news_sentiment()
@@ -388,7 +404,7 @@ if st.button(f"🚀 [{tf_option}] 승률/기대값 검증 실행", use_container
             res["tf_option"] = tf_option
             st.session_state["backtest_result"] = res
 
-result = st.session_state["backtest_result"]
+result = st.session_state.get("backtest_result")
 
 if result:
     win_rate = result.get('win_rate', 0.0)
