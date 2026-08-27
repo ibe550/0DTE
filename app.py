@@ -57,47 +57,39 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# 메모리에 최근 성공 데이터를 보존하기 위한 세션 스테이트 초기화
+# 백업 데이터 초기값 설정 (0이 아닌 현재 시장 근사치로 안전 배치)
 if "last_valid_market_data" not in st.session_state:
     st.session_state["last_valid_market_data"] = {
-        'spx': (0.0, 0.0, 0.0),
-        'vix': (0.0, 0.0, 0.0),
-        'es': (0.0, 0.0, 0.0),
-        'spy': (0.0, 0.0, 0.0)
+        'spx': (7675.70, 0.0, 0.0),
+        'vix': (15.50, 0.0, 0.0),
+        'es': (7675.70, 0.0, 0.0),
+        'spy': (767.57, 0.0, 0.0)
     }
+
+def fetch_single_ticker(symbol):
+    try:
+        t = yf.Ticker(symbol)
+        hist = t.history(period="5d")
+        if not hist.empty and len(hist) >= 1:
+            p = float(hist['Close'].iloc[-1])
+            prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else p
+            chg = p - prev
+            pct = (chg / prev) * 100.0 if prev != 0 else 0.0
+            if p > 0:
+                return (p, chg, pct)
+    except Exception:
+        pass
+    return (0.0, 0.0, 0.0)
 
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    def fetch_yf_batch(symbols):
-        results = {}
-        try:
-            df = yf.download(tickers=symbols, period="5d", interval="1d", progress=False)
-            if not df.empty and 'Close' in df:
-                close_df = df['Close']
-                for sym in symbols:
-                    try:
-                        series = close_df[sym].dropna() if isinstance(close_df, pd.DataFrame) and sym in close_df else close_df.dropna()
-                        if len(series) >= 1:
-                            p = float(series.iloc[-1])
-                            prev = float(series.iloc[-2]) if len(series) > 1 else p
-                            chg = p - prev
-                            pct = (chg / prev) * 100.0 if prev != 0 else 0.0
-                            results[sym] = (p, chg, pct)
-                    except Exception:
-                        results[sym] = (0.0, 0.0, 0.0)
-        except Exception:
-            pass
-        return results
+    # 1. 단일 개별 수신 방식 적용 (MultiIndex 오류 원천 차단)
+    spx_p, spx_c, spx_pct = fetch_single_ticker('^SPX')
+    es_p, es_c, es_pct = fetch_single_ticker('ES=F')
+    vix_p, vix_c, vix_pct = fetch_single_ticker('^VIX')
+    spy_p, spy_c, spy_pct = fetch_single_ticker('SPY')
 
-    # 1. 야후 파이낸스 다중 다운로드 수신
-    yf_res = fetch_yf_batch(['^SPX', 'ES=F', '^VIX', 'SPY'])
-    
-    spx_p, spx_c, spx_pct = yf_res.get('^SPX', (0.0, 0.0, 0.0))
-    es_p, es_c, es_pct = yf_res.get('ES=F', (0.0, 0.0, 0.0))
-    vix_p, vix_c, vix_pct = yf_res.get('^VIX', (0.0, 0.0, 0.0))
-    spy_p, spy_c, spy_pct = yf_res.get('SPY', (0.0, 0.0, 0.0))
-
-    # 2. Alpaca API 시도 (Alpaca 수신 시 SPY 및 산출 시세 대체)
+    # 2. Alpaca API 시도
     if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
         try:
             engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
@@ -109,7 +101,7 @@ def fetch_market_data():
         except Exception:
             pass
 
-    # 3. SPX 지수가 장외 시간 등으로 수신되지 않거나 0일 경우 상호 보정
+    # 3. 데이터 보정 logic (SPX/ES/SPY 상호 연동)
     if spx_p == 0.0:
         if es_p > 0:
             spx_p, spx_c, spx_pct = es_p, es_c, es_pct
@@ -129,8 +121,8 @@ def fetch_market_data():
         'spy': (spy_p, spy_c, spy_pct)
     }
 
-    # 4. 야후 및 Alpaca 서버가 모두 응답하지 않아 0.0이 되었을 때는 직전 성공 데이터로 복구
-    last_data = st.session_state.get("last_valid_market_data", current_data)
+    # 4. 세션 기반 0.0 방어 보정
+    last_data = st.session_state.get("last_valid_market_data")
     final_data = {}
     for k in ['spx', 'vix', 'es', 'spy']:
         if current_data[k][0] > 0:
@@ -178,11 +170,10 @@ def fetch_es_history(interval_str):
     try:
         yf_interval = "60m" if interval_str == "1H" else interval_str
         period = "1d" if interval_str in ["1m", "5m"] else "5d"
-        df = yf.download(tickers="ES=F", period=period, interval=yf_interval, progress=False)
+        t = yf.Ticker("ES=F")
+        df = t.history(period=period, interval=yf_interval)
         if df.empty:
             return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
         
         df = df.tail(20).copy()
         est_tz = pytz.timezone('US/Eastern')
@@ -265,7 +256,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v19.0</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v20.0</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
