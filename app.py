@@ -347,19 +347,12 @@ st.markdown(f"""
         <span style="color: {sent_color}; font-weight: bold; font-size: 10px;">⚡ BREAKING NEWS [{news_sentiment['sentiment']}]</span>
         <span style="color: #6b7280; font-size: 8px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
     </div>
-    <div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top:2px;">
+    <div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
         {news_sentiment['title']}
     </div>
     <div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">
         🔍 {strikes['adjust_note']}
     </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="card-box" style="padding: 4px 6px;">
-    <span style="color: #f43f5e; font-weight: bold; font-size: 9px;">⚡ RISKS: </span>
-    <span class="risk-tag">INFLATION</span><span class="risk-tag">FED</span><span class="risk-tag">FOMC</span><span class="risk-tag">WAR</span><span class="risk-tag">CPI</span>
 </div>
 """, unsafe_allow_html=True)
 
