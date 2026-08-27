@@ -143,9 +143,6 @@ def fetch_market_data():
 
 @st.cache_data(ttl=60)
 def fetch_latest_news_sentiment():
-    """
-    실시간 긴급 뉴스 감지 및 감정 분석 알고리즘
-    """
     try:
         ticker = yf.Ticker("ES=F")
         news_list = ticker.news
@@ -160,7 +157,6 @@ def fetch_latest_news_sentiment():
         title = "Case for BoC rate hike crumbling as trade war ramps up"
         link = "#"
 
-    # 뉴스 감정 분석 키워드 데이터베이스
     bearish_words = ["hike", "war", "inflation", "cpi", "drop", "plunge", "down", "crisis", "fall", "tariff", "risk"]
     bullish_words = ["cut", "easing", "rally", "gain", "soar", "surge", "cool", "growth", "jump", "boost"]
 
@@ -206,9 +202,6 @@ def fetch_es_history(interval_str):
         return None
 
 def calculate_dynamic_strikes(current_price, news_sentiment):
-    """
-    뉴스 감지 결과(Sentiments) 및 피봇 레벨을 결합하여 Dynamic Strike 추천
-    """
     es_df = fetch_es_history("5m")
     if es_df is not None and not es_df.empty:
         high = es_df['High'].max()
@@ -226,23 +219,19 @@ def calculate_dynamic_strikes(current_price, news_sentiment):
         s1 = current_price - 15.0
         s2 = current_price - 30.0
 
-    # 기본 피봇 스트라이크 (5단위 라운딩)
     base_r2 = int(round(r2 / 5.0) * 5)
     base_r1 = int(round(r1 / 5.0) * 5)
     base_s1 = int(round(s1 / 5.0) * 5)
     base_s2 = int(round(s2 / 5.0) * 5)
 
-    # News-adjusted Dynamic Strike Shift
     sentiment = news_sentiment['sentiment']
     if sentiment == "BEARISH":
-        # 악재 뉴스 감지시: Put 행사가를 더 밑으로(안전하게) 하향, Call 행사가를 더 타이트하게 낮춤
         call_strike = base_r1
         call_short = base_r1 + 5
         put_strike = base_s2 - 10
         put_short = base_s2 - 5
         adjust_note = "⚠️ 악재 뉴스 감지: Put 지지선 10pt 추가 하향(안전 확보)"
     elif sentiment == "BULLISH":
-        # 호재 뉴스 감지시: Call 행사가를 높이고(안전하게), Put 행사가를 좁힘
         call_strike = base_r2 + 10
         call_short = base_r2 + 15
         put_strike = base_s1
@@ -282,8 +271,8 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment)
 # 1. Header
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-    <span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v15.0 News-AI</span></span>
-    <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v15.0 News-AI</span></span>
+<span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -316,77 +305,84 @@ if result:
 
     st.markdown(f"""
 <div class="card-box">
-    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; text-align: center;">
-        <div>
-            <div style="font-size: 8px; color: #6b7280;">총시그널</div>
-            <div style="font-size: 12px; font-weight: bold;">{total_signals}회</div>
-        </div>
-        <div>
-            <div style="font-size: 8px; color: #6b7280;">▲ 상승</div>
-            <div style="font-size: 12px; font-weight: bold; color: #10b981;">{win_rate}%</div>
-        </div>
-        <div>
-            <div style="font-size: 8px; color: #6b7280;">▼ 하락</div>
-            <div style="font-size: 12px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
-        </div>
-        <div>
-            <div style="font-size: 8px; color: #6b7280;">EV</div>
-            <div style="font-size: 12px; font-weight: bold; color: #facc15;">+{ev}pt</div>
-        </div>
-    </div>
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; text-align: center;">
+<div>
+<div style="font-size: 8px; color: #6b7280;">총시그널</div>
+<div style="font-size: 12px; font-weight: bold;">{total_signals}회</div>
+</div>
+<div>
+<div style="font-size: 8px; color: #6b7280;">▲ 상승</div>
+<div style="font-size: 12px; font-weight: bold; color: #10b981;">{win_rate}%</div>
+</div>
+<div>
+<div style="font-size: 8px; color: #6b7280;">▼ 하락</div>
+<div style="font-size: 12px; font-weight: bold; color: #ef4444;">{loss_rate}%</div>
+</div>
+<div>
+<div style="font-size: 8px; color: #6b7280;">EV</div>
+<div style="font-size: 12px; font-weight: bold; color: #facc15;">+{ev}pt</div>
+</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
-# 3. Dynamic News Alert Box (실시간 뉴스 감지 파트)
+# 3. Dynamic News Alert Box
 news_box_class = "news-box-alert" if news_sentiment['risk_level'] == "HIGH" else "news-box-neutral"
 sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b981" if news_sentiment['sentiment'] == "BULLISH" else "#facc15")
 
 st.markdown(f"""
 <div class="{news_box_class}">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="color: {sent_color}; font-weight: bold; font-size: 10px;">⚡ BREAKING NEWS [{news_sentiment['sentiment']}]</span>
-        <span style="color: #6b7280; font-size: 8px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
-    </div>
-    <div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
-        {news_sentiment['title']}
-    </div>
-    <div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">
-        🔍 {strikes['adjust_note']}
-    </div>
+<div style="display: flex; justify-content: space-between; align-items: center;">
+<span style="color: {sent_color}; font-weight: bold; font-size: 10px;">⚡ BREAKING NEWS [{news_sentiment['sentiment']}]</span>
+<span style="color: #6b7280; font-size: 8px;">{now_est.strftime('%m/%d %H:%M')} ET</span>
+</div>
+<div style="font-size: 10px; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
+{news_sentiment['title']}
+</div>
+<div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">
+🔍 {strikes['adjust_note']}
+</div>
 </div>
 """, unsafe_allow_html=True)
 
-# 4. Ticker Metrics Grid (모바일 2열)
+st.markdown("""
+<div class="card-box" style="padding: 4px 6px;">
+<span style="color: #f43f5e; font-weight: bold; font-size: 9px;">⚡ RISKS: </span>
+<span class="risk-tag">INFLATION</span><span class="risk-tag">FED</span><span class="risk-tag">FOMC</span><span class="risk-tag">WAR</span><span class="risk-tag">CPI</span>
+</div>
+""", unsafe_allow_html=True)
+
+# 4. Ticker Metrics Grid
 spx_color = "#10b981" if spx_c >= 0 else "#ef4444"
 es_color = "#10b981" if es_c >= 0 else "#ef4444"
 vix_color = "#ef4444" if vix_c >= 0 else "#10b981"
 
 st.markdown(f"""
 <div class="grid-2col">
-    <div class="metric-card">
-        <div class="metric-label">SPX INDEX</div>
-        <div class="metric-val">{spx_p:.2f}</div>
-        <div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div>
-    </div>
-    <div class="metric-card">
-        <div class="metric-label">ES FUTURES</div>
-        <div class="metric-val">{es_p:.2f}</div>
-        <div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div>
-    </div>
-    <div class="metric-card">
-        <div class="metric-label">VIX INDEX</div>
-        <div class="metric-val">{vix_p:.2f}</div>
-        <div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div>
-    </div>
-    <div class="metric-card">
-        <div class="metric-label">FEAR & GREED</div>
-        <div class="metric-val" style="font-size: 14px;">59 (Greed)</div>
-        <div class="metric-sub" style="color: #9ca3af;">1w: 55 | 1m: 41</div>
-    </div>
+<div class="metric-card">
+<div class="metric-label">SPX INDEX</div>
+<div class="metric-val">{spx_p:.2f}</div>
+<div class="metric-sub" style="color: {spx_color};">{spx_c:+.2f} ({spx_pct:+.2f}%)</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">ES FUTURES</div>
+<div class="metric-val">{es_p:.2f}</div>
+<div class="metric-sub" style="color: {es_color};">{es_c:+.2f} ({es_pct:+.2f}%)</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">VIX INDEX</div>
+<div class="metric-val">{vix_p:.2f}</div>
+<div class="metric-sub" style="color: {vix_color};">{vix_c:+.2f} ({vix_pct:+.2f}%)</div>
+</div>
+<div class="metric-card">
+<div class="metric-label">FEAR & GREED</div>
+<div class="metric-val" style="font-size: 14px;">59 (Greed)</div>
+<div class="metric-sub" style="color: #9ca3af;">1w: 55 | 1m: 41</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
-# 5. Decision Signal (뉴스 감정 반영 결합)
+# 5. Decision Signal
 if result:
     win = result.get('win_rate', 0.0)
     loss = result.get('loss_rate', 0.0)
@@ -409,7 +405,6 @@ if result:
         sig_color = "#fbbf24"
         sig_desc = "방향성 불분명. 수급 추가 확인 필요."
 else:
-    # 백테스트 전이라도 뉴스가 BEARISH이면 경고 표시
     if news_sentiment['sentiment'] == "BEARISH":
         sig_title = "CALL CREDIT SPREAD (뉴스 우세)"
         sig_badge = '<span class="badge-red">NEWS ALERT</span>'
@@ -425,36 +420,36 @@ else:
 
 st.markdown(f"""
 <div class="signal-box">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 10px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
-        {sig_badge}
-    </div>
-    <div style="margin-top: 2px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 15px; font-weight: bold; color: {sig_color};">{sig_title}</span>
-        <span style="font-size: 9px; color: #9ca3af;">CONF <b style="font-size: 12px; color: {sig_color};">{confidence}%</b></span>
-    </div>
-    <div style="font-size: 10px; color: #d1d5db; margin-top: 2px;">{sig_desc}</div>
+<div style="display: flex; justify-content: space-between; align-items: center;">
+<span style="font-size: 10px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
+{sig_badge}
+</div>
+<div style="margin-top: 2px; display: flex; justify-content: space-between; align-items: center;">
+<span style="font-size: 15px; font-weight: bold; color: {sig_color};">{sig_title}</span>
+<span style="font-size: 9px; color: #9ca3af;">CONF <b style="font-size: 12px; color: {sig_color};">{confidence}%</b></span>
+</div>
+<div style="font-size: 10px; color: #d1d5db; margin-top: 2px;">{sig_desc}</div>
 </div>
 """, unsafe_allow_html=True)
 
-# 6. Dynamic Support / Resistance & Strike Recommendation (뉴스 반영 실시간 추천)
+# 6. Dynamic Support / Resistance & Strike Recommendation
 diff_r2 = round(strikes['call_target'] - spx_p, 1)
 diff_s2 = round(spx_p - strikes['put_target'], 1)
 
 st.markdown(f"""
 <div class="grid-2col">
-    <div class="metric-card" style="border-left: 3px solid #ef4444;">
-        <div style="font-size: 10px; font-weight: bold; color: #fca5a5;">🔴 CALL CREDIT SPREAD</div>
-        <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{strikes['call_target']} Strike</div>
-        <div style="font-size: 9px; color: #10b981;">+{diff_r2} pt 차이</div>
-        <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_call_sell']} Call Sell</b></div>
-    </div>
-    <div class="metric-card" style="border-left: 3px solid #10b981;">
-        <div style="font-size: 10px; font-weight: bold; color: #6ee7b7;">🟢 PUT CREDIT SPREAD</div>
-        <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{strikes['put_target']} Strike</div>
-        <div style="font-size: 9px; color: #ef4444;">-{diff_s2} pt 차이</div>
-        <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_put_sell']} Put Sell</b></div>
-    </div>
+<div class="metric-card" style="border-left: 3px solid #ef4444;">
+<div style="font-size: 10px; font-weight: bold; color: #fca5a5;">🔴 CALL CREDIT SPREAD</div>
+<div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{strikes['call_target']} Strike</div>
+<div style="font-size: 9px; color: #10b981;">+{diff_r2} pt 차이</div>
+<div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_call_sell']} Call Sell</b></div>
+</div>
+<div class="metric-card" style="border-left: 3px solid #10b981;">
+<div style="font-size: 10px; font-weight: bold; color: #6ee7b7;">🟢 PUT CREDIT SPREAD</div>
+<div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{strikes['put_target']} Strike</div>
+<div style="font-size: 9px; color: #ef4444;">-{diff_s2} pt 차이</div>
+<div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_put_sell']} Put Sell</b></div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -516,16 +511,16 @@ fig.update_layout(
 html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'staticPlot': True, 'displayModeBar': False})
 components.html(f"""
 <div style="pointer-events: none; user-select: none; width:100%; height:140px;">
-    {html_fig}
+{html_fig}
 </div>
 """, height=145)
 
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: -5px;">
-    <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
-    <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
+<span style="color: #10b981;">▲ Buy {buy_pct}%</span>
+<span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
 </div>
 <div class="bar-container">
-    <div class="bar-fill" style="width: {buy_pct}%;"></div>
+<div class="bar-fill" style="width: {buy_pct}%;"></div>
 </div>
 """, unsafe_allow_html=True)
