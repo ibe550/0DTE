@@ -57,29 +57,47 @@ hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
 </style>
 """, unsafe_allow_html=True)
 
+# 메모리에 최근 성공 데이터를 보존하기 위한 세션 스테이트 초기화
+if "last_valid_market_data" not in st.session_state:
+    st.session_state["last_valid_market_data"] = {
+        'spx': (0.0, 0.0, 0.0),
+        'vix': (0.0, 0.0, 0.0),
+        'es': (0.0, 0.0, 0.0),
+        'spy': (0.0, 0.0, 0.0)
+    }
+
 @st.cache_data(ttl=5)
 def fetch_market_data():
-    def get_safe_yf(symbol):
+    def fetch_yf_batch(symbols):
+        results = {}
         try:
-            t = yf.Ticker(symbol)
-            hist = t.history(period="5d")
-            if not hist.empty and len(hist) >= 1:
-                p = float(hist['Close'].iloc[-1])
-                prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else p
-                chg = p - prev
-                pct = (chg / prev) * 100.0 if prev != 0 else 0.0
-                return (p, chg, pct)
+            df = yf.download(tickers=symbols, period="5d", interval="1d", progress=False)
+            if not df.empty and 'Close' in df:
+                close_df = df['Close']
+                for sym in symbols:
+                    try:
+                        series = close_df[sym].dropna() if isinstance(close_df, pd.DataFrame) and sym in close_df else close_df.dropna()
+                        if len(series) >= 1:
+                            p = float(series.iloc[-1])
+                            prev = float(series.iloc[-2]) if len(series) > 1 else p
+                            chg = p - prev
+                            pct = (chg / prev) * 100.0 if prev != 0 else 0.0
+                            results[sym] = (p, chg, pct)
+                    except Exception:
+                        results[sym] = (0.0, 0.0, 0.0)
         except Exception:
             pass
-        return (0.0, 0.0, 0.0)
+        return results
 
-    # 1. 야후 파이낸스 실시간 데이터 수신
-    spx_p, spx_c, spx_pct = get_safe_yf('^SPX')
-    es_p, es_c, es_pct = get_safe_yf('ES=F')
-    vix_p, vix_c, vix_pct = get_safe_yf('^VIX')
-    spy_p, spy_c, spy_pct = get_safe_yf('SPY')
+    # 1. 야후 파이낸스 다중 다운로드 수신
+    yf_res = fetch_yf_batch(['^SPX', 'ES=F', '^VIX', 'SPY'])
+    
+    spx_p, spx_c, spx_pct = yf_res.get('^SPX', (0.0, 0.0, 0.0))
+    es_p, es_c, es_pct = yf_res.get('ES=F', (0.0, 0.0, 0.0))
+    vix_p, vix_c, vix_pct = yf_res.get('^VIX', (0.0, 0.0, 0.0))
+    spy_p, spy_c, spy_pct = yf_res.get('SPY', (0.0, 0.0, 0.0))
 
-    # 2. Alpaca API 시도 (Alpaca 수신 시 SPY 대체)
+    # 2. Alpaca API 시도 (Alpaca 수신 시 SPY 및 산출 시세 대체)
     if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY:
         try:
             engine = AlpacaOptionEngine(ALPACA_API_KEY, ALPACA_SECRET_KEY)
@@ -91,19 +109,37 @@ def fetch_market_data():
         except Exception:
             pass
 
-    # 3. SPX 지수가 장외 시간 등으로 수신되지 않으면 ES 선물 가격으로 교체
+    # 3. SPX 지수가 장외 시간 등으로 수신되지 않거나 0일 경우 상호 보정
     if spx_p == 0.0:
         if es_p > 0:
             spx_p, spx_c, spx_pct = es_p, es_c, es_pct
         elif spy_p > 0:
             spx_p, spx_c, spx_pct = spy_p * 10.0, spy_c * 10.0, spy_pct
 
-    return {
+    if es_p == 0.0 and spx_p > 0:
+        es_p, es_c, es_pct = spx_p, spx_c, spx_pct
+
+    if spy_p == 0.0 and spx_p > 0:
+        spy_p, spy_c, spy_pct = spx_p / 10.0, spx_c / 10.0, spx_pct
+
+    current_data = {
         'spx': (spx_p, spx_c, spx_pct),
         'vix': (vix_p, vix_c, vix_pct),
         'es': (es_p, es_c, es_pct),
         'spy': (spy_p, spy_c, spy_pct)
     }
+
+    # 4. 야후 및 Alpaca 서버가 모두 응답하지 않아 0.0이 되었을 때는 직전 성공 데이터로 복구
+    last_data = st.session_state.get("last_valid_market_data", current_data)
+    final_data = {}
+    for k in ['spx', 'vix', 'es', 'spy']:
+        if current_data[k][0] > 0:
+            final_data[k] = current_data[k]
+        else:
+            final_data[k] = last_data[k]
+
+    st.session_state["last_valid_market_data"] = final_data
+    return final_data
 
 @st.cache_data(ttl=30)
 def fetch_latest_news_sentiment():
@@ -170,7 +206,6 @@ def calculate_dynamic_strikes(current_price, news_sentiment, distance_mult=1.0, 
         c_15d = option_analytics['call_15d_strike']
         p_15d = option_analytics['put_15d_strike']
         
-        # SPY 옵션 행인가격을 SPX 행인가격(x10)으로 정밀환산
         call_strike = int(round((c_15d * 10.0) / 5.0) * 5)
         put_strike = int(round((p_15d * 10.0) / 5.0) * 5)
         
@@ -230,7 +265,7 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, distance_mult, alpaca
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v18.9</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v19.0</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
