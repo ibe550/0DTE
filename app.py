@@ -13,6 +13,7 @@ import requests
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 import signal_tracker
+import macro_calendar
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
@@ -408,7 +409,12 @@ else:
 # 0DTE는 같은 변동성이라도 시간대(세션)에 따라 감마/세타 위험이 다르므로
 # 레짐 배수와 세션 배수를 곱해서 최종 안전거리 배수를 만든다.
 session_name, session_mult = SimonsBenterQuantEngine.detect_trading_session(now_est)
-distance_mult = round(regime_mult * session_mult, 2)
+
+# FOMC/CPI/NFP/옵션만기(OPEX) 같은 매크로 이벤트가 있는 날은 변동성이
+# 완전히 다르게 튈 수 있어 별도 배수를 추가로 곱한다.
+macro_mult, macro_events = macro_calendar.get_macro_risk_multiplier(now_est.date())
+
+distance_mult = round(regime_mult * session_mult * macro_mult, 2)
 
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
 strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_mult, alpaca_analytics)
@@ -421,13 +427,28 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 데이터 오류 배너 (신규) ---
+# --- 데이터 오류 배너 ---
 if data_errors:
     err_text = " / ".join(data_errors[:3])
     st.markdown(f"""
     <div style="background-color:#3f1d1d; border:1px solid #7f1d1d; border-radius:6px;
                 padding:4px 8px; margin-bottom:4px; font-size:10px; color:#fca5a5;">
     ⚠️ 일부 시세 조회 실패 (표시값은 N/A 또는 근사치일 수 있음): {err_text}
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- 매크로 이벤트 배너 (신규) ---
+if macro_events:
+    _risk_colors = {"EXTREME": "#ef4444", "HIGH": "#f97316", "MEDIUM_HIGH": "#facc15", "MEDIUM": "#9ca3af"}
+    _events_html = ""
+    for _ev in macro_events:
+        _c = _risk_colors.get(_ev["risk"], "#9ca3af")
+        _events_html += f"<span style='color:{_c}; font-weight:bold;'>[{_ev['risk']}]</span> {_ev['name']} &nbsp;&nbsp;"
+    st.markdown(f"""
+    <div style="background-color:#1f1a0e; border:1px solid #785a00; border-radius:6px;
+                padding:5px 8px; margin-bottom:4px; font-size:10px; color:#fde68a;">
+    📅 <b>오늘 매크로 이벤트</b> — {_events_html}<br>
+    <span style="font-size:9px; color:#9ca3af;">스트라이크 안전거리 {macro_mult}배 확대 반영됨</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -452,7 +473,7 @@ sent_color = "#ef4444" if news_sentiment['sentiment'] == "BEARISH" else ("#10b98
 
 st.markdown(f"""
 <div class="grid-4col">
-<div class="metric-card"><div class="metric-label">REGIME</div><div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div><div class="metric-sub" style="color:#9ca3af;">{session_name} · {distance_mult}x</div></div>
+<div class="metric-card"><div class="metric-label">REGIME</div><div style="font-size: 11px; font-weight: bold; color: #60a5fa; margin-top:2px;">{regime}</div><div class="metric-sub" style="color:#9ca3af;">{session_name} · 레짐{regime_mult} × 세션{session_mult} × 매크로{macro_mult} = {distance_mult}x</div></div>
 <div class="metric-card"><div class="metric-label">Z-SCORE</div><div class="metric-val" style="color: {z_color};">{z_score:+.2f}</div><div class="metric-sub" style="color:#9ca3af;">{z_desc}</div></div>
 <div class="metric-card"><div class="metric-label">DELTA TARGET</div><div class="metric-val">0.15 Δ</div><div class="metric-sub" style="color:#10b981;">Target 85% Win</div></div>
 <div class="metric-card"><div class="metric-label">NEWS SCORE</div><div class="metric-val" style="color: {sent_color};">{news_score:+.2f}</div><div class="metric-sub" style="color:#9ca3af;">{news_sentiment['sentiment']}</div></div>
