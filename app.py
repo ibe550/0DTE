@@ -10,7 +10,7 @@ import time
 import yfinance as yf
 import requests
 
-from backtest import run_probability_analysis
+from backtest import run_probability_analysis, run_walk_forward_analysis
 from quant_engine import SimonsBenterQuantEngine
 import signal_tracker
 import macro_calendar
@@ -377,6 +377,8 @@ if "backtest_result" not in st.session_state:
     st.session_state["backtest_result"] = None
 if "data_errors" not in st.session_state:
     st.session_state["data_errors"] = []
+if "walk_forward_result" not in st.session_state:
+    st.session_state["walk_forward_result"] = None
 
 # 지난 신호 중 확인 시점이 지난 게 있으면 실제 결과를 채워넣는다.
 # (내부적으로 너무 잦은 호출은 자체적으로 막아둠 -> 매 새로고침마다 불러도 안전)
@@ -794,7 +796,74 @@ else:
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 신호 히스토리 · 자체 적중률 검증 (신규)
+# 워크포워드 / 아웃오브샘플 검증 (신규)
+# ============================================================
+st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>🔬 워크포워드 검증 (기간별 안정성 체크)</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size:9px; color:#9ca3af; margin-bottom:4px;'>같은 규칙을 여러 구간에 나눠 적용해서, 결과가 우연이 아니라 꾸준히 재현되는지 확인합니다. (3개월치 데이터 사용, 계산에 시간이 좀 걸릴 수 있음)</div>", unsafe_allow_html=True)
+
+if st.button("🔬 워크포워드 검증 실행 (4구간)", use_container_width=True):
+    with st.spinner("3개월치 데이터를 4구간으로 나눠 분석 중... (시간이 좀 걸립니다)"):
+        wf_res = run_walk_forward_analysis("ES=F", period="3mo", interval="5m",
+                                            lookahead_bars=selected_bars, n_windows=4)
+        st.session_state["walk_forward_result"] = wf_res if wf_res is not None else "EMPTY"
+
+wf_result = st.session_state.get("walk_forward_result")
+
+if wf_result is None:
+    st.markdown("""
+    <div class="card-box" style="font-size:10px; color:#9ca3af;">
+    아직 실행 안 됨. 버튼을 누르면 최근 3개월을 4구간으로 나눠서 같은 신호 규칙을
+    각각 따로 검증합니다.
+    </div>
+    """, unsafe_allow_html=True)
+elif wf_result == "EMPTY":
+    st.markdown("<div style='font-size:10px; color:#ef4444;'>데이터가 부족해서 구간을 나눌 수 없습니다.</div>", unsafe_allow_html=True)
+else:
+    _windows = wf_result["windows"]
+    _std = wf_result["stability_std"]
+    _consistent = wf_result["consistent_direction"]
+
+    # 구간별 카드
+    _cols_html = "<div style='display:grid; grid-template-columns:repeat(4,1fr); gap:4px;'>"
+    for w in _windows:
+        _wr = w["win_rate"]
+        _wr_str = f"{_wr}%" if _wr is not None else "N/A"
+        _wr_color = "#10b981" if (_wr is not None and _wr > 50) else ("#ef4444" if _wr is not None else "#6b7280")
+        _cols_html += f"""
+        <div class="metric-card" style="padding:4px 6px;">
+        <div style="font-size:8px; color:#6b7280;">구간{w['window']} ({w['date_start']}~{w['date_end']})</div>
+        <div style="font-size:13px; font-weight:bold; color:{_wr_color};">{_wr_str}</div>
+        <div style="font-size:8px; color:#9ca3af;">n={w['total_signals']}</div>
+        </div>
+        """
+    _cols_html += "</div>"
+    st.markdown(_cols_html, unsafe_allow_html=True)
+
+    # 안정성 종합 판정
+    if _consistent is None:
+        _verdict = "판정 불가 (유효한 구간이 2개 미만)"
+        _verdict_color = "#9ca3af"
+    elif _consistent and _std is not None and _std < 10:
+        _verdict = "✅ 안정적 — 모든 구간에서 같은 방향, 편차도 작습니다."
+        _verdict_color = "#10b981"
+    elif _consistent:
+        _verdict = "🟡 방향은 일관되지만 구간별 편차가 큽니다 — 참고용으로만 쓰세요."
+        _verdict_color = "#facc15"
+    else:
+        _verdict = "⚠️ 불안정 — 구간마다 결과가 뒤집힙니다. 지금까지의 백테스트 결과는 특정 기간의 우연일 가능성이 높습니다 (과최적화 위험)."
+        _verdict_color = "#ef4444"
+
+    _std_str = f"±{_std}%p" if _std is not None else "N/A"
+    st.markdown(f"""
+    <div class="card-box" style="font-size:10px; color:#d1d5db;">
+    <div style="font-weight:bold; color:{_verdict_color};">{_verdict}</div>
+    <div style="margin-top:2px; color:#9ca3af;">구간별 승률 표준편차: {_std_str}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ============================================================
+# 신호 히스토리 · 자체 적중률 검증
 # ============================================================
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 신호 히스토리 · 자체 적중률 검증</div>", unsafe_allow_html=True)
