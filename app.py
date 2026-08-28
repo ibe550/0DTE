@@ -12,6 +12,7 @@ import requests
 
 from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
+import signal_tracker
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
@@ -376,6 +377,13 @@ if "backtest_result" not in st.session_state:
 if "data_errors" not in st.session_state:
     st.session_state["data_errors"] = []
 
+# 지난 신호 중 확인 시점이 지난 게 있으면 실제 결과를 채워넣는다.
+# (내부적으로 너무 잦은 호출은 자체적으로 막아둠 -> 매 새로고침마다 불러도 안전)
+try:
+    signal_tracker.resolve_pending_signals()
+except Exception:
+    pass  # 신호 추적 실패가 앱 전체를 죽이면 안 되므로 조용히 무시
+
 market_data = fetch_market_data()
 news_sentiment = fetch_latest_news_sentiment()
 est_tz = pytz.timezone('US/Eastern')
@@ -463,6 +471,37 @@ if st.button(f"🚀 [{tf_option}] 승률/기대값 검증 실행", use_container
             res["tf_option"] = tf_option
             st.session_state["backtest_result"] = res
 
+            # --- 신호 기록 (신규) ---
+            # 지금 이 순간의 판단(방향/신뢰도/스트라이크)을 DB에 남겨서,
+            # timeframe_minutes 뒤 실제로 어떻게 됐는지 나중에 자동으로 채워지고,
+            # 그걸 누적하면 "이 시스템이 실제로 얼마나 맞는지" 스스로 검증할 수 있다.
+            try:
+                _win = res.get('win_rate', 0.0)
+                _loss = res.get('loss_rate', 0.0)
+                _ev = res.get('expected_value', 0.0)
+                if _win > _loss and _ev > 0:
+                    _direction = "BULLISH"
+                elif _loss > _win:
+                    _direction = "BEARISH"
+                else:
+                    _direction = "WAIT"
+                _confidence = min(round(abs(_win - _loss) * 2), 100)
+
+                if spx_p is not None:
+                    signal_tracker.log_signal(
+                        spot_price=spx_p,
+                        direction=_direction,
+                        confidence=_confidence,
+                        win_rate=_win,
+                        loss_rate=_loss,
+                        call_strike=strikes.get('call_target'),
+                        put_strike=strikes.get('put_target'),
+                        timeframe_label=tf_option,
+                        timeframe_minutes=selected_bars * 5,
+                    )
+            except Exception:
+                pass  # 기록 실패가 백테스트 결과 표시를 막으면 안 됨
+
 result = st.session_state.get("backtest_result")
 
 if result:
@@ -476,6 +515,10 @@ if result:
     margin_of_error = result.get('margin_of_error')
     date_start = result.get('date_start')
     date_end = result.get('date_end')
+    call_spread_win_rate = result.get('call_spread_win_rate')
+    put_spread_win_rate = result.get('put_spread_win_rate')
+    spread_sample_size = result.get('spread_sample_size', 0)
+    spread_offset_mult = result.get('spread_offset_atr_mult')
 
     st.markdown(f"""
 <div class="card-box">
@@ -488,7 +531,22 @@ if result:
 </div>
 """, unsafe_allow_html=True)
 
-    # --- 신뢰도 / 표본 구성 안내 (신규) ---
+    # --- 스프레드 브리치 기준 승률 (신규) ---
+    # 위 win_rate/loss_rate는 "N봉 뒤 방향"만 본 것이고, 아래는 "그 구간에
+    # 스트라이크를 실제로 건드렸는지"까지 반영한 훨씬 실전에 가까운 수치다.
+    if call_spread_win_rate is not None and put_spread_win_rate is not None:
+        st.markdown(f"""
+<div class="card-box" style="font-size: 9px; color: #9ca3af;">
+<div style="font-weight:bold; color:#e1e6ed; margin-bottom:2px;">📐 스프레드 브리치 기준 승률 (ATR×{spread_offset_mult} 근사 스트라이크, n={spread_sample_size})</div>
+<div style="display:flex; justify-content:space-between;">
+<span>🔴 CALL 스프레드 안 건드림: <b style="color:#10b981;">{call_spread_win_rate}%</b></span>
+<span>🟢 PUT 스프레드 안 건드림: <b style="color:#10b981;">{put_spread_win_rate}%</b></span>
+</div>
+<div style="margin-top:2px; color:#6b7280;">* 실제 옵션 IV/프리미엄 데이터가 아직 없어 ATR 기반 근사치입니다.</div>
+</div>
+""", unsafe_allow_html=True)
+
+    # --- 신뢰도 / 표본 구성 안내 ---
     if confidence_level is not None:
         conf_colors = {"LOW": "#ef4444", "MEDIUM": "#facc15", "HIGH": "#10b981"}
         conf_labels = {"LOW": "낮음", "MEDIUM": "보통", "HIGH": "높음"}
@@ -713,3 +771,58 @@ else:
     ES=F 데이터를 불러오지 못했습니다.
     </div>
     """, unsafe_allow_html=True)
+
+# ============================================================
+# 신호 히스토리 · 자체 적중률 검증 (신규)
+# ============================================================
+st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 신호 히스토리 · 자체 적중률 검증</div>", unsafe_allow_html=True)
+
+try:
+    _stats = signal_tracker.get_accuracy_stats()
+except Exception as _e:
+    _stats = None
+    st.markdown(f"<div style='font-size:9px; color:#6b7280;'>적중률 통계를 불러오지 못했습니다: {_e}</div>", unsafe_allow_html=True)
+
+if _stats is None:
+    st.markdown("""
+    <div class="card-box" style="font-size: 10px; color: #9ca3af;">
+    아직 결과가 확인된 신호가 없습니다. 상단에서 백테스트를 실행하면 신호가 기록되고,
+    선택한 타임프레임(예: 30분 뒤)이 지나면 자동으로 실제 결과와 비교되어 여기 쌓입니다.
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    acc_color = "#10b981" if _stats["overall_accuracy"] >= 50 else "#ef4444"
+    st.markdown(f"""
+    <div class="grid-2col">
+    <div class="metric-card"><div class="metric-label">전체 적중률</div><div class="metric-val" style="color:{acc_color};">{_stats['overall_accuracy']}%</div><div class="metric-sub" style="color:#9ca3af;">확인된 신호 {_stats['total_resolved']}건</div></div>
+    <div class="metric-card"><div class="metric-label">해석</div><div style="font-size:10px; color:#d1d5db; margin-top:2px;">50% 미만이면 이 시스템의 방향성 신호가 동전던지기보다 못하다는 뜻입니다.</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 신뢰도 구간별 적중률 (캘리브레이션 체크) — 높음 구간이 실제로 더 잘 맞아야 정상
+    by_conf = _stats["by_confidence"]
+    if not by_conf.empty:
+        rows_html = ""
+        for tier, row in by_conf.iterrows():
+            n = int(row['count'])
+            m = row['mean']
+            m_str = f"{m}%" if pd.notna(m) else "N/A"
+            rows_html += f"<div style='display:flex; justify-content:space-between; padding:2px 0;'><span>{tier}</span><span>{m_str} (n={n})</span></div>"
+        st.markdown(f"""
+        <div class="card-box" style="font-size:10px; color:#d1d5db;">
+        <div style="font-weight:bold; margin-bottom:2px; color:#e1e6ed;">신뢰도 구간별 실제 적중률 (캘리브레이션)</div>
+        {rows_html}
+        <div style="margin-top:2px; font-size:9px; color:#6b7280;">* "높음" 구간 적중률이 "낮음" 구간보다 낮다면, 신뢰도 표시 자체를 다시 손봐야 한다는 신호입니다.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with st.expander("최근 신호 상세 기록 보기"):
+        _hist = signal_tracker.get_signal_history(limit=50)
+        if _hist.empty:
+            st.markdown("기록 없음")
+        else:
+            _display_cols = ['logged_at', 'direction', 'confidence', 'spot_price',
+                              'call_strike', 'put_strike', 'resolved', 'actual_direction', 'correct']
+            _display_cols = [c for c in _display_cols if c in _hist.columns]
+            st.dataframe(_hist[_display_cols], use_container_width=True, hide_index=True)
