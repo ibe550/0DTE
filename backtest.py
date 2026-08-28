@@ -84,6 +84,51 @@ def run_probability_analysis(ticker="ES=F", period="1mo", interval="5m", lookahe
     date_start = df.index[0].strftime("%m/%d %H:%M") if len(df) else None
     date_end = df.index[-1].strftime("%m/%d %H:%M") if len(df) else None
 
+    # --- 크레딧 스프레드 관점 백테스트 (신규) ---
+    # 기존 win_rate/loss_rate는 "N봉 뒤 방향"만 본다. 하지만 실제 크레딧 스프레드는
+    # 방향이 맞아도 중간에 숏 스트라이크를 한 번이라도 건드리면(breach) 손실이다.
+    # 그래서 신호가 뜬 시점의 ATR을 기준으로 콜/풋 스트라이크를 근사로 잡고,
+    # 그 뒤 lookahead_bars 구간 동안 고가/저가가 그 스트라이크를 건드렸는지 확인한다.
+    # 주의: 실제 옵션 IV/프리미엄 데이터가 없어 ATR 기반 근사치를 쓴다.
+    # 실제 체결 프리미엄과는 차이가 있을 수 있다.
+    OFFSET_ATR_MULT = 2.0
+
+    highs = df['High'].values
+    lows = df['Low'].values
+    closes = df['Close'].values
+    atrs = df['ATR'].values
+    combined_arr = combined_signal.values
+    n = len(df)
+
+    call_breaches = []
+    put_breaches = []
+
+    for i in range(n):
+        if not combined_arr[i]:
+            continue
+        if i + lookahead_bars >= n:
+            continue
+        offset = atrs[i] * OFFSET_ATR_MULT
+        if np.isnan(offset) or offset <= 0:
+            continue
+
+        call_strike = closes[i] + offset
+        put_strike = closes[i] - offset
+
+        window_high = highs[i + 1: i + 1 + lookahead_bars].max()
+        window_low = lows[i + 1: i + 1 + lookahead_bars].min()
+
+        call_breaches.append(1 if window_high > call_strike else 0)
+        put_breaches.append(1 if window_low < put_strike else 0)
+
+    spread_sample_size = len(call_breaches)
+    if spread_sample_size > 0:
+        call_spread_win_rate = round((1 - np.mean(call_breaches)) * 100, 1)
+        put_spread_win_rate = round((1 - np.mean(put_breaches)) * 100, 1)
+    else:
+        call_spread_win_rate = None
+        put_spread_win_rate = None
+
     return {
         "total_signals": total_signals,
         "bullish_signals": bullish_count,
@@ -97,4 +142,8 @@ def run_probability_analysis(ticker="ES=F", period="1mo", interval="5m", lookahe
         "margin_of_error": margin_of_error,
         "date_start": date_start,
         "date_end": date_end,
+        "call_spread_win_rate": call_spread_win_rate,
+        "put_spread_win_rate": put_spread_win_rate,
+        "spread_sample_size": spread_sample_size,
+        "spread_offset_atr_mult": OFFSET_ATR_MULT,
     }
