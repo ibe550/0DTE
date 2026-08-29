@@ -14,6 +14,8 @@ from backtest import run_probability_analysis, run_walk_forward_analysis
 from quant_engine import SimonsBenterQuantEngine
 import signal_tracker
 import macro_calendar
+import market_pulse
+import news_feed
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
@@ -35,7 +37,13 @@ TWELVEDATA_API_KEY = st.secrets.get("TWELVEDATA_API_KEY", "")
 
 st.markdown("""
 <style>
-.stApp { background-color: #0b0e14; color: #e1e6ed; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+.stApp {
+    background-color: #0a0e17;
+    color: #e1e6ed;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
 .block-container {
     padding-top: 0.5rem !important;
     padding-bottom: 0.5rem !important;
@@ -44,22 +52,54 @@ st.markdown("""
     max-width: 100% !important;
 }
 [data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
-.card-box { background-color: #121721; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; }
-.signal-box { background-color: #16150e; border: 1px solid #785a00; border-radius: 6px; padding: 8px 10px; margin-bottom: 4px; }
-.badge-red { background-color: #991b1b; color: #fca5a5; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
-.badge-green { background-color: #065f46; color: #6ee7b7; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
-.badge-yellow { background-color: #78350f; color: #fde68a; padding: 1px 5px; border-radius: 4px; font-weight: bold; font-size: 9px; }
+
+/* 숫자 위주 값은 고정폭 monospace로 (스크린샷 스타일) */
+.mono-num { font-family: 'JetBrains Mono', 'Courier New', monospace; font-variant-numeric: tabular-nums; }
+
+.card-box { background-color: #121824; border: 1px solid #1e2635; border-radius: 8px; padding: 8px 10px; margin-bottom: 5px; }
+.signal-box { background-color: #16150e; border: 1px solid #785a00; border-radius: 8px; padding: 8px 10px; margin-bottom: 5px; }
+
+.badge-red { background-color: #991b1b; color: #fca5a5; padding: 2px 7px; border-radius: 999px; font-weight: 700; font-size: 9px; }
+.badge-green { background-color: #065f46; color: #6ee7b7; padding: 2px 7px; border-radius: 999px; font-weight: 700; font-size: 9px; }
+.badge-yellow { background-color: #78350f; color: #fde68a; padding: 2px 7px; border-radius: 999px; font-weight: 700; font-size: 9px; }
+.badge-gray { background-color: #262b36; color: #9ca3af; padding: 2px 7px; border-radius: 999px; font-weight: 700; font-size: 9px; }
+.badge-blue { background-color: #1e3a5f; color: #7dd3fc; padding: 2px 7px; border-radius: 999px; font-weight: 700; font-size: 9px; }
+
+/* 뉴스 리스크 태그 pill */
+.tag-pill { display:inline-block; background-color:#3f1d1d; color:#fca5a5; border:1px solid #7f1d1d;
+            padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 9px; margin-right: 4px; margin-bottom:3px; }
+
 .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px; }
 .grid-4col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
-.metric-card { background-color: #121721; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 8px; }
-.metric-label { font-size: 10px; color: #9ca3af; font-weight: bold; }
-.metric-val { font-size: 15px; font-weight: bold; color: #ffffff; line-height: 1.2; }
-.metric-sub { font-size: 9px; margin-top: 2px; }
+
+.metric-card { background-color: #121824; border: 1px solid #1e2635; border-radius: 8px; padding: 7px 9px; }
+.metric-label { font-size: 9px; color: #7b8494; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+.metric-val { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #ffffff; line-height: 1.25; }
+.metric-sub { font-size: 9px; margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+
+/* 섹션 헤더: 아이콘+제목(좌) / "Data as of..." (우) 패턴 */
+.section-header { display:flex; justify-content:space-between; align-items:baseline; margin: 6px 0 3px 0; }
+.section-title { font-size: 11px; font-weight: 700; color: #e1e6ed; }
+.section-time { font-size: 8px; color: #5b6474; font-family: 'JetBrains Mono', monospace; }
+
 .bar-container { width: 100%; background-color: #ef4444; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0; }
 .bar-fill { height: 100%; background-color: #10b981; }
-hr { margin: 6px 0 !important; border-color: #1f2937 !important; }
+hr { margin: 6px 0 !important; border-color: #1e2635 !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
+def section_header(icon, title, time_label=None):
+    """스크린샷과 같은 '아이콘+제목 / Data as of ...' 섹션 헤더를 그린다."""
+    time_html = f'<span class="section-time">{time_label}</span>' if time_label else ''
+    st.markdown(f"""
+    <div class="section-header">
+    <span class="section-title">{icon} {title}</span>
+    {time_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+
 
 
 # ============================================================
@@ -426,10 +466,33 @@ strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_
 # --- Header ---
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v24.1</span></span>
+<span style="font-weight: bold; font-size: 14px;">🛡️ SPX 0DTE DEFENDER <span style="background-color: #1f2937; padding: 1px 4px; border-radius: 3px; font-size: 9px; color: #9ca3af;">v25.0</span></span>
 <span style="background-color: #1f2937; padding: 1px 6px; border-radius: 8px; font-size: 9px; color: #9ca3af;">● Live | {now_est.strftime('%H:%M')} ET</span>
 </div>
 """, unsafe_allow_html=True)
+
+# --- 뉴스 리스크 티커 + 최신 뉴스 (신규) ---
+try:
+    _news_items = news_feed.fetch_news_list(ticker="ES=F", n=5)
+    _risk_tags = news_feed.extract_risk_tags(_news_items)
+except Exception:
+    _news_items, _risk_tags = [], []
+
+if _risk_tags:
+    section_header("📰", "NEWS RISKS", f"Latest item {_news_items[0]['time_ago']}" if _news_items else None)
+    _tags_html = "".join(f'<span class="tag-pill">{t}</span>' for t in _risk_tags)
+    st.markdown(f'<div style="margin-bottom:4px;">{_tags_html}</div>', unsafe_allow_html=True)
+
+if _news_items:
+    section_header("📰", f"LATEST HIGH-IMPACT NEWS · {_news_items[0]['publisher']}",
+                    f"Latest item {_news_items[0]['time_ago']}")
+    _news_html = ""
+    for _n in _news_items[:4]:
+        _news_html += (f'<div style="font-size:10px; color:#d1d5db; padding:3px 0; '
+                        f'border-bottom:1px solid #1e2635;">{_n["title"]} '
+                        f'<span style="color:#5b6474; font-size:9px;">— {_n["publisher"]}</span> '
+                        f'<span style="color:#5b6474; font-size:9px;">{_n["time_ago"]}</span></div>')
+    st.markdown(f'<div class="card-box">{_news_html}</div>', unsafe_allow_html=True)
 
 # --- 데이터 오류 배너 ---
 if data_errors:
@@ -503,8 +566,59 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Backtest Controls ---
-tf_option = st.radio("타임프레임", ["10분 뒤", "30분 뒤", "1시간 뒤"], index=1, horizontal=True, label_visibility="collapsed")
+# --- Fear & Greed 게이지 (신규) ---
+@st.cache_data(ttl=300)
+def fetch_vix_history_for_feargreed():
+    """근사 Fear&Greed 계산용 최근 3개월 VIX 종가."""
+    try:
+        h = yf.download(tickers="^VIX", period="3mo", interval="1d", progress=False)
+        if isinstance(h.columns, pd.MultiIndex):
+            h.columns = h.columns.get_level_values(0)
+        return h['Close'] if not h.empty else None
+    except Exception:
+        return None
+
+_vix_hist = fetch_vix_history_for_feargreed()
+_price_hist_for_fg = es_df['Close'] if (es_df is not None and not es_df.empty) else None
+_fg_score, _fg_label = market_pulse.calculate_fear_greed(_vix_hist, _price_hist_for_fg, volume_buy_pct=50.0)
+
+_fg_colors = {"Extreme Fear": "#ef4444", "Fear": "#f97316", "Neutral": "#facc15",
+              "Greed": "#84cc16", "Extreme Greed": "#10b981"}
+_fg_color = _fg_colors.get(_fg_label, "#9ca3af")
+
+section_header("😨", "FEAR & GREED", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
+
+_fg_fig = go.Figure(go.Indicator(
+    mode="gauge+number",
+    value=_fg_score,
+    number={'font': {'size': 26, 'color': _fg_color}, 'suffix': ""},
+    gauge={
+        'axis': {'range': [0, 100], 'tickcolor': '#5b6474', 'tickfont': {'size': 8, 'color': '#5b6474'}},
+        'bar': {'color': _fg_color, 'thickness': 0.25},
+        'bgcolor': '#121824',
+        'borderwidth': 0,
+        'steps': [
+            {'range': [0, 25], 'color': '#3f1d1d'},
+            {'range': [25, 45], 'color': '#3d2410'},
+            {'range': [45, 55], 'color': '#302b0e'},
+            {'range': [55, 75], 'color': '#243312'},
+            {'range': [75, 100], 'color': '#0f2e22'},
+        ],
+    }
+))
+_fg_fig.update_layout(
+    height=130, margin=dict(l=15, r=15, t=10, b=5),
+    paper_bgcolor='rgba(0,0,0,0)', font={'color': '#e1e6ed'}
+)
+components.html(_fg_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                 config={'staticPlot': True, 'displayModeBar': False}),
+                 height=135)
+st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; color:{_fg_color}; margin-top:-8px;">{_fg_label}</div>',
+            unsafe_allow_html=True)
+st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 퍼센타일 · 가격 모멘텀 · 거래량 방향 기반 근사치 (CNN 공식 지수 아님)</div>',
+            unsafe_allow_html=True)
+
+
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
@@ -710,6 +824,104 @@ st.markdown(f"""
 </div>
 </div>
 """, unsafe_allow_html=True)
+
+# --- VWAP 밴드 + RSI + 1시간 차트 (신규) ---
+@st.cache_data(ttl=30)
+def fetch_today_session_1m():
+    """오늘 정규장(09:30 ET~) 1분봉. VWAP은 매일 09:30에 리셋되는 게 관례라 오늘 데이터만 쓴다."""
+    try:
+        t = yf.Ticker("ES=F")
+        df = t.history(period="1d", interval="1m")
+        if df.empty:
+            return None
+        est_tz = pytz.timezone('US/Eastern')
+        df.index = df.index.tz_convert(est_tz)
+        today = datetime.now(est_tz).date()
+        session_start = est_tz.localize(datetime.combine(today, datetime.min.time()).replace(hour=9, minute=30))
+        df = df[(df.index.date == today) & (df.index >= session_start)]
+        return df if not df.empty else None
+    except Exception:
+        return None
+
+section_header("📈", "1H 차트 · VWAP BANDS", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
+
+_session_df = fetch_today_session_1m()
+
+if _session_df is not None and len(_session_df) >= 5:
+    _vwap_series, _vwap_std = market_pulse.calculate_vwap_bands(_session_df)
+    _last_vwap = _vwap_series.iloc[-1]
+    _last_std = _vwap_std.iloc[-1]
+    _last_close = _session_df['Close'].iloc[-1]
+
+    if _last_close > _last_vwap + _last_std:
+        _vwap_note = "현재 상단 밴드 위 — 과열 구간일 수 있습니다."
+    elif _last_close < _last_vwap - _last_std:
+        _vwap_note = "현재 하단 밴드 아래 — 과매도 구간일 수 있습니다."
+    else:
+        _vwap_note = "현재 정상 세션 VWAP 밴드 안에 있습니다."
+
+    _vwap_fig = go.Figure()
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_session_df['Close'], name="가격",
+                                    line=dict(color='#e1e6ed', width=1.5)))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series, name="VWAP",
+                                    line=dict(color='#facc15', width=1.5, dash='dot')))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series + _vwap_std, name="+1σ",
+                                    line=dict(color='#3b82f680', width=1)))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series - _vwap_std, name="-1σ",
+                                    line=dict(color='#3b82f680', width=1), fill='tonexty',
+                                    fillcolor='rgba(59,130,246,0.07)'))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series + 2 * _vwap_std, name="+2σ",
+                                    line=dict(color='#3b82f640', width=1, dash='dash')))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series - 2 * _vwap_std, name="-2σ",
+                                    line=dict(color='#3b82f640', width=1, dash='dash')))
+    _vwap_fig.update_layout(
+        template="plotly_dark", height=210, margin=dict(l=0, r=0, t=10, b=20),
+        paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
+        xaxis=dict(showgrid=False, fixedrange=True, tickfont=dict(size=9, color='#7b8494')),
+        yaxis=dict(showgrid=True, gridcolor='#1e2635', fixedrange=True, tickfont=dict(size=9, color='#7b8494')),
+    )
+    components.html(_vwap_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                       config={'staticPlot': True, 'displayModeBar': False}), height=215)
+
+    st.markdown(f"""
+    <div class="card-box" style="font-size:10px;">
+    <span style="color:#facc15;">— </span>
+    <b>VWAP {round(_last_vwap,2)}</b>
+    <span style="color:#9ca3af;"> · {_vwap_note}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- RSI(14) ---
+    section_header("📉", "RSI (14) · 1분봉", None)
+    _rsi_series = market_pulse.calculate_rsi(_session_df['Close'], period=14)
+    _last_rsi = _rsi_series.iloc[-1]
+    _rsi_color = "#ef4444" if _last_rsi > 70 else ("#3b82f6" if _last_rsi < 30 else "#10b981")
+    _rsi_label = "과매수" if _last_rsi > 70 else ("과매도" if _last_rsi < 30 else "중립")
+
+    _rsi_fig = go.Figure()
+    _rsi_fig.add_trace(go.Scatter(x=_session_df.index, y=_rsi_series, line=dict(color=_rsi_color, width=1.5)))
+    _rsi_fig.add_hline(y=70, line_dash="dot", line_color="#ef444460", line_width=1)
+    _rsi_fig.add_hline(y=30, line_dash="dot", line_color="#3b82f660", line_width=1)
+    _rsi_fig.update_layout(
+        template="plotly_dark", height=110, margin=dict(l=0, r=0, t=5, b=15),
+        paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
+        xaxis=dict(showgrid=False, fixedrange=True, showticklabels=False),
+        yaxis=dict(showgrid=False, fixedrange=True, range=[0, 100], tickfont=dict(size=8, color='#7b8494')),
+    )
+    components.html(_rsi_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                      config={'staticPlot': True, 'displayModeBar': False}), height=115)
+    st.markdown(f"""
+    <div style="text-align:right; font-size:11px; margin-top:-6px;">
+    <span class="mono-num" style="color:{_rsi_color}; font-weight:700;">{round(_last_rsi,1)}</span>
+    <span style="color:#9ca3af;"> {_rsi_label}</span>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="card-box" style="font-size:10px; color:#9ca3af;">
+    오늘 세션 데이터를 아직 못 가져왔습니다 (장 시작 직후이거나 데이터 지연). 잠시 후 다시 확인해주세요.
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- Volume & CVD Chart ---
 st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
