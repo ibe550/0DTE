@@ -26,6 +26,43 @@ class SimonsBenterQuantEngine:
         return round(z_score, 2)
 
     @staticmethod
+    def get_session_risk_message(session_name):
+        """
+        세션 이름에 맞는 사용자 경고 메시지(레벨 + 문구)를 반환한다.
+        detect_trading_session()이 리턴한 session_name을 그대로 넣으면 된다.
+        반환: (risk_level, title, message)
+        """
+        messages = {
+            "OPEN_VOLATILITY": (
+                "HIGH", "개장 변동성",
+                "개장 직후입니다 — 밤사이 주문이 몰려 변동성이 크고 스프레드도 벌어질 수 있어요. "
+                "진입은 신중하게 하세요."
+            ),
+            "MORNING_TREND": (
+                "LOW", "오전 추세 형성",
+                "방향성이 잡히는 구간입니다. 비교적 안정적이지만 추세 전환에 유의하세요."
+            ),
+            "LUNCH_LULL": (
+                "MEDIUM", "점심 눌림",
+                "점심시간 — 유동성 저하와 가짜 돌파에 주의하세요."
+            ),
+            "AFTERNOON_TREND": (
+                "LOW", "오후 재개",
+                "거래량이 다시 붙기 시작하는 구간입니다."
+            ),
+            "POWER_HOUR_GAMMA_RISK": (
+                "EXTREME", "파워아워 감마 위험",
+                "0DTE 만기가 몇 시간 안 남아 감마가 극단적으로 커지는 구간입니다. "
+                "작은 가격 변동에도 옵션가치가 크게 흔들릴 수 있어요."
+            ),
+            "AFTER_HOURS_THIN_LIQUIDITY": (
+                "HIGH", "장외 저유동성",
+                "정규장 밖입니다 — 유동성이 얇아 슬리피지·스프레드 위험이 커집니다."
+            ),
+        }
+        return messages.get(session_name, ("LOW", "일반", "특이사항 없음."))
+
+    @staticmethod
     def detect_trading_session(now_et):
         """
         [0DTE 세션 리스크] 같은 변동성이라도 시간대에 따라 0DTE 옵션의 감마/세타
