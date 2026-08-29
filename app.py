@@ -618,7 +618,8 @@ st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; co
 st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 퍼센타일 · 가격 모멘텀 · 거래량 방향 기반 근사치 (CNN 공식 지수 아님)</div>',
             unsafe_allow_html=True)
 
-
+# --- Backtest Controls ---
+tf_option = st.radio("타임프레임", ["10분 뒤", "30분 뒤", "1시간 뒤"], index=1, horizontal=True, label_visibility="collapsed")
 bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
 selected_bars = bars_map[tf_option]
 
