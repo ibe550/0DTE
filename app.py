@@ -411,6 +411,8 @@ else:
 # 0DTE는 같은 변동성이라도 시간대(세션)에 따라 감마/세타 위험이 다르므로
 # 레짐 배수와 세션 배수를 곱해서 최종 안전거리 배수를 만든다.
 session_name, session_mult = SimonsBenterQuantEngine.detect_trading_session(now_est)
+session_risk_level, session_risk_title, session_risk_message = \
+    SimonsBenterQuantEngine.get_session_risk_message(session_name)
 
 # FOMC/CPI/NFP/옵션만기(OPEX) 같은 매크로 이벤트가 있는 날은 변동성이
 # 완전히 다르게 튈 수 있어 별도 배수를 추가로 곱한다.
@@ -439,7 +441,26 @@ if data_errors:
     </div>
     """, unsafe_allow_html=True)
 
-# --- 매크로 이벤트 배너 (신규) ---
+# --- 0DTE 세션 리스크 배너 (신규) ---
+_session_colors = {
+    "EXTREME": ("#ef4444", "#2a1414"),
+    "HIGH": ("#f97316", "#2a1c0e"),
+    "MEDIUM": ("#facc15", "#241f0a"),
+    "LOW": ("#60a5fa", "#111a24"),
+}
+_sr_fg, _sr_bg = _session_colors.get(session_risk_level, ("#9ca3af", "#161616"))
+st.markdown(f"""
+<div style="background-color:{_sr_bg}; border:1px solid {_sr_fg}55; border-radius:6px;
+            padding:6px 8px; margin-bottom:4px;">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<span style="font-size:10px; font-weight:bold; color:{_sr_fg};">⏱️ 0DTE TIME RISK — {session_risk_title}</span>
+<span style="font-size:9px; font-weight:bold; color:{_sr_fg}; background-color:{_sr_fg}22; padding:1px 6px; border-radius:4px;">{session_risk_level}</span>
+</div>
+<div style="font-size:10px; color:#d1d5db; margin-top:3px;">{session_risk_message}</div>
+</div>
+""", unsafe_allow_html=True)
+
+# --- 매크로 이벤트 배너 ---
 if macro_events:
     _risk_colors = {"EXTREME": "#ef4444", "HIGH": "#f97316", "MEDIUM_HIGH": "#facc15", "MEDIUM": "#9ca3af"}
     _events_html = ""
