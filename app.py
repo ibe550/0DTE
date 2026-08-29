@@ -16,6 +16,7 @@ import signal_tracker
 import macro_calendar
 import market_pulse
 import news_feed
+import yahoo_options
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
@@ -617,6 +618,68 @@ st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; co
             unsafe_allow_html=True)
 st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 퍼센타일 · 가격 모멘텀 · 거래량 방향 기반 근사치 (CNN 공식 지수 아님)</div>',
             unsafe_allow_html=True)
+
+# --- GEX · 감마 노출도 (신규, 야후 옵션체인 15분 지연) ---
+section_header("🧲", "GEX · 감마 노출도", "15분 지연 (야후) · SPY 체인 x10 환산")
+
+_yo_chain, _yo_err, _yo_T, _yo_r = yahoo_options.fetch_0dte_chain_with_greeks(ticker="SPY")
+
+if _yo_err:
+    st.markdown(f"""
+    <div class="card-box" style="font-size:10px; color:#fca5a5;">⚠️ {_yo_err}</div>
+    """, unsafe_allow_html=True)
+elif spy_p is None:
+    st.markdown("""
+    <div class="card-box" style="font-size:10px; color:#9ca3af;">SPY 현재가를 못 가져와서 GEX 계산을 건너뜁니다.</div>
+    """, unsafe_allow_html=True)
+else:
+    _gex_result = yahoo_options.calculate_gex_from_yahoo_chain(
+        _yo_chain, spot_price=spy_p, time_years=_yo_T, rate=_yo_r, scale_to_spx=10.0
+    )
+
+    if _gex_result is None:
+        st.markdown("""
+        <div class="card-box" style="font-size:10px; color:#9ca3af;">계산 가능한 옵션 데이터가 부족합니다 (OI·IV 값이 비어있는 경우가 많을 수 있음).</div>
+        """, unsafe_allow_html=True)
+    else:
+        _put_wall = _gex_result['put_wall']
+        _call_wall = _gex_result['call_wall']
+        _gamma_flip = _gex_result['gamma_flip']
+        _net_gex = _gex_result['net_gex_total']
+        _net_delta = _gex_result['net_delta_total']
+
+        _regime_label = "Pinning (핀 고정)" if _net_gex > 0 else "Explosive (변동성 확대 위험)"
+        _regime_color = "#10b981" if _net_gex > 0 else "#ef4444"
+
+        st.markdown(f"""
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
+        <div class="metric-card" style="border-left:3px solid #ef4444;">
+        <div class="metric-label">PUT WALL</div>
+        <div class="metric-val mono-num">{_put_wall:,.0f}</div>
+        <div class="metric-sub" style="color:#9ca3af;">지지</div>
+        </div>
+        <div class="metric-card" style="border-left:3px solid #facc15;">
+        <div class="metric-label">GAMMA FLIP</div>
+        <div class="metric-val mono-num">{f'{_gamma_flip:,.0f}' if _gamma_flip else 'N/A'}</div>
+        <div class="metric-sub" style="color:#9ca3af;">변곡점</div>
+        </div>
+        <div class="metric-card" style="border-left:3px solid #10b981;">
+        <div class="metric-label">CALL WALL</div>
+        <div class="metric-val mono-num">{_call_wall:,.0f}</div>
+        <div class="metric-sub" style="color:#9ca3af;">저항</div>
+        </div>
+        </div>
+        <div class="card-box" style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:10px; font-weight:700; color:{_regime_color};">{_regime_label}</span>
+        <span style="font-size:9px; color:#9ca3af;">Net Δ <b class="mono-num" style="color:#e1e6ed;">{_net_delta:,.0f}</b></span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="font-size:8px; color:#5b6474; margin-bottom:4px;">
+        * 야후 SPY 0DTE 옵션체인(15분 지연) 기준. 그릭스는 야후가 안 주는 값이라 IV+Black-Scholes로
+        직접 계산한 모델 근사치이며, 실제 거래소 그릭스·실시간 딜러 포지셔닝과 다를 수 있습니다.
+        </div>
+        """, unsafe_allow_html=True)
 
 # --- Backtest Controls ---
 tf_option = st.radio("타임프레임", ["10분 뒤", "30분 뒤", "1시간 뒤"], index=1, horizontal=True, label_visibility="collapsed")
