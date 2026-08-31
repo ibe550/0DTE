@@ -111,26 +111,42 @@ def fetch_0dte_chain_with_greeks(ticker="SPY"):
     return combined, None, time_years, rate
 
 
-def calculate_gex_from_yahoo_chain(chain_df, spot_price, time_years, rate, scale_to_spx=10.0):
+def calculate_gex_from_yahoo_chain(chain_df, spot_price, time_years, rate, scale_to_spx=10.0,
+                                     moneyness_band=0.10):
     """
     야후 0DTE 체인(calls+puts 합친 DataFrame)에서 스트라이크별 GEX를 계산한다.
     strike는 scale_to_spx를 곱해서 SPX 환산값으로 표시한다 (SPY 체인 기준일 때 10).
 
+    moneyness_band: 스팟 대비 ±비율(기본 10%) 밖 스트라이크는 제외한다.
+    0DTE는 거래량/OI가 스팟 근처에 몰리고, 멀리 떨어진 스트라이크는 유동성이 거의 없어
+    야후 데이터에서 IV/OI가 결측치·이상치로 찍히는 경우가 많다. 그런 노이즈가
+    Put Wall/Call Wall 계산을 왜곡하는 걸 막기 위한 필터다.
+
     반환: dict (schwab_client.calculate_gex_from_chain과 동일한 형태) 또는 None
     """
-    if chain_df is None or chain_df.empty:
+    if chain_df is None or chain_df.empty or spot_price is None or spot_price <= 0:
         return None
 
     strike_gex = {}
     net_delta_total = 0.0
+    low_bound = spot_price * (1 - moneyness_band)
+    high_bound = spot_price * (1 + moneyness_band)
 
     for _, row in chain_df.iterrows():
         strike_raw = row.get('strike')
-        oi = row.get('openInterest') or 0
+        oi = row.get('openInterest')
         iv = row.get('impliedVolatility')
         is_call = row.get('is_call')
 
-        if strike_raw is None or oi <= 0 or iv is None or pd.isna(iv):
+        # NaN은 <=0 비교에서 안 걸러지므로 반드시 명시적으로 체크한다
+        # (야후 옵션 데이터는 유동성 낮은 스트라이크에서 OI가 NaN으로 오는 경우가 흔함).
+        if strike_raw is None or pd.isna(strike_raw):
+            continue
+        if oi is None or pd.isna(oi) or oi <= 0:
+            continue
+        if iv is None or pd.isna(iv) or iv <= 0.01 or iv > 3.0:  # 비정상 IV(이상치) 배제
+            continue
+        if not (low_bound <= strike_raw <= high_bound):  # 스팟에서 너무 먼 스트라이크 배제
             continue
 
         delta, gamma = black_scholes_delta_gamma(spot_price, strike_raw, time_years, rate, iv, is_call)
