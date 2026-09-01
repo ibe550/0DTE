@@ -647,7 +647,10 @@ _gex_result = None
 _gex_err = None
 
 if schwab_client.is_configured() and spx_p is not None:
-    _chain, _chain_err = schwab_client.fetch_option_chain(symbol="$SPX", contract_type="ALL", strike_count=40)
+    _chain, _chain_err = schwab_client.fetch_option_chain(
+        symbol="$SPX", contract_type="ALL", strike_count=40,
+        expiration_date=now_est.strftime("%Y-%m-%d"),
+    )
     if _chain_err:
         _gex_err = f"Schwab: {_chain_err}"
     else:
