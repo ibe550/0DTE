@@ -17,6 +17,7 @@ import macro_calendar
 import market_pulse
 import news_feed
 import yahoo_options
+import schwab_client
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
@@ -256,34 +257,55 @@ def fetch_market_data():
     # 절대 읽거나 쓰지 않는다. 에러는 로컬 리스트에 모아서 반환값으로 전달한다.
     errors = []
 
-    # 1순위: Alpaca (SPY, 실시간)
+    spx_p = spx_c = spx_pct = None
+    vix_p = vix_c = vix_pct = None
+    es_p = es_c = es_pct = None
+    spy_p = spy_c = spy_pct = None
+
+    # 0순위: Schwab API (SPX, VIX, SPY 실시간). 설정 안 돼있거나 refresh_token 만료 시 조용히 건너뜀.
+    if schwab_client.is_configured():
+        _schwab_results, _schwab_err = schwab_client.fetch_quotes(["$SPX", "$VIX", "SPY"])
+        if _schwab_err:
+            errors.append(f"Schwab: {_schwab_err}")
+        else:
+            spx_p, spx_c, spx_pct = _schwab_results.get("$SPX", (None, None, None))
+            vix_p, vix_c, vix_pct = _schwab_results.get("$VIX", (None, None, None))
+            spy_p, spy_c, spy_pct = _schwab_results.get("SPY", (None, None, None))
+
+    # 1순위(SPY 폴백): Alpaca
     alp_spy_p, alp_spy_c, alp_spy_pct, alp_err = fetch_alpaca_stock_snapshot("SPY")
     if alp_err:
         errors.append(alp_err)
+    if spy_p is None and alp_spy_p is not None:
+        spy_p, spy_c, spy_pct = alp_spy_p, alp_spy_c, alp_spy_pct
 
-    # 2순위: Twelve Data (SPY) - Alpaca 실패했을 때만 보조 실시간 소스로 사용.
+    # 2순위(SPY 폴백): Twelve Data
     # 주의: Twelve Data 무료(Basic) 플랜은 지수(SPX, VIX)를 지원하지 않는다
     # (유료 Grow 플랜부터 지원). 그래서 SPX/VIX에는 사용하지 않는다.
-    td_spy_p = td_spy_c = td_spy_pct = None
-    if alp_spy_p is None:
+    if spy_p is None:
         td_results, td_errors = fetch_twelvedata_quotes("SPY")
         errors.extend(td_errors)
         td_spy_p, td_spy_c, td_spy_pct = td_results.get("SPY", (None, None, None))
+        if td_spy_p is not None:
+            spy_p, spy_c, spy_pct = td_spy_p, td_spy_c, td_spy_pct
 
-    spy_p, spy_c, spy_pct = (alp_spy_p, alp_spy_c, alp_spy_pct) if alp_spy_p is not None \
-        else (td_spy_p, td_spy_c, td_spy_pct)
-
-    # SPX/VIX/ES: 무료로 지수·선물을 실제 값으로 주는 곳이 마땅치 않아 야후를 사용.
-    # 배치 조회 + 캐시로 rate limit 위험은 최대한 줄여둔 상태.
-    yf_symbols = ['^GSPC', '^VIX'] + YF_TICKERS  # YF_TICKERS = ['ES=F']
+    # 3순위(SPX/VIX/ES 폴백): 야후. Schwab이 성공했으면 필요한 것만 골라서 호출.
+    yf_symbols = []
+    if spx_p is None:
+        yf_symbols.append('^GSPC')
+    if vix_p is None:
+        yf_symbols.append('^VIX')
+    yf_symbols += YF_TICKERS  # ES=F는 Schwab Trader API - Individual에서 지원 안 될 수 있어 항상 폴백 후보에 포함
     if spy_p is None:
         yf_symbols.append('SPY')
 
     yf_results, yf_errors = fetch_yf_batch(tuple(yf_symbols))
     errors.extend(yf_errors)
 
-    spx_p, spx_c, spx_pct = yf_results.get('^GSPC', (None, None, None))
-    vix_p, vix_c, vix_pct = yf_results.get('^VIX', (None, None, None))
+    if spx_p is None:
+        spx_p, spx_c, spx_pct = yf_results.get('^GSPC', (None, None, None))
+    if vix_p is None:
+        vix_p, vix_c, vix_pct = yf_results.get('^VIX', (None, None, None))
     es_p, es_c, es_pct = yf_results.get('ES=F', (None, None, None))
 
     if spy_p is None:
@@ -619,61 +641,89 @@ st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; co
 st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 퍼센타일 · 가격 모멘텀 · 거래량 방향 기반 근사치 (CNN 공식 지수 아님)</div>',
             unsafe_allow_html=True)
 
-# --- GEX · 감마 노출도 (신규, 야후 옵션체인 15분 지연) ---
-section_header("🧲", "GEX · 감마 노출도", "15분 지연 (야후) · SPY 체인 x10 환산")
+# --- GEX · 감마 노출도 (Schwab 실시간 우선, 실패 시 야후 15분지연 폴백) ---
+_gex_source_label = None
+_gex_result = None
+_gex_err = None
 
-_yo_chain, _yo_err, _yo_T, _yo_r = yahoo_options.fetch_0dte_chain_with_greeks(ticker="SPY")
+if schwab_client.is_configured() and spx_p is not None:
+    _chain, _chain_err = schwab_client.fetch_option_chain(symbol="$SPX", contract_type="ALL", strike_count=40)
+    if _chain_err:
+        _gex_err = f"Schwab: {_chain_err}"
+    else:
+        _gex_result = schwab_client.calculate_gex_from_chain(_chain, spx_p)
+        if _gex_result is None:
+            _gex_err = "Schwab 응답은 받았지만 계산할 데이터가 없습니다 (0DTE 만기가 없는 날일 수 있음)."
+        else:
+            _gex_source_label = "실시간 (Schwab)"
 
-if _yo_err:
+# Schwab이 설정 안 됐거나 실패했으면 야후로 폴백
+if _gex_result is None and spy_p is not None:
+    _yo_chain, _yo_err, _yo_T, _yo_r = yahoo_options.fetch_0dte_chain_with_greeks(ticker="SPY")
+    if _yo_err:
+        # Schwab 에러가 이미 있으면 같이 보여주고, 없으면 야후 에러만
+        _gex_err = (f"{_gex_err} / 야후도 실패: {_yo_err}") if _gex_err else _yo_err
+    else:
+        _gex_result = yahoo_options.calculate_gex_from_yahoo_chain(
+            _yo_chain, spot_price=spy_p, time_years=_yo_T, rate=_yo_r, scale_to_spx=10.0
+        )
+        if _gex_result is not None:
+            _gex_source_label = "15분 지연 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() \
+                else "15분 지연 (야후)"
+        elif not _gex_err:
+            _gex_err = "계산 가능한 옵션 데이터가 부족합니다."
+
+section_header("🧲", "GEX · 감마 노출도", _gex_source_label or "데이터 없음")
+
+if _gex_err and _gex_result is None:
     st.markdown(f"""
-    <div class="card-box" style="font-size:10px; color:#fca5a5;">⚠️ {_yo_err}</div>
+    <div class="card-box" style="font-size:10px; color:#fca5a5;">⚠️ {_gex_err}</div>
     """, unsafe_allow_html=True)
-elif spy_p is None:
+elif _gex_result is None:
     st.markdown("""
-    <div class="card-box" style="font-size:10px; color:#9ca3af;">SPY 현재가를 못 가져와서 GEX 계산을 건너뜁니다.</div>
+    <div class="card-box" style="font-size:10px; color:#9ca3af;">SPX/SPY 현재가를 못 가져와서 GEX 계산을 건너뜁니다.</div>
     """, unsafe_allow_html=True)
 else:
-    _gex_result = yahoo_options.calculate_gex_from_yahoo_chain(
-        _yo_chain, spot_price=spy_p, time_years=_yo_T, rate=_yo_r, scale_to_spx=10.0
-    )
+    _put_wall = _gex_result['put_wall']
+    _call_wall = _gex_result['call_wall']
+    _gamma_flip = _gex_result['gamma_flip']
+    _net_gex = _gex_result['net_gex_total']
+    _net_delta = _gex_result['net_delta_total']
 
-    if _gex_result is None:
+    _regime_label = "Pinning (핀 고정)" if _net_gex > 0 else "Explosive (변동성 확대 위험)"
+    _regime_color = "#10b981" if _net_gex > 0 else "#ef4444"
+
+    st.markdown(f"""
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
+    <div class="metric-card" style="border-left:3px solid #ef4444;">
+    <div class="metric-label">PUT WALL</div>
+    <div class="metric-val mono-num">{_put_wall:,.0f}</div>
+    <div class="metric-sub" style="color:#9ca3af;">지지</div>
+    </div>
+    <div class="metric-card" style="border-left:3px solid #facc15;">
+    <div class="metric-label">GAMMA FLIP</div>
+    <div class="metric-val mono-num">{f'{_gamma_flip:,.0f}' if _gamma_flip else 'N/A'}</div>
+    <div class="metric-sub" style="color:#9ca3af;">변곡점</div>
+    </div>
+    <div class="metric-card" style="border-left:3px solid #10b981;">
+    <div class="metric-label">CALL WALL</div>
+    <div class="metric-val mono-num">{_call_wall:,.0f}</div>
+    <div class="metric-sub" style="color:#9ca3af;">저항</div>
+    </div>
+    </div>
+    <div class="card-box" style="display:flex; justify-content:space-between; align-items:center;">
+    <span style="font-size:10px; font-weight:700; color:{_regime_color};">{_regime_label}</span>
+    <span style="font-size:9px; color:#9ca3af;">Net Δ <b class="mono-num" style="color:#e1e6ed;">{_net_delta:,.0f}</b></span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if _gex_source_label and "Schwab" in _gex_source_label and "야후" not in _gex_source_label:
         st.markdown("""
-        <div class="card-box" style="font-size:10px; color:#9ca3af;">계산 가능한 옵션 데이터가 부족합니다 (OI·IV 값이 비어있는 경우가 많을 수 있음).</div>
+        <div style="font-size:8px; color:#5b6474; margin-bottom:4px;">
+        * SPX 실시간 옵션체인(Schwab) 기준 GEX. 실제 딜러 포지셔닝과는 다를 수 있음.
+        </div>
         """, unsafe_allow_html=True)
     else:
-        _put_wall = _gex_result['put_wall']
-        _call_wall = _gex_result['call_wall']
-        _gamma_flip = _gex_result['gamma_flip']
-        _net_gex = _gex_result['net_gex_total']
-        _net_delta = _gex_result['net_delta_total']
-
-        _regime_label = "Pinning (핀 고정)" if _net_gex > 0 else "Explosive (변동성 확대 위험)"
-        _regime_color = "#10b981" if _net_gex > 0 else "#ef4444"
-
-        st.markdown(f"""
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
-        <div class="metric-card" style="border-left:3px solid #ef4444;">
-        <div class="metric-label">PUT WALL</div>
-        <div class="metric-val mono-num">{_put_wall:,.0f}</div>
-        <div class="metric-sub" style="color:#9ca3af;">지지</div>
-        </div>
-        <div class="metric-card" style="border-left:3px solid #facc15;">
-        <div class="metric-label">GAMMA FLIP</div>
-        <div class="metric-val mono-num">{f'{_gamma_flip:,.0f}' if _gamma_flip else 'N/A'}</div>
-        <div class="metric-sub" style="color:#9ca3af;">변곡점</div>
-        </div>
-        <div class="metric-card" style="border-left:3px solid #10b981;">
-        <div class="metric-label">CALL WALL</div>
-        <div class="metric-val mono-num">{_call_wall:,.0f}</div>
-        <div class="metric-sub" style="color:#9ca3af;">저항</div>
-        </div>
-        </div>
-        <div class="card-box" style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:10px; font-weight:700; color:{_regime_color};">{_regime_label}</span>
-        <span style="font-size:9px; color:#9ca3af;">Net Δ <b class="mono-num" style="color:#e1e6ed;">{_net_delta:,.0f}</b></span>
-        </div>
-        """, unsafe_allow_html=True)
         st.markdown("""
         <div style="font-size:8px; color:#5b6474; margin-bottom:4px;">
         * 야후 SPY 0DTE 옵션체인(15분 지연) 기준. 그릭스는 야후가 안 주는 값이라 IV+Black-Scholes로
