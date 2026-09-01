@@ -512,14 +512,14 @@ if _news_items:
                     f"{_news_source} · Latest item {now_est.strftime('%m/%d %H:%M:%S')} ET")
     _news_html = ""
     for _n in _news_items[:4]:
-        _news_html += f"""
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;
-                     padding:6px 0; border-bottom:1px solid #1e2635; gap:8px;">
-        <span style="font-size:10px; color:#d1d5db; line-height:1.4;">{_n["title"]}
-        <span style="color:#5b6474;"> - {_n["publisher"]}</span></span>
-        <span style="font-size:9px; color:#5b6474; white-space:nowrap; flex-shrink:0;">{_n["time_ago"]}</span>
-        </div>
-        """
+        _news_html += (
+            '<div style="display:flex; justify-content:space-between; align-items:flex-start; '
+            'padding:6px 0; border-bottom:1px solid #1e2635; gap:8px;">'
+            f'<span style="font-size:10px; color:#d1d5db; line-height:1.4;">{_n["title"]}'
+            f'<span style="color:#5b6474;"> - {_n["publisher"]}</span></span>'
+            f'<span style="font-size:9px; color:#5b6474; white-space:nowrap; flex-shrink:0;">{_n["time_ago"]}</span>'
+            '</div>'
+        )
     st.markdown(f'<div class="card-box">{_news_html}</div>', unsafe_allow_html=True)
 
 # --- 데이터 오류 배너 ---
