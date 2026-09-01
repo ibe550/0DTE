@@ -97,26 +97,36 @@ def fetch_quotes(symbols):
     return results, None
 
 
-def fetch_option_chain(symbol="$SPX", contract_type="ALL", strike_count=40):
+def fetch_option_chain(symbol="$SPX", contract_type="ALL", strike_count=40, expiration_date=None):
     """
     옵션 체인 조회. 반환: (chain_dict_or_None, error_or_None)
+
+    expiration_date: "YYYY-MM-DD" 문자열. 지정하면 그 날짜 만기만 요청해서
+    (fromDate=toDate=해당일) 불필요한 다른 만기(예: 몇 년 뒤 LEAPS)까지
+    받아오는 걸 방지한다. None이면 모든 만기를 다 받아온다(비효율적이고
+    다른 만기 데이터가 섞여 계산이 왜곡될 위험이 있음).
     """
     access_token, err = _get_access_token()
     if access_token is None:
         return None, err
 
+    params = {
+        "symbol": symbol,
+        "contractType": contract_type,
+        "strikeCount": strike_count,
+        "includeUnderlyingQuote": "true",
+        "strategy": "SINGLE",
+        "range": "ALL",
+    }
+    if expiration_date:
+        params["fromDate"] = expiration_date
+        params["toDate"] = expiration_date
+
     try:
         resp = requests.get(
             CHAINS_URL,
             headers={"Authorization": f"Bearer {access_token}"},
-            params={
-                "symbol": symbol,
-                "contractType": contract_type,
-                "strikeCount": strike_count,
-                "includeUnderlyingQuote": "true",
-                "strategy": "SINGLE",
-                "range": "ALL",
-            },
+            params=params,
             timeout=15,
         )
     except Exception as e:
@@ -156,6 +166,13 @@ def calculate_gex_from_chain(chain_data, spot_price):
         for _exp_date, strikes in exp_map.items():
             for strike_str, contracts in strikes.items():
                 for c in contracts:
+                    # 안전망: API 요청에서 fromDate/toDate로 오늘 만기만 걸러도,
+                    # 혹시 다른 만기가 섞여 오면(예: 요청 파라미터 무시됨) 여기서 한 번 더 걸러낸다.
+                    # 0DTE가 아닌 계약(며칠~몇 년 뒤 만기, 특히 LEAPS)이 섞이면
+                    # 그 계약들의 대량 미결제약정이 전체 계산을 왜곡시킨다.
+                    if c.get("daysToExpiration") not in (0, None):
+                        continue
+
                     try:
                         strike = float(c.get("strikePrice", strike_str))
                     except (TypeError, ValueError):
