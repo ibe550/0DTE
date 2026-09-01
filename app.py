@@ -494,7 +494,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 뉴스 리스크 티커 + 최신 뉴스 (신규) ---
+# --- 뉴스 리스크 티커 + 최신 뉴스 ---
 try:
     _news_items = news_feed.fetch_news_list(ticker="ES=F", n=5)
     _risk_tags = news_feed.extract_risk_tags(_news_items)
@@ -507,14 +507,19 @@ if _risk_tags:
     st.markdown(f'<div style="margin-bottom:4px;">{_tags_html}</div>', unsafe_allow_html=True)
 
 if _news_items:
-    section_header("📰", f"LATEST HIGH-IMPACT NEWS · {_news_items[0]['publisher']}",
-                    f"Latest item {_news_items[0]['time_ago']}")
+    _news_source = _news_items[0]['publisher'] if len(_news_items) == 1 else "Google News"
+    section_header("📰", "LATEST HIGH-IMPACT NEWS",
+                    f"{_news_source} · Latest item {now_est.strftime('%m/%d %H:%M:%S')} ET")
     _news_html = ""
     for _n in _news_items[:4]:
-        _news_html += (f'<div style="font-size:10px; color:#d1d5db; padding:3px 0; '
-                        f'border-bottom:1px solid #1e2635;">{_n["title"]} '
-                        f'<span style="color:#5b6474; font-size:9px;">— {_n["publisher"]}</span> '
-                        f'<span style="color:#5b6474; font-size:9px;">{_n["time_ago"]}</span></div>')
+        _news_html += f"""
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;
+                     padding:6px 0; border-bottom:1px solid #1e2635; gap:8px;">
+        <span style="font-size:10px; color:#d1d5db; line-height:1.4;">{_n["title"]}
+        <span style="color:#5b6474;"> - {_n["publisher"]}</span></span>
+        <span style="font-size:9px; color:#5b6474; white-space:nowrap; flex-shrink:0;">{_n["time_ago"]}</span>
+        </div>
+        """
     st.markdown(f'<div class="card-box">{_news_html}</div>', unsafe_allow_html=True)
 
 # --- 데이터 오류 배너 ---
