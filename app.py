@@ -657,6 +657,41 @@ if schwab_client.is_configured() and spx_p is not None:
         else:
             _gex_source_label = "실시간 (Schwab)"
 
+    # --- 디버그 패널 (신규) ---
+    # Put/Call Wall이 똑같이 나오는 등 이상하면, 실제 Schwab 응답 구조가
+    # 코드가 가정한 필드명과 다를 가능성이 높다. 이 패널로 원본을 직접 확인한다.
+    with st.expander("🔍 Schwab 옵션체인 원본 디버그 (문제 있을 때 펼쳐서 확인)"):
+        if _chain is None:
+            st.write("응답 자체가 없습니다 (요청 실패).")
+        else:
+            st.write("최상위 키:", list(_chain.keys()))
+
+            underlying = _chain.get("underlying")
+            st.write("underlying 필드:", underlying)
+
+            call_map = _chain.get("callExpDateMap", {})
+            put_map = _chain.get("putExpDateMap", {})
+            st.write(f"callExpDateMap 만기 개수: {len(call_map)}, putExpDateMap 만기 개수: {len(put_map)}")
+
+            if call_map:
+                first_exp = list(call_map.keys())[0]
+                st.write("첫 콜 만기 키:", first_exp)
+                first_strikes = call_map[first_exp]
+                st.write(f"그 만기의 스트라이크 개수: {len(first_strikes)}")
+                first_strike_key = list(first_strikes.keys())[0]
+                st.write("첫 스트라이크 키:", first_strike_key)
+                st.write("그 스트라이크의 원본 contract 데이터:")
+                st.json(first_strikes[first_strike_key])
+            else:
+                st.write("callExpDateMap이 비어있습니다.")
+
+            if put_map:
+                first_exp_p = list(put_map.keys())[0]
+                first_strikes_p = put_map[first_exp_p]
+                first_strike_key_p = list(first_strikes_p.keys())[0]
+                st.write("첫 풋 계약 원본 데이터:")
+                st.json(first_strikes_p[first_strike_key_p])
+
 # Schwab이 설정 안 됐거나 실패했으면 야후로 폴백
 if _gex_result is None and spy_p is not None:
     _yo_chain, _yo_err, _yo_T, _yo_r = yahoo_options.fetch_0dte_chain_with_greeks(ticker="SPY")
