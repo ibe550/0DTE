@@ -730,6 +730,7 @@ if schwab_client.is_configured() and _gex_spot is not None:
             call_map = _chain.get("callExpDateMap", {})
             put_map = _chain.get("putExpDateMap", {})
             st.write(f"callExpDateMap 만기 개수: {len(call_map)}, putExpDateMap 만기 개수: {len(put_map)}")
+            st.write("callExpDateMap 만기 키 목록:", list(call_map.keys()))
 
             if call_map:
                 first_exp = list(call_map.keys())[0]
@@ -749,6 +750,42 @@ if schwab_client.is_configured() and _gex_spot is not None:
                 first_strike_key_p = list(first_strikes_p.keys())[0]
                 st.write("첫 풋 계약 원본 데이터:")
                 st.json(first_strikes_p[first_strike_key_p])
+
+            # --- daysToExpiration 필터가 실제로 뭘 걸러내는지 진단 (신규) ---
+            st.markdown("---")
+            st.write("**필터링 진단** (Put Wall = Call Wall 원인 파악용)")
+            total_contracts = 0
+            passed_filter = 0
+            dte_values = {}
+            zero_gamma_count = 0
+            zero_oi_count = 0
+            strikes_after_filter = set()
+
+            for exp_map_key in ("callExpDateMap", "putExpDateMap"):
+                exp_map = _chain.get(exp_map_key, {})
+                for _exp_date, strikes in exp_map.items():
+                    for strike_str, contracts in strikes.items():
+                        for c in contracts:
+                            total_contracts += 1
+                            dte = c.get("daysToExpiration")
+                            dte_values[dte] = dte_values.get(dte, 0) + 1
+                            if dte not in (0, None):
+                                continue
+                            passed_filter += 1
+                            if not (c.get("gamma") or 0):
+                                zero_gamma_count += 1
+                            if not (c.get("openInterest") or 0):
+                                zero_oi_count += 1
+                            if (c.get("gamma") or 0) and (c.get("openInterest") or 0):
+                                strikes_after_filter.add(c.get("strikePrice"))
+
+            st.write(f"전체 계약 수: {total_contracts}")
+            st.write("daysToExpiration 값 분포:", dte_values)
+            st.write(f"daysToExpiration==0(또는 None) 필터 통과: {passed_filter}")
+            st.write(f"필터 통과했지만 gamma=0인 계약: {zero_gamma_count}")
+            st.write(f"필터 통과했지만 openInterest=0인 계약: {zero_oi_count}")
+            st.write(f"gamma>0 AND OI>0 모두 만족하는 고유 스트라이크 수: {len(strikes_after_filter)}")
+            st.write("그 스트라이크들:", sorted(strikes_after_filter))
 
 # Schwab이 설정 안 됐거나 실패했으면 야후로 폴백
 if _gex_result is None and spy_p is not None:
