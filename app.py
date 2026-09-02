@@ -827,7 +827,7 @@ else:
     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
     <div class="metric-card" style="border-left:3px solid #ef4444;">
     <div class="metric-label">PUT WALL</div>
-    <div class="metric-val mono-num">{_put_wall:,.0f}</div>
+    <div class="metric-val mono-num">{f'{_put_wall:,.0f}' if _put_wall is not None else 'N/A'}</div>
     <div class="metric-sub" style="color:#9ca3af;">지지</div>
     </div>
     <div class="metric-card" style="border-left:3px solid #facc15;">
@@ -837,7 +837,7 @@ else:
     </div>
     <div class="metric-card" style="border-left:3px solid #10b981;">
     <div class="metric-label">CALL WALL</div>
-    <div class="metric-val mono-num">{_call_wall:,.0f}</div>
+    <div class="metric-val mono-num">{f'{_call_wall:,.0f}' if _call_wall is not None else 'N/A'}</div>
     <div class="metric-sub" style="color:#9ca3af;">저항</div>
     </div>
     </div>
