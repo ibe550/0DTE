@@ -20,17 +20,26 @@ import yahoo_options
 import schwab_client
 import streamlit as st
 
-# 상단 헤더 전체 제거 CSS
 st.markdown(
     """
     <style>
+    /* 상단 헤더 숨기기 */
     [data-testid="stHeader"] {
         display: none !important;
+    }
+    
+    /* 상단 여백(빈 공간) 완전히 제거 */
+    .main .block-container {
+        padding-top: 0rem !important;
+        padding-bottom: 0rem !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
+
+
+
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
