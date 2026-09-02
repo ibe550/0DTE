@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 import pytz
 import time
 import yfinance as yf
@@ -18,38 +18,6 @@ import market_pulse
 import news_feed
 import yahoo_options
 import schwab_client
-import streamlit as st
-
-st.markdown(
-    """
-    <style>
-    /* 1. 상단 헤더 숨김 및 높이 0 처리 */
-    [data-testid="stHeader"] {
-        display: none !important;
-        height: 0px !important;
-    }
-    
-    /* 2. 메인 컨테이너 패딩 완전 제거 및 최상단 밀착 */
-    .main .block-container {
-        padding-top: 0rem !important;
-        padding-bottom: 0rem !important;
-        margin-top: 0rem !important;
-    }
-
-    /* 3. 앱 전체 뷰 상단 여백 제거 */
-    [data-testid="stAppViewContainer"] > section:nth-child(2) {
-        padding-top: 0rem !important;
-    }
-    
-    /* 4. 최상단 첫 번째 요소의 기본 margin 제거 */
-    [data-testid="stVerticalBlock"] > div:first-child {
-        margin-top: 0rem !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
@@ -679,11 +647,59 @@ st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin
             unsafe_allow_html=True)
 
 # --- GEX · 감마 노출도 (Schwab 실시간 우선, 실패 시 야후 15분지연 폴백) ---
+@st.cache_data(ttl=300)
+def fetch_spx_es_prev_close():
+    """
+    가장 최근 완료된 정규장 종가 시점의 SPX·ES 종가를 가져온다 (베이시스 계산용).
+    반환: (spx_prev_close, es_prev_close) 또는 실패 시 (None, None).
+    """
+    try:
+        h = yf.download(tickers=["^GSPC", "ES=F"], period="5d", interval="1d",
+                         group_by="ticker", progress=False)
+        if not isinstance(h.columns, pd.MultiIndex):
+            return None, None
+        spx_close = h["^GSPC"]["Close"].dropna()
+        es_close = h["ES=F"]["Close"].dropna()
+        if len(spx_close) < 1 or len(es_close) < 1:
+            return None, None
+        return float(spx_close.iloc[-1]), float(es_close.iloc[-1])
+    except Exception:
+        return None, None
+
+
+def get_gex_spot_price():
+    """
+    GEX 계산에 쓸 SPX 스팟가격을 정한다.
+    - 정규장(09:30~16:00 ET) 중: 실시간 SPX 가격 그대로 사용.
+    - 그 외 시간(프리마켓/애프터마켓): SPX는 지수라 시세가 안 움직이므로(마지막 정규장
+      종가에 멈춰있음), ES 선물의 실시간 움직임으로 SPX를 추정한다.
+      추정 SPX = 현재 ES가 - (마지막 정규장 종가 시점의 ES-SPX 가격차이)
+    반환: (spot_price_or_None, is_estimated: bool, note: str)
+    """
+    is_rth = dtime(9, 30) <= now_est.time() <= dtime(16, 0)
+
+    if is_rth:
+        return spx_p, False, "정규장 실시간 SPX"
+
+    if es_p is None:
+        return spx_p, False, "ES 데이터 없음 - 마지막 SPX 값 그대로 사용 (주의: 지연/부정확할 수 있음)"
+
+    spx_prev_close, es_prev_close = fetch_spx_es_prev_close()
+    if spx_prev_close is None or es_prev_close is None:
+        return spx_p, False, "베이시스 계산 실패 - 마지막 SPX 값 그대로 사용 (주의: 지연/부정확할 수 있음)"
+
+    basis = es_prev_close - spx_prev_close
+    estimated_spx = es_p - basis
+    return estimated_spx, True, f"ES 기반 추정 (베이시스 {basis:+.1f}pt)"
+
+
 _gex_source_label = None
 _gex_result = None
 _gex_err = None
 
-if schwab_client.is_configured() and spx_p is not None:
+_gex_spot, _gex_is_estimated, _gex_spot_note = get_gex_spot_price()
+
+if schwab_client.is_configured() and _gex_spot is not None:
     _chain, _chain_err = schwab_client.fetch_option_chain(
         symbol="$SPX", contract_type="ALL", strike_count=40,
         expiration_date=now_est.strftime("%Y-%m-%d"),
@@ -691,16 +707,18 @@ if schwab_client.is_configured() and spx_p is not None:
     if _chain_err:
         _gex_err = f"Schwab: {_chain_err}"
     else:
-        _gex_result = schwab_client.calculate_gex_from_chain(_chain, spx_p)
+        _gex_result = schwab_client.calculate_gex_from_chain(_chain, _gex_spot)
         if _gex_result is None:
             _gex_err = "Schwab 응답은 받았지만 계산할 데이터가 없습니다 (0DTE 만기가 없는 날일 수 있음)."
         else:
-            _gex_source_label = "실시간 (Schwab)"
+            _gex_source_label = ("실시간 (Schwab) · " + _gex_spot_note) if not _gex_is_estimated \
+                else ("Schwab 체인 + " + _gex_spot_note)
 
-    # --- 디버그 패널 (신규) ---
+    # --- 디버그 패널 ---
     # Put/Call Wall이 똑같이 나오는 등 이상하면, 실제 Schwab 응답 구조가
     # 코드가 가정한 필드명과 다를 가능성이 높다. 이 패널로 원본을 직접 확인한다.
     with st.expander("🔍 Schwab 옵션체인 원본 디버그 (문제 있을 때 펼쳐서 확인)"):
+        st.write(f"GEX 계산에 사용된 스팟가격: {_gex_spot} ({_gex_spot_note})")
         if _chain is None:
             st.write("응답 자체가 없습니다 (요청 실패).")
         else:
@@ -792,19 +810,30 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
+    if _gex_is_estimated:
+        st.markdown(
+            '<div style="font-size:8px; color:#facc15; margin-bottom:2px;">'
+            f'⚠️ 정규장 외 시간이라 SPX 현재가를 ES 선물 기반으로 추정해서 계산했습니다 ({_gex_spot_note}). '
+            '실제 SPX 값과 다를 수 있습니다.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
     if _gex_source_label and "Schwab" in _gex_source_label and "야후" not in _gex_source_label:
-        st.markdown("""
-        <div style="font-size:8px; color:#5b6474; margin-bottom:4px;">
-        * SPX 실시간 옵션체인(Schwab) 기준 GEX. 실제 딜러 포지셔닝과는 다를 수 있음.
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:8px; color:#5b6474; margin-bottom:4px;">'
+            '* SPX 옵션체인(Schwab) 기준 GEX. 실제 딜러 포지셔닝과는 다를 수 있음.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
     else:
-        st.markdown("""
-        <div style="font-size:8px; color:#5b6474; margin-bottom:4px;">
-        * 야후 SPY 0DTE 옵션체인(15분 지연) 기준. 그릭스는 야후가 안 주는 값이라 IV+Black-Scholes로
-        직접 계산한 모델 근사치이며, 실제 거래소 그릭스·실시간 딜러 포지셔닝과 다를 수 있습니다.
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:8px; color:#5b6474; margin-bottom:4px;">'
+            '* 야후 SPY 0DTE 옵션체인(15분 지연) 기준. 그릭스는 야후가 안 주는 값이라 IV+Black-Scholes로 '
+            '직접 계산한 모델 근사치이며, 실제 거래소 그릭스·실시간 딜러 포지셔닝과 다를 수 있습니다.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 # --- Backtest Controls ---
 tf_option = st.radio("타임프레임", ["10분 뒤", "30분 뒤", "1시간 뒤"], index=1, horizontal=True, label_visibility="collapsed")
