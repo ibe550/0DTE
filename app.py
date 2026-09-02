@@ -23,22 +23,32 @@ import streamlit as st
 st.markdown(
     """
     <style>
-    /* 상단 헤더 숨기기 */
+    /* 1. 상단 헤더 숨김 및 높이 0 처리 */
     [data-testid="stHeader"] {
         display: none !important;
+        height: 0px !important;
     }
     
-    /* 상단 여백(빈 공간) 완전히 제거 */
+    /* 2. 메인 컨테이너 패딩 완전 제거 및 최상단 밀착 */
     .main .block-container {
         padding-top: 0rem !important;
         padding-bottom: 0rem !important;
+        margin-top: 0rem !important;
+    }
+
+    /* 3. 앱 전체 뷰 상단 여백 제거 */
+    [data-testid="stAppViewContainer"] > section:nth-child(2) {
+        padding-top: 0rem !important;
+    }
+    
+    /* 4. 최상단 첫 번째 요소의 기본 margin 제거 */
+    [data-testid="stVerticalBlock"] > div:first-child {
+        margin-top: 0rem !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
-
-
 
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
