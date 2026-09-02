@@ -18,6 +18,19 @@ import market_pulse
 import news_feed
 import yahoo_options
 import schwab_client
+import streamlit as st
+
+# 상단 헤더 전체 제거 CSS
+st.markdown(
+    """
+    <style>
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # --- Alpaca 옵션 모듈 연동 체크 ---
 try:
