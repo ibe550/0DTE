@@ -484,7 +484,12 @@ macro_mult, macro_events = macro_calendar.get_macro_risk_multiplier(now_est.date
 distance_mult = round(regime_mult * session_mult * macro_mult, 2)
 
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
-strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_mult, alpaca_analytics)
+try:
+    strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_mult, alpaca_analytics)
+    if not isinstance(strikes, dict):
+        strikes = {}
+except Exception:
+    strikes = {}
 
 # --- Header ---
 st.markdown(f"""
@@ -1050,11 +1055,16 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- Dynamic Recommended Strikes ---
-if spx_p is not None and strikes['call_target'] is not None:
-    diff_r2 = round(strikes['call_target'] - spx_p, 1)
-    diff_s2 = round(spx_p - strikes['put_target'], 1)
-    call_target_str = strikes['call_target']
-    put_target_str = strikes['put_target']
+_strikes_call_target = strikes.get('call_target') if isinstance(strikes, dict) else None
+_strikes_put_target = strikes.get('put_target') if isinstance(strikes, dict) else None
+_strikes_dyn_call_sell = strikes.get('dyn_call_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
+_strikes_dyn_put_sell = strikes.get('dyn_put_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
+
+if spx_p is not None and _strikes_call_target is not None and _strikes_put_target is not None:
+    diff_r2 = round(_strikes_call_target - spx_p, 1)
+    diff_s2 = round(spx_p - _strikes_put_target, 1)
+    call_target_str = _strikes_call_target
+    put_target_str = _strikes_put_target
     diff_r2_str = f"+{diff_r2} pt 차이"
     diff_s2_str = f"-{diff_s2} pt 차이"
 else:
@@ -1069,13 +1079,13 @@ st.markdown(f"""
 <div style="font-size: 10px; font-weight: bold; color: #fca5a5;">🔴 CALL CREDIT SPREAD</div>
 <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{call_target_str} Strike</div>
 <div style="font-size: 9px; color: #10b981;">{diff_r2_str}</div>
-<div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_call_sell']} Call Sell</b></div>
+<div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{_strikes_dyn_call_sell} Call Sell</b></div>
 </div>
 <div class="metric-card" style="border-left: 3px solid #10b981;">
 <div style="font-size: 10px; font-weight: bold; color: #6ee7b7;">🟢 PUT CREDIT SPREAD</div>
 <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{put_target_str} Strike</div>
 <div style="font-size: 9px; color: #ef4444;">{diff_s2_str}</div>
-<div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{strikes['dyn_put_sell']} Put Sell</b></div>
+<div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{_strikes_dyn_put_sell} Put Sell</b></div>
 </div>
 </div>
 """, unsafe_allow_html=True)
