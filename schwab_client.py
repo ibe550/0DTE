@@ -181,6 +181,16 @@ def calculate_gex_from_chain(chain_data, spot_price):
                     delta = c.get("delta") or 0
                     oi = c.get("openInterest") or 0
 
+                    # OI가 0이면 실질적으로 아무 포지션도 없다는 뜻이라 GEX 기여가 0이다.
+                    # 이런 계약을 그냥 넣어두면, 만약 '모든' 계약이 OI=0인 상황(예: 0DTE가
+                    # 당일 새로 상장돼서 아직 아무도 거래 안 한 이른 새벽/장외 시간)에서
+                    # 모든 스트라이크의 GEX가 동률(0.0)이 되고, max()/min()이 동률을
+                    # '정렬 순서상 가장 낮은 스트라이크'로 임의로 골라버려서 Put Wall과
+                    # Call Wall이 똑같이 나오는 오해의 소지가 있는 결과가 나온다.
+                    # 그래서 OI=0인 계약은 애초에 집계에서 제외한다.
+                    if oi <= 0:
+                        continue
+
                     gex = oi * gamma * 100 * (spot_price ** 2) * 0.01
                     delta_exposure = oi * delta * 100
 
@@ -208,8 +218,14 @@ def calculate_gex_from_chain(chain_data, spot_price):
             "net_gex": call_gex + put_gex,
         })
 
-    call_wall = max(by_strike, key=lambda x: x["call_gex"])["strike"]
-    put_wall = min(by_strike, key=lambda x: x["put_gex"])["strike"]
+    # 안전망: OI>0인 계약이 있어도 전부 gamma=0(만기 임박·이상치 등)이면
+    # call_gex/put_gex가 여전히 다 0.0일 수 있다. 이 경우도 동률 오판을 피하려고
+    # '진짜 의미있는 값이 하나라도 있는지'를 확인하고, 없으면 벽을 None으로 둔다.
+    has_call_signal = any(row["call_gex"] != 0 for row in by_strike)
+    has_put_signal = any(row["put_gex"] != 0 for row in by_strike)
+
+    call_wall = max(by_strike, key=lambda x: x["call_gex"])["strike"] if has_call_signal else None
+    put_wall = min(by_strike, key=lambda x: x["put_gex"])["strike"] if has_put_signal else None
     net_gex_total = sum(x["net_gex"] for x in by_strike)
 
     gamma_flip = None
@@ -222,6 +238,10 @@ def calculate_gex_from_chain(chain_data, spot_price):
         ):
             gamma_flip = row["strike"]
             break
+
+    # Put Wall, Call Wall 둘 다 못 구했으면(=유효한 GEX 신호가 전혀 없음) 데이터 없음으로 처리
+    if call_wall is None and put_wall is None:
+        return None
 
     return {
         "by_strike": by_strike,
