@@ -599,10 +599,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Fear & Greed 게이지 (신규) ---
+# --- Fear & Greed 게이지 ---
 @st.cache_data(ttl=300)
 def fetch_vix_history_for_feargreed():
-    """근사 Fear&Greed 계산용 최근 3개월 VIX 종가."""
+    """근사 Fear&Greed 계산용 최근 3개월 VIX 종가 (VIX 퍼센타일 + 추이차트 겸용)."""
     try:
         h = yf.download(tickers="^VIX", period="3mo", interval="1d", progress=False)
         if isinstance(h.columns, pd.MultiIndex):
@@ -611,44 +611,124 @@ def fetch_vix_history_for_feargreed():
     except Exception:
         return None
 
+
+@st.cache_data(ttl=300)
+def fetch_spx_daily_for_momentum():
+    """
+    근사 Fear&Greed 모멘텀 계산용 SPX 일봉 종가 (최근 3개월).
+    5분봉 같은 초단기 데이터로 모멘텀을 재면 노이즈에 너무 민감해서,
+    CNN 방식(중기 이동평균 대비 위치)에 가깝게 일봉 기준으로 계산한다.
+    """
+    try:
+        h = yf.download(tickers="^GSPC", period="3mo", interval="1d", progress=False)
+        if isinstance(h.columns, pd.MultiIndex):
+            h.columns = h.columns.get_level_values(0)
+        return h['Close'] if not h.empty else None
+    except Exception:
+        return None
+
+
+def compute_intraday_buy_pct(df):
+    """
+    당일 캔들의 상승/하락 방향 * 거래량으로 매수/매도 비중을 근사한다.
+    (Volume+CVD 섹션과 동일한 방식 - 실제 매수/매도 체결 데이터가 아니라
+    캔들 방향 기반 근사치임)
+    """
+    if df is None or df.empty or len(df) < 2:
+        return 50.0
+    try:
+        close_vals = df['Close'].values
+        open_vals = df['Open'].values
+        total_vol = df['Volume'].values
+        delta = close_vals - open_vals
+        buy_mask = delta >= 0
+        buy_vol = np.where(buy_mask, total_vol * 0.55, total_vol * 0.45)
+        total_sum = np.sum(total_vol)
+        if total_sum <= 0:
+            return 50.0
+        return float((np.sum(buy_vol) / total_sum) * 100)
+    except Exception:
+        return 50.0
+
+
 _vix_hist = fetch_vix_history_for_feargreed()
-_price_hist_for_fg = es_df['Close'] if (es_df is not None and not es_df.empty) else None
-_fg_score, _fg_label = market_pulse.calculate_fear_greed(_vix_hist, _price_hist_for_fg, volume_buy_pct=50.0)
+_spx_daily_for_momentum = fetch_spx_daily_for_momentum()
+_intraday_buy_pct = compute_intraday_buy_pct(es_df)
+_fg_score, _fg_label = market_pulse.calculate_fear_greed(
+    _vix_hist, _spx_daily_for_momentum, volume_buy_pct=_intraday_buy_pct
+)
 
 _fg_colors = {"Extreme Fear": "#ef4444", "Fear": "#f97316", "Neutral": "#facc15",
               "Greed": "#84cc16", "Extreme Greed": "#10b981"}
 _fg_color = _fg_colors.get(_fg_label, "#9ca3af")
 
-section_header("😨", "FEAR & GREED", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
+section_header("😨", "FEAR & GREED · VIX", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
 
-_fg_fig = go.Figure(go.Indicator(
-    mode="gauge+number",
-    value=_fg_score,
-    number={'font': {'size': 26, 'color': _fg_color}, 'suffix': ""},
-    gauge={
-        'axis': {'range': [0, 100], 'tickcolor': '#5b6474', 'tickfont': {'size': 8, 'color': '#5b6474'}},
-        'bar': {'color': _fg_color, 'thickness': 0.25},
-        'bgcolor': '#121824',
-        'borderwidth': 0,
-        'steps': [
-            {'range': [0, 25], 'color': '#3f1d1d'},
-            {'range': [25, 45], 'color': '#3d2410'},
-            {'range': [45, 55], 'color': '#302b0e'},
-            {'range': [55, 75], 'color': '#243312'},
-            {'range': [75, 100], 'color': '#0f2e22'},
-        ],
-    }
-))
-_fg_fig.update_layout(
-    height=130, margin=dict(l=15, r=15, t=10, b=5),
-    paper_bgcolor='rgba(0,0,0,0)', font={'color': '#e1e6ed'}
-)
-components.html(_fg_fig.to_html(include_plotlyjs='cdn', full_html=False,
-                                 config={'staticPlot': True, 'displayModeBar': False}),
-                 height=135)
-st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; color:{_fg_color}; margin-top:-8px;">{_fg_label}</div>',
-            unsafe_allow_html=True)
-st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 퍼센타일 · 가격 모멘텀 · 거래량 방향 기반 근사치 (CNN 공식 지수 아님)</div>',
+_fg_col1, _fg_col2 = st.columns([1, 1])
+
+with _fg_col1:
+    _fg_fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=_fg_score,
+        number={'font': {'size': 22, 'color': _fg_color}, 'suffix': ""},
+        gauge={
+            'axis': {'range': [0, 100], 'tickcolor': '#5b6474', 'tickfont': {'size': 7, 'color': '#5b6474'}},
+            'bar': {'color': _fg_color, 'thickness': 0.25},
+            'bgcolor': '#121824',
+            'borderwidth': 0,
+            'steps': [
+                {'range': [0, 25], 'color': '#3f1d1d'},
+                {'range': [25, 45], 'color': '#3d2410'},
+                {'range': [45, 55], 'color': '#302b0e'},
+                {'range': [55, 75], 'color': '#243312'},
+                {'range': [75, 100], 'color': '#0f2e22'},
+            ],
+        }
+    ))
+    _fg_fig.update_layout(
+        height=115, margin=dict(l=10, r=10, t=5, b=5),
+        paper_bgcolor='rgba(0,0,0,0)', font={'color': '#e1e6ed'}
+    )
+    components.html(_fg_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                     config={'staticPlot': True, 'displayModeBar': False}),
+                     height=120)
+    st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; color:{_fg_color}; margin-top:-8px;">{_fg_label}</div>',
+                unsafe_allow_html=True)
+
+with _fg_col2:
+    # --- VIX 추이 미니차트 (신규) ---
+    if _vix_hist is not None and len(_vix_hist) >= 5:
+        _vix_recent = _vix_hist.tail(30)
+        _vix_now = float(_vix_recent.iloc[-1])
+        _vix_chg30 = float(_vix_recent.iloc[-1] - _vix_recent.iloc[0])
+        _vix_trend_color = "#ef4444" if _vix_chg30 > 0 else "#10b981"
+
+        _vix_fig = go.Figure()
+        _vix_fig.add_trace(go.Scatter(
+            x=list(range(len(_vix_recent))), y=_vix_recent.values,
+            line=dict(color=_vix_trend_color, width=1.5),
+            fill='tozeroy', fillcolor=f"{_vix_trend_color}22",
+        ))
+        _vix_fig.update_layout(
+            height=115, margin=dict(l=0, r=0, t=5, b=5),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            showlegend=False,
+        )
+        components.html(_vix_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                          config={'staticPlot': True, 'displayModeBar': False}),
+                         height=120)
+        st.markdown(
+            f'<div style="text-align:center; font-size:12px; font-weight:700; color:{_vix_trend_color}; margin-top:-8px;">'
+            f'VIX {_vix_now:.2f} <span style="font-size:9px;">({_vix_chg30:+.2f} / 30일)</span></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown('<div style="font-size:10px; color:#9ca3af; text-align:center; padding-top:30px;">VIX 추이 데이터 없음</div>',
+                     unsafe_allow_html=True)
+
+st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 3개월 퍼센타일 · SPX 일봉 모멘텀 · 당일 캔들 방향 기반 근사치 (CNN 공식 지수 아님, 다른 앱과 수치가 다를 수 있음)</div>',
             unsafe_allow_html=True)
 
 # --- GEX · 감마 노출도 (Schwab 실시간 우선, 실패 시 야후 15분지연 폴백) ---
