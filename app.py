@@ -654,15 +654,28 @@ def compute_intraday_buy_pct(df):
 _vix_hist = fetch_vix_history_for_feargreed()
 _spx_daily_for_momentum = fetch_spx_daily_for_momentum()
 _intraday_buy_pct = compute_intraday_buy_pct(es_df)
-_fg_score, _fg_label = market_pulse.calculate_fear_greed(
-    _vix_hist, _spx_daily_for_momentum, volume_buy_pct=_intraday_buy_pct
-)
+
+# 1순위: CNN 실제 Fear&Greed 지수 (비공식이지만 CNN이 실제 쓰는 데이터를 그대로 가져옴)
+# 실패하면(엔드포인트 변경, 네트워크 문제 등) 자체 근사치로 폴백한다.
+@st.cache_data(ttl=300)
+def fetch_cnn_fg_cached():
+    return market_pulse.fetch_cnn_fear_greed()
+
+_fg_score, _fg_label, _fg_extras, _fg_cnn_err = fetch_cnn_fg_cached()
+_fg_is_real_cnn = _fg_cnn_err is None and _fg_score is not None
+
+if not _fg_is_real_cnn:
+    _fg_score, _fg_label = market_pulse.calculate_fear_greed(
+        _vix_hist, _spx_daily_for_momentum, volume_buy_pct=_intraday_buy_pct
+    )
+    _fg_extras = None
 
 _fg_colors = {"Extreme Fear": "#ef4444", "Fear": "#f97316", "Neutral": "#facc15",
               "Greed": "#84cc16", "Extreme Greed": "#10b981"}
 _fg_color = _fg_colors.get(_fg_label, "#9ca3af")
 
-section_header("😨", "FEAR & GREED · VIX", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
+_fg_source_note = "CNN 공식 지수" if _fg_is_real_cnn else "자체 근사치 (CNN 접속 실패)"
+section_header("😨", "FEAR & GREED · VIX", f"{_fg_source_note} · {now_est.strftime('%H:%M:%S')} ET")
 
 _fg_col1, _fg_col2 = st.columns([1, 1])
 
@@ -694,6 +707,17 @@ with _fg_col1:
                      height=120)
     st.markdown(f'<div style="text-align:center; font-size:12px; font-weight:700; color:{_fg_color}; margin-top:-8px;">{_fg_label}</div>',
                 unsafe_allow_html=True)
+
+    if _fg_is_real_cnn and _fg_extras:
+        _wk = _fg_extras.get('one_week_ago')
+        _mo = _fg_extras.get('one_month_ago')
+        _wk_str = f"{round(_wk)}" if _wk is not None else "N/A"
+        _mo_str = f"{round(_mo)}" if _mo is not None else "N/A"
+        st.markdown(
+            f'<div style="text-align:center; font-size:9px; color:#9ca3af; margin-top:2px;">'
+            f'1w ago: {_wk_str} · 1m ago: {_mo_str}</div>',
+            unsafe_allow_html=True,
+        )
 
 with _fg_col2:
     # --- VIX 추이 미니차트 (신규) ---
@@ -728,8 +752,12 @@ with _fg_col2:
         st.markdown('<div style="font-size:10px; color:#9ca3af; text-align:center; padding-top:30px;">VIX 추이 데이터 없음</div>',
                      unsafe_allow_html=True)
 
-st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* VIX 3개월 퍼센타일 · SPX 일봉 모멘텀 · 당일 캔들 방향 기반 근사치 (CNN 공식 지수 아님, 다른 앱과 수치가 다를 수 있음)</div>',
-            unsafe_allow_html=True)
+if _fg_is_real_cnn:
+    st.markdown('<div style="text-align:center; font-size:8px; color:#5b6474; margin-bottom:4px;">* CNN Fear & Greed Index 실제 값 (비공식 엔드포인트 사용, CNN이 구조를 바꾸면 일시적으로 근사치로 전환될 수 있음)</div>',
+                unsafe_allow_html=True)
+else:
+    st.markdown(f'<div style="text-align:center; font-size:8px; color:#f87171; margin-bottom:4px;">⚠️ CNN 접속 실패({_fg_cnn_err}) - VIX 3개월 퍼센타일·SPX 모멘텀·거래량 기반 자체 근사치를 대신 표시 중</div>',
+                unsafe_allow_html=True)
 
 # --- GEX · 감마 노출도 (Schwab 실시간 우선, 실패 시 야후 15분지연 폴백) ---
 @st.cache_data(ttl=300)
