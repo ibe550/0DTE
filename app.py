@@ -483,9 +483,59 @@ macro_mult, macro_events = macro_calendar.get_macro_risk_multiplier(now_est.date
 
 distance_mult = round(regime_mult * session_mult * macro_mult, 2)
 
+@st.cache_data(ttl=300)
+def fetch_spx_es_prev_close():
+    """
+    가장 최근 완료된 정규장 종가 시점의 SPX·ES 종가를 가져온다 (베이시스 계산용).
+    반환: (spx_prev_close, es_prev_close) 또는 실패 시 (None, None).
+    """
+    try:
+        h = yf.download(tickers=["^GSPC", "ES=F"], period="5d", interval="1d",
+                         group_by="ticker", progress=False)
+        if not isinstance(h.columns, pd.MultiIndex):
+            return None, None
+        spx_close = h["^GSPC"]["Close"].dropna()
+        es_close = h["ES=F"]["Close"].dropna()
+        if len(spx_close) < 1 or len(es_close) < 1:
+            return None, None
+        return float(spx_close.iloc[-1]), float(es_close.iloc[-1])
+    except Exception:
+        return None, None
+
+
+def get_effective_spx_price():
+    """
+    스트라이크 계산·GEX에 공통으로 쓸 'SPX 유효 가격'을 정한다.
+    - 정규장(09:30~16:00 ET) 중: 실시간 SPX 가격 그대로 사용.
+    - 그 외 시간(프리마켓/애프터마켓): SPX는 지수라 실시간 시세가 없는 경우가 많으므로
+      (조회 실패 시 None), ES 선물의 실시간 움직임으로 SPX를 추정한다.
+      추정 SPX = 현재 ES가 - (마지막 정규장 종가 시점의 ES-SPX 가격차이)
+    이렇게 하면 프리마켓에 SPX 값이 아예 없어서 스트라이크가 'N/A'로 나오는 문제를
+    ES 기반 추정치로 메꿀 수 있다.
+    반환: (spot_price_or_None, is_estimated: bool, note: str)
+    """
+    is_rth = dtime(9, 30) <= now_est.time() <= dtime(16, 0)
+
+    if is_rth and spx_p is not None:
+        return spx_p, False, "정규장 실시간 SPX"
+
+    if es_p is None:
+        return spx_p, False, "ES 데이터 없음 - SPX 값 그대로 사용 (주의: 지연/부정확하거나 없을 수 있음)"
+
+    spx_prev_close, es_prev_close = fetch_spx_es_prev_close()
+    if spx_prev_close is None or es_prev_close is None:
+        return spx_p, False, "베이시스 계산 실패 - SPX 값 그대로 사용 (주의: 지연/부정확하거나 없을 수 있음)"
+
+    basis = es_prev_close - spx_prev_close
+    estimated_spx = es_p - basis
+    return estimated_spx, True, f"ES 기반 추정 (베이시스 {basis:+.1f}pt)"
+
+
+_effective_spx_price, _spx_is_estimated, _spx_estimate_note = get_effective_spx_price()
+
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
 try:
-    strikes = calculate_dynamic_strikes(spx_p, news_sentiment, news_score, distance_mult, alpaca_analytics)
+    strikes = calculate_dynamic_strikes(_effective_spx_price, news_sentiment, news_score, distance_mult, alpaca_analytics)
     if not isinstance(strikes, dict):
         strikes = {}
 except Exception:
@@ -760,57 +810,13 @@ else:
                 unsafe_allow_html=True)
 
 # --- GEX · 감마 노출도 (Schwab 실시간 우선, 실패 시 야후 15분지연 폴백) ---
-@st.cache_data(ttl=300)
-def fetch_spx_es_prev_close():
-    """
-    가장 최근 완료된 정규장 종가 시점의 SPX·ES 종가를 가져온다 (베이시스 계산용).
-    반환: (spx_prev_close, es_prev_close) 또는 실패 시 (None, None).
-    """
-    try:
-        h = yf.download(tickers=["^GSPC", "ES=F"], period="5d", interval="1d",
-                         group_by="ticker", progress=False)
-        if not isinstance(h.columns, pd.MultiIndex):
-            return None, None
-        spx_close = h["^GSPC"]["Close"].dropna()
-        es_close = h["ES=F"]["Close"].dropna()
-        if len(spx_close) < 1 or len(es_close) < 1:
-            return None, None
-        return float(spx_close.iloc[-1]), float(es_close.iloc[-1])
-    except Exception:
-        return None, None
-
-
-def get_gex_spot_price():
-    """
-    GEX 계산에 쓸 SPX 스팟가격을 정한다.
-    - 정규장(09:30~16:00 ET) 중: 실시간 SPX 가격 그대로 사용.
-    - 그 외 시간(프리마켓/애프터마켓): SPX는 지수라 시세가 안 움직이므로(마지막 정규장
-      종가에 멈춰있음), ES 선물의 실시간 움직임으로 SPX를 추정한다.
-      추정 SPX = 현재 ES가 - (마지막 정규장 종가 시점의 ES-SPX 가격차이)
-    반환: (spot_price_or_None, is_estimated: bool, note: str)
-    """
-    is_rth = dtime(9, 30) <= now_est.time() <= dtime(16, 0)
-
-    if is_rth:
-        return spx_p, False, "정규장 실시간 SPX"
-
-    if es_p is None:
-        return spx_p, False, "ES 데이터 없음 - 마지막 SPX 값 그대로 사용 (주의: 지연/부정확할 수 있음)"
-
-    spx_prev_close, es_prev_close = fetch_spx_es_prev_close()
-    if spx_prev_close is None or es_prev_close is None:
-        return spx_p, False, "베이시스 계산 실패 - 마지막 SPX 값 그대로 사용 (주의: 지연/부정확할 수 있음)"
-
-    basis = es_prev_close - spx_prev_close
-    estimated_spx = es_p - basis
-    return estimated_spx, True, f"ES 기반 추정 (베이시스 {basis:+.1f}pt)"
-
-
 _gex_source_label = None
 _gex_result = None
 _gex_err = None
 
-_gex_spot, _gex_is_estimated, _gex_spot_note = get_gex_spot_price()
+# 스트라이크 계산에도 같은 추정 로직을 재사용하려고 위쪽으로 옮겨뒀다
+# (get_effective_spx_price 정의는 이 파일 앞부분, strikes 계산 직전에 있음)
+_gex_spot, _gex_is_estimated, _gex_spot_note = _effective_spx_price, _spx_is_estimated, _spx_estimate_note
 
 if schwab_client.is_configured() and _gex_spot is not None:
     _chain, _chain_err = schwab_client.fetch_option_chain(
@@ -1168,9 +1174,9 @@ _strikes_put_target = strikes.get('put_target') if isinstance(strikes, dict) els
 _strikes_dyn_call_sell = strikes.get('dyn_call_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
 _strikes_dyn_put_sell = strikes.get('dyn_put_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
 
-if spx_p is not None and _strikes_call_target is not None and _strikes_put_target is not None:
-    diff_r2 = round(_strikes_call_target - spx_p, 1)
-    diff_s2 = round(spx_p - _strikes_put_target, 1)
+if _effective_spx_price is not None and _strikes_call_target is not None and _strikes_put_target is not None:
+    diff_r2 = round(_strikes_call_target - _effective_spx_price, 1)
+    diff_s2 = round(_effective_spx_price - _strikes_put_target, 1)
     call_target_str = _strikes_call_target
     put_target_str = _strikes_put_target
     diff_r2_str = f"+{diff_r2} pt 차이"
@@ -1180,6 +1186,14 @@ else:
     put_target_str = "N/A"
     diff_r2_str = "데이터 없음"
     diff_s2_str = "데이터 없음"
+
+if _spx_is_estimated and _strikes_call_target is not None:
+    st.markdown(
+        f'<div style="font-size:9px; color:#facc15; margin-bottom:2px;">'
+        f'⚠️ 정규장 외 시간이라 SPX를 ES 기반으로 추정해서 스트라이크를 계산했습니다 ({_spx_estimate_note}).'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 st.markdown(f"""
 <div class="grid-2col">
@@ -1192,6 +1206,7 @@ st.markdown(f"""
 <div class="metric-card" style="border-left: 3px solid #10b981;">
 <div style="font-size: 10px; font-weight: bold; color: #6ee7b7;">🟢 PUT CREDIT SPREAD</div>
 <div style="font-size: 14px; font-weight: bold; margin-top: 2px;">{put_target_str} Strike</div>
+
 <div style="font-size: 9px; color: #ef4444;">{diff_s2_str}</div>
 <div style="font-size: 9px; color: #9ca3af; margin-top: 4px;">🎯 <b>{_strikes_dyn_put_sell} Put Sell</b></div>
 </div>
