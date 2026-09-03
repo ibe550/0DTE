@@ -11,6 +11,7 @@ CNN의 공식 Fear & Greed Index는 7개 지표(모멘텀, 강도, 폭, 풋/콜 
 
 import numpy as np
 import pandas as pd
+import requests
 
 
 def calculate_rsi(close_series, period=14):
@@ -95,3 +96,72 @@ def calculate_fear_greed(vix_history, price_history, volume_buy_pct=50.0):
         label = "Extreme Greed"
 
     return round(combined), label
+
+
+CNN_FG_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+_CNN_RATING_MAP = {
+    "extreme fear": "Extreme Fear",
+    "fear": "Fear",
+    "neutral": "Neutral",
+    "greed": "Greed",
+    "extreme greed": "Extreme Greed",
+}
+
+
+def fetch_cnn_fear_greed():
+    """
+    CNN Fear & Greed Index를 실제로 가져온다.
+    주의: CNN이 공식 문서화해서 제공하는 API가 아니라, CNN 웹페이지가 내부적으로
+    쓰는 엔드포인트를 그대로 호출하는 것이다(널리 알려진 방법이지만 비공식).
+    CNN이 예고 없이 구조를 바꾸면 이 함수도 깨질 수 있어서, 실패하면 앱이
+    죽지 않고 근사치(calculate_fear_greed)로 자동 폴백하도록 만들어졌다.
+
+    반환: (score, label, extras_dict, error_or_None)
+    extras_dict: {'previous_close', 'one_week_ago', 'one_month_ago', 'one_year_ago'}
+    """
+    try:
+        resp = requests.get(
+            CNN_FG_URL,
+            headers={
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+            },
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        return None, None, None, f"CNN Fear&Greed 요청 실패: {e}"
+
+    fg = data.get("fear_and_greed")
+    if not fg:
+        return None, None, None, f"CNN 응답 구조가 예상과 다릅니다 (최상위 키: {list(data.keys())})"
+
+    try:
+        score = round(float(fg["score"]))
+    except Exception as e:
+        return None, None, None, f"CNN 응답에서 score 파싱 실패: {e} (fear_and_greed 키: {list(fg.keys())})"
+
+    rating_raw = str(fg.get("rating", "")).strip().lower()
+    label = _CNN_RATING_MAP.get(rating_raw)
+    if label is None:
+        # 라벨을 못 찾으면 점수 기준으로 우리 기준을 적용 (그래도 숫자는 CNN 실제값)
+        if score < 25:
+            label = "Extreme Fear"
+        elif score < 45:
+            label = "Fear"
+        elif score < 55:
+            label = "Neutral"
+        elif score < 75:
+            label = "Greed"
+        else:
+            label = "Extreme Greed"
+
+    extras = {
+        "previous_close": fg.get("previous_close"),
+        "one_week_ago": fg.get("previous_1_week"),
+        "one_month_ago": fg.get("previous_1_month"),
+        "one_year_ago": fg.get("previous_1_year"),
+    }
+
+    return score, label, extras, None
