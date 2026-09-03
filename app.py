@@ -1188,6 +1188,17 @@ _strikes_put_target = strikes.get('put_target') if isinstance(strikes, dict) els
 _strikes_dyn_call_sell = strikes.get('dyn_call_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
 _strikes_dyn_put_sell = strikes.get('dyn_put_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
 
+# --- 상시 진단 라인 (신규) ---
+# "N/A"가 왜 나오는지 매번 캡처해서 물어보는 대신, 여기서 바로 원인을 보이게 한다.
+with st.expander("🔍 스트라이크 계산 진단 (N/A로 나올 때 펼쳐서 확인)", expanded=(_strikes_call_target is None)):
+    st.write(f"spx_p (원본 SPX 실시간): {spx_p}")
+    st.write(f"es_p (ES 선물 실시간): {es_p}")
+    st.write(f"_effective_spx_price (스트라이크 계산에 실제 쓰인 값): {_effective_spx_price}")
+    st.write(f"_spx_is_estimated (ES 기반 추정 여부): {_spx_is_estimated}")
+    st.write(f"_spx_estimate_note: {_spx_estimate_note}")
+    st.write(f"strikes 딕셔너리 원본: {strikes}")
+    st.write(f"alpaca_analytics: {alpaca_analytics}")
+
 if _effective_spx_price is not None and _strikes_call_target is not None and _strikes_put_target is not None:
     diff_r2 = round(_strikes_call_target - _effective_spx_price, 1)
     diff_s2 = round(_effective_spx_price - _strikes_put_target, 1)
