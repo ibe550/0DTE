@@ -266,11 +266,25 @@ def fetch_market_data():
     if schwab_client.is_configured():
         _schwab_results, _schwab_err = schwab_client.fetch_quotes(["$SPX", "$VIX", "SPY"])
         if _schwab_err:
-            errors.append(f"Schwab: {_schwab_err}")
-        else:
-            spx_p, spx_c, spx_pct = _schwab_results.get("$SPX", (None, None, None))
-            vix_p, vix_c, vix_pct = _schwab_results.get("$VIX", (None, None, None))
-            spy_p, spy_c, spy_pct = _schwab_results.get("SPY", (None, None, None))
+            errors.append(f"Schwab quotes: {_schwab_err}")
+
+        spx_p, spx_c, spx_pct = _schwab_results.get("$SPX", (None, None, None)) if _schwab_results else (None, None, None)
+        vix_p, vix_c, vix_pct = _schwab_results.get("$VIX", (None, None, None)) if _schwab_results else (None, None, None)
+        spy_p, spy_c, spy_pct = _schwab_results.get("SPY", (None, None, None)) if _schwab_results else (None, None, None)
+
+        # quotes API가 지수(SPX/VIX)를 빈 값으로 주는 경우가 있어서, 그럴 때는
+        # 이미 안정적으로 확인된 옵션체인 API의 underlying 필드로 대신 가져온다.
+        if spx_p is None:
+            _u_p, _u_c, _u_pct = schwab_client.fetch_underlying_price("$SPX")
+            if _u_p is not None:
+                spx_p, spx_c, spx_pct = _u_p, _u_c, _u_pct
+            else:
+                errors.append("Schwab: $SPX 시세를 quotes·chains 둘 다에서 못 가져옴")
+
+        if vix_p is None:
+            _u_p, _u_c, _u_pct = schwab_client.fetch_underlying_price("$VIX")
+            if _u_p is not None:
+                vix_p, vix_c, vix_pct = _u_p, _u_c, _u_pct
 
     # 1순위(SPY 폴백): Alpaca
     alp_spy_p, alp_spy_c, alp_spy_pct, alp_err = fetch_alpaca_stock_snapshot("SPY")
