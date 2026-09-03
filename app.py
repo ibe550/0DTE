@@ -896,8 +896,8 @@ if schwab_client.is_configured() and _gex_spot is not None:
 
             for exp_map_key in ("callExpDateMap", "putExpDateMap"):
                 exp_map = _chain.get(exp_map_key, {})
-                for _exp_date, strikes in exp_map.items():
-                    for strike_str, contracts in strikes.items():
+                for _exp_date, _strikes_in_exp in exp_map.items():
+                    for strike_str, contracts in _strikes_in_exp.items():
                         for c in contracts:
                             total_contracts += 1
                             dte = c.get("daysToExpiration")
