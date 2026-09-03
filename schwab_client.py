@@ -63,6 +63,11 @@ def fetch_quotes(symbols):
     """
     실시간 시세 조회. symbols: 리스트, 예: ["$SPX", "$VIX", "SPY"]
     반환: ({symbol: (price, chg, pct)}, error_or_None)
+
+    주의: Schwab 시세(quotes) API는 지수 심볼($SPX 등)을 요청했는데도 응답에
+    아예 안 들어있는 경우가 있다(HTTP는 200 정상인데 그냥 데이터가 없음 -
+    에러가 아니라서 겉으로는 티가 안 남). 이럴 때 SPX는 fetch_underlying_price()로
+    옵션체인의 underlying 필드에서 대신 가져오는 게 더 안정적이다.
     """
     access_token, err = _get_access_token()
     if access_token is None:
@@ -83,6 +88,7 @@ def fetch_quotes(symbols):
 
     data = resp.json()
     results = {}
+    missing = []
     for sym in symbols:
         entry = data.get(sym, {})
         quote = entry.get("quote", {})
@@ -93,8 +99,37 @@ def fetch_quotes(symbols):
             results[sym] = (float(price), float(chg or 0), float(pct or 0))
         else:
             results[sym] = (None, None, None)
+            missing.append(sym)
 
-    return results, None
+    err_msg = f"quotes 응답에 데이터 없음: {missing}" if missing else None
+    return results, err_msg
+
+
+def fetch_underlying_price(symbol="$SPX"):
+    """
+    옵션체인 API의 underlying 필드에서 기초자산 가격을 가져온다.
+    Schwab의 quotes API가 지수 심볼을 잘 못 주는 경우가 있어서, 이미 안정적으로
+    동작 확인된 chains API를 대신 활용하는 보조 경로다. strikeCount=1로 요청해서
+    체인 데이터 자체는 최소화하고 underlying 정보만 필요할 때 쓴다.
+
+    반환: (price, chg, pct) 또는 실패 시 (None, None, None)
+    """
+    chain, err = fetch_option_chain(symbol=symbol, contract_type="CALL", strike_count=1)
+    if err or not chain:
+        return None, None, None
+
+    underlying = chain.get("underlying")
+    if not underlying:
+        return None, None, None
+
+    price = underlying.get("mark") or underlying.get("last") or underlying.get("close")
+    chg = underlying.get("markChange") or underlying.get("change")
+    pct = underlying.get("markPercentChange") or underlying.get("percentChange")
+
+    if price is None:
+        return None, None, None
+
+    return float(price), float(chg or 0), float(pct or 0)
 
 
 def fetch_option_chain(symbol="$SPX", contract_type="ALL", strike_count=40, expiration_date=None):
