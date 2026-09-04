@@ -1330,11 +1330,13 @@ st.markdown(f"""
 
 # --- VWAP 밴드 + RSI + 1시간 차트 - SPX 실데이터(Schwab) 우선 ---
 @st.cache_data(ttl=30)
-def fetch_today_session_1m_yahoo():
-    """오늘 정규장(09:30 ET~) 1분봉 (야후 ES 폴백용). VWAP은 매일 09:30에 리셋되는 게 관례."""
+def fetch_today_session_yahoo(timeframe="1m"):
+    """오늘 정규장(09:30 ET~) 봉 데이터 (야후 ES 폴백용). VWAP은 매일 09:30에 리셋되는 게 관례."""
     try:
+        yf_interval = "60m" if timeframe == "1H" else timeframe
+        period = "1d" if timeframe in ["1m", "5m"] else "5d"
         t = yf.Ticker("ES=F")
-        df = t.history(period="1d", interval="1m")
+        df = t.history(period=period, interval=yf_interval)
         if df.empty:
             return None
         est_tz = pytz.timezone('US/Eastern')
@@ -1347,14 +1349,14 @@ def fetch_today_session_1m_yahoo():
         return None
 
 
-def fetch_today_session_1m():
+def fetch_today_session_data(timeframe="1m"):
     """
-    오늘 정규장 1분봉. Schwab이 설정돼 있으면 SPX 실데이터를 1순위로 쓰고,
+    오늘 정규장 봉 데이터. Schwab이 설정돼 있으면 SPX 실데이터를 1순위로 쓰고,
     실패하면 야후 ES 선물로 폴백한다.
     반환: (df_or_None, source_label)
     """
     if schwab_client.is_configured():
-        _df, _err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe="1m")
+        _df, _err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=timeframe)
         if _df is not None and not _df.empty:
             est_tz = pytz.timezone('US/Eastern')
             today = datetime.now(est_tz).date()
@@ -1363,19 +1365,21 @@ def fetch_today_session_1m():
             if not _df.empty:
                 return _df, "SPX 실시간 (Schwab)"
 
-    _df = fetch_today_session_1m_yahoo()
+    _df = fetch_today_session_yahoo(timeframe)
     if _df is not None:
         return _df, ("ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)")
     return None, None
 
 
 _vwap_source_label = None
-section_header("📈", "1H 차트 · VWAP BANDS", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
+section_header("📈", "VWAP BANDS", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
+_vwap_tf = st.radio("VWAP TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
+                     horizontal=True, label_visibility="collapsed", key="vwap_timeframe")
 
-_session_df, _vwap_source_label = fetch_today_session_1m()
+_session_df, _vwap_source_label = fetch_today_session_data(_vwap_tf)
 
 if _session_df is not None and len(_session_df) >= 5:
-    st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_vwap_source_label}</div>',
+    st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_vwap_source_label} · {_vwap_tf}</div>',
                 unsafe_allow_html=True)
     _vwap_series, _vwap_std = market_pulse.calculate_vwap_bands(_session_df)
     _last_vwap = _vwap_series.iloc[-1]
@@ -1583,10 +1587,17 @@ components.html(f"""
 """, height=210)
 
 if chart_data_is_live:
+    _latest_volume = int(total_vol[-1]) if len(total_vol) > 0 else 0
+    _total_buy_vol = int(total_buy)
+    _total_sell_vol = int(total_sum - total_buy)
     st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 2px;">
-    <span style="color: #10b981;">▲ Buy {buy_pct}%</span>
-    <span style="color: #ef4444;">▼ Sell {sell_pct}%</span>
+    <div style="display: flex; justify-content: space-between; font-size: 9px; color:#9ca3af; margin-top: 2px;">
+    <span>최근 봉 거래량: <b class="mono-num" style="color:#e1e6ed;">{_latest_volume:,}</b></span>
+    <span>구간 합계: <b class="mono-num" style="color:#e1e6ed;">{int(total_sum):,}</b></span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 3px;">
+    <span style="color: #10b981;">▲ Buy {buy_pct}% <span class="mono-num" style="font-weight:400; font-size:9px;">({_total_buy_vol:,})</span></span>
+    <span style="color: #ef4444;">▼ Sell {sell_pct}% <span class="mono-num" style="font-weight:400; font-size:9px;">({_total_sell_vol:,})</span></span>
     </div>
     <div class="bar-container">
     <div class="bar-fill" style="width: {buy_pct}%;"></div>
