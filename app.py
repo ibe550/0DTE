@@ -393,6 +393,29 @@ def fetch_es_history(interval_str):
         return None
 
 
+@st.cache_data(ttl=30)
+def fetch_es_history_for_rsi(interval_str, num_bars=100):
+    """
+    RSI 등 지표 계산 전용 - fetch_es_history(볼륨차트용, 최근 20개 봉만)와 달리
+    RSI-14가 제대로 웜업되도록 훨씬 긴 히스토리를 가져온다.
+    """
+    try:
+        yf_interval = "60m" if interval_str == "1H" else interval_str
+        period_map = {"1m": "5d", "5m": "5d", "15m": "1mo", "30m": "1mo", "1H": "3mo"}
+        period = period_map.get(interval_str, "5d")
+        t = yf.Ticker("ES=F")
+        df = t.history(period=period, interval=yf_interval)
+        if df.empty:
+            return None
+
+        df = df.tail(num_bars).copy()
+        est_tz = pytz.timezone('US/Eastern')
+        df.index = df.index.tz_convert(est_tz)
+        return df
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=10)
 def fetch_alpaca_0dte_analytics(spy_price):
     if HAS_ALPACA_MODULE and ALPACA_API_KEY and ALPACA_SECRET_KEY and spy_price:
@@ -1304,31 +1327,42 @@ if _session_df is not None and len(_session_df) >= 5:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- RSI(14) ---
-    section_header("📉", "RSI (14) · 1분봉", None)
-    _rsi_series = market_pulse.calculate_rsi(_session_df['Close'], period=14)
-    _last_rsi = _rsi_series.iloc[-1]
-    _rsi_color = "#ef4444" if _last_rsi > 70 else ("#3b82f6" if _last_rsi < 30 else "#10b981")
-    _rsi_label = "과매수" if _last_rsi > 70 else ("과매도" if _last_rsi < 30 else "중립")
+    # --- RSI(14) - 타임프레임 선택 가능 (신규) ---
+    section_header("📉", "RSI (14)", None)
+    _rsi_tf = st.radio("RSI TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
+                        horizontal=True, label_visibility="collapsed", key="rsi_timeframe")
+    _rsi_df = fetch_es_history_for_rsi(_rsi_tf)
 
-    _rsi_fig = go.Figure()
-    _rsi_fig.add_trace(go.Scatter(x=_session_df.index, y=_rsi_series, line=dict(color=_rsi_color, width=1.5)))
-    _rsi_fig.add_hline(y=70, line_dash="dot", line_color="#ef444460", line_width=1)
-    _rsi_fig.add_hline(y=30, line_dash="dot", line_color="#3b82f660", line_width=1)
-    _rsi_fig.update_layout(
-        template="plotly_dark", height=110, margin=dict(l=0, r=0, t=5, b=15),
-        paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
-        xaxis=dict(showgrid=False, fixedrange=True, showticklabels=False),
-        yaxis=dict(showgrid=False, fixedrange=True, range=[0, 100], tickfont=dict(size=8, color='#7b8494')),
-    )
-    components.html(_rsi_fig.to_html(include_plotlyjs='cdn', full_html=False,
-                                      config={'staticPlot': True, 'displayModeBar': False}), height=115)
-    st.markdown(f"""
-    <div style="text-align:right; font-size:11px; margin-top:-6px;">
-    <span class="mono-num" style="color:{_rsi_color}; font-weight:700;">{round(_last_rsi,1)}</span>
-    <span style="color:#9ca3af;"> {_rsi_label}</span>
-    </div>
-    """, unsafe_allow_html=True)
+    if _rsi_df is not None and len(_rsi_df) >= 15:
+        _rsi_series = market_pulse.calculate_rsi(_rsi_df['Close'], period=14)
+        _last_rsi = _rsi_series.iloc[-1]
+        _rsi_color = "#ef4444" if _last_rsi > 70 else ("#3b82f6" if _last_rsi < 30 else "#10b981")
+        _rsi_label = "과매수" if _last_rsi > 70 else ("과매도" if _last_rsi < 30 else "중립")
+
+        _rsi_fig = go.Figure()
+        _rsi_fig.add_trace(go.Scatter(x=_rsi_df.index, y=_rsi_series, line=dict(color=_rsi_color, width=1.5)))
+        _rsi_fig.add_hline(y=70, line_dash="dot", line_color="#ef444460", line_width=1)
+        _rsi_fig.add_hline(y=30, line_dash="dot", line_color="#3b82f660", line_width=1)
+        _rsi_fig.update_layout(
+            template="plotly_dark", height=110, margin=dict(l=0, r=0, t=5, b=15),
+            paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
+            xaxis=dict(showgrid=False, fixedrange=True, showticklabels=False),
+            yaxis=dict(showgrid=False, fixedrange=True, range=[0, 100], tickfont=dict(size=8, color='#7b8494')),
+        )
+        components.html(_rsi_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                          config={'staticPlot': True, 'displayModeBar': False}), height=115)
+        st.markdown(f"""
+        <div style="text-align:right; font-size:11px; margin-top:-6px;">
+        <span class="mono-num" style="color:{_rsi_color}; font-weight:700;">{round(_last_rsi,1)}</span>
+        <span style="color:#9ca3af;"> {_rsi_label} · {_rsi_tf}</span>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="card-box" style="font-size:10px; color:#9ca3af;">
+        이 타임프레임의 RSI 계산에 데이터가 부족합니다. 잠시 후 다시 확인해주세요.
+        </div>
+        """, unsafe_allow_html=True)
 else:
     st.markdown("""
     <div class="card-box" style="font-size:10px; color:#9ca3af;">
