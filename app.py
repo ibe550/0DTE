@@ -1327,13 +1327,26 @@ if _session_df is not None and len(_session_df) >= 5:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- RSI(14) - 타임프레임 선택 가능 (신규) ---
+    # --- RSI(14) - 타임프레임 선택 가능, SPX 실데이터(Schwab) 우선 ---
     section_header("📉", "RSI (14)", None)
     _rsi_tf = st.radio("RSI TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
                         horizontal=True, label_visibility="collapsed", key="rsi_timeframe")
-    _rsi_df = fetch_es_history_for_rsi(_rsi_tf)
+
+    _rsi_df = None
+    _rsi_source = None
+    if schwab_client.is_configured():
+        _rsi_df, _rsi_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=_rsi_tf)
+        if _rsi_df is not None:
+            _rsi_source = "SPX 실시간 (Schwab)"
+
+    if _rsi_df is None:
+        _rsi_df = fetch_es_history_for_rsi(_rsi_tf)
+        if _rsi_df is not None:
+            _rsi_source = "ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)"
 
     if _rsi_df is not None and len(_rsi_df) >= 15:
+        st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_rsi_source}</div>',
+                    unsafe_allow_html=True)
         _rsi_series = market_pulse.calculate_rsi(_rsi_df['Close'], period=14)
         _last_rsi = _rsi_series.iloc[-1]
         _rsi_color = "#ef4444" if _last_rsi > 70 else ("#3b82f6" if _last_rsi < 30 else "#10b981")
