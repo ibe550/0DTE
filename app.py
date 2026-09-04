@@ -1328,10 +1328,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- VWAP 밴드 + RSI + 1시간 차트 (신규) ---
+# --- VWAP 밴드 + RSI + 1시간 차트 - SPX 실데이터(Schwab) 우선 ---
 @st.cache_data(ttl=30)
-def fetch_today_session_1m():
-    """오늘 정규장(09:30 ET~) 1분봉. VWAP은 매일 09:30에 리셋되는 게 관례라 오늘 데이터만 쓴다."""
+def fetch_today_session_1m_yahoo():
+    """오늘 정규장(09:30 ET~) 1분봉 (야후 ES 폴백용). VWAP은 매일 09:30에 리셋되는 게 관례."""
     try:
         t = yf.Ticker("ES=F")
         df = t.history(period="1d", interval="1m")
@@ -1346,11 +1346,37 @@ def fetch_today_session_1m():
     except Exception:
         return None
 
+
+def fetch_today_session_1m():
+    """
+    오늘 정규장 1분봉. Schwab이 설정돼 있으면 SPX 실데이터를 1순위로 쓰고,
+    실패하면 야후 ES 선물로 폴백한다.
+    반환: (df_or_None, source_label)
+    """
+    if schwab_client.is_configured():
+        _df, _err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe="1m")
+        if _df is not None and not _df.empty:
+            est_tz = pytz.timezone('US/Eastern')
+            today = datetime.now(est_tz).date()
+            session_start = est_tz.localize(datetime.combine(today, datetime.min.time()).replace(hour=9, minute=30))
+            _df = _df[(_df.index.date == today) & (_df.index >= session_start)]
+            if not _df.empty:
+                return _df, "SPX 실시간 (Schwab)"
+
+    _df = fetch_today_session_1m_yahoo()
+    if _df is not None:
+        return _df, ("ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)")
+    return None, None
+
+
+_vwap_source_label = None
 section_header("📈", "1H 차트 · VWAP BANDS", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
 
-_session_df = fetch_today_session_1m()
+_session_df, _vwap_source_label = fetch_today_session_1m()
 
 if _session_df is not None and len(_session_df) >= 5:
+    st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_vwap_source_label}</div>',
+                unsafe_allow_html=True)
     _vwap_series, _vwap_std = market_pulse.calculate_vwap_bands(_session_df)
     _last_vwap = _vwap_series.iloc[-1]
     _last_std = _vwap_std.iloc[-1]
@@ -1450,13 +1476,31 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# --- Volume & CVD Chart ---
-st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD (ES=F)</div>", unsafe_allow_html=True)
+# --- Volume & CVD Chart - SPX 실데이터(Schwab) 우선 ---
+def fetch_volume_chart_data(tf):
+    """
+    Schwab이 설정돼 있으면 SPX 실데이터를 1순위로, 실패하면 야후 ES 선물로 폴백한다.
+    반환: (df_or_None, source_label)
+    """
+    if schwab_client.is_configured():
+        _df, _err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=tf)
+        if _df is not None and not _df.empty:
+            return _df.tail(20), "SPX 실시간 (Schwab)"
+
+    _df = fetch_es_history(tf)
+    if _df is not None:
+        return _df, ("ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)")
+    return None, None
+
+
+st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
 
 selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
-es_df_chart = fetch_es_history(selected_tf)
+es_df_chart, _volume_source_label = fetch_volume_chart_data(selected_tf)
 
 if es_df_chart is not None and not es_df_chart.empty:
+    st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_volume_source_label}</div>',
+                unsafe_allow_html=True)
     dates_str = [d.strftime("%m/%d %H:%M") for d in es_df_chart.index]
     total_vol = es_df_chart['Volume'].values
     close_vals = es_df_chart['Close'].values
