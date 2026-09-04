@@ -16,6 +16,7 @@ import streamlit as st
 TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 CHAINS_URL = "https://api.schwabapi.com/marketdata/v1/chains"
 QUOTES_URL = "https://api.schwabapi.com/marketdata/v1/quotes"
+PRICEHISTORY_URL = "https://api.schwabapi.com/marketdata/v1/pricehistory"
 
 
 def _get_credentials():
@@ -286,3 +287,85 @@ def calculate_gex_from_chain(chain_data, spot_price):
         "net_gex_total": net_gex_total,
         "net_delta_total": net_delta_total,
     }
+
+
+# 타임프레임 문자열 -> Schwab pricehistory 파라미터 매핑
+# ("1H"는 Schwab이 60분봉을 직접 안 줘서 30분봉을 받아 리샘플링한다)
+_TF_PARAMS = {
+    "1m": dict(period_type="day", period=5, frequency_type="minute", frequency=1),
+    "5m": dict(period_type="day", period=10, frequency_type="minute", frequency=5),
+    "15m": dict(period_type="day", period=10, frequency_type="minute", frequency=15),
+    "30m": dict(period_type="day", period=10, frequency_type="minute", frequency=30),
+    "1H": dict(period_type="month", period=1, frequency_type="minute", frequency=30),
+}
+
+
+def fetch_price_history(symbol="$SPX", period_type="day", period=5,
+                         frequency_type="minute", frequency=1, need_extended_hours=False):
+    """
+    Schwab 가격 히스토리(캔들) 조회. 반환: (DataFrame_or_None, error_or_None)
+    DataFrame: Open/High/Low/Close/Volume 컬럼, ET 타임존 datetime 인덱스.
+    """
+    access_token, err = _get_access_token()
+    if access_token is None:
+        return None, err
+
+    try:
+        resp = requests.get(
+            PRICEHISTORY_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={
+                "symbol": symbol,
+                "periodType": period_type,
+                "period": period,
+                "frequencyType": frequency_type,
+                "frequency": frequency,
+                "needExtendedHoursData": str(need_extended_hours).lower(),
+            },
+            timeout=15,
+        )
+    except Exception as e:
+        return None, f"Schwab 가격 히스토리 요청 실패: {e}"
+
+    if resp.status_code != 200:
+        return None, f"Schwab 가격 히스토리 조회 실패 ({resp.status_code}): {resp.text[:150]}"
+
+    data = resp.json()
+    candles = data.get("candles", [])
+    if not candles:
+        return None, "캔들 데이터가 비어있습니다."
+
+    df = pd.DataFrame(candles)
+    try:
+        df['datetime'] = pd.to_datetime(df['datetime'], unit='ms', utc=True).dt.tz_convert('US/Eastern')
+        df = df.set_index('datetime')
+        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low',
+                                 'close': 'Close', 'volume': 'Volume'})
+        return df[['Open', 'High', 'Low', 'Close', 'Volume']], None
+    except Exception as e:
+        return None, f"캔들 데이터 파싱 실패: {e}"
+
+
+def fetch_price_history_tf(symbol="$SPX", timeframe="1m"):
+    """
+    타임프레임 문자열("1m"/"5m"/"15m"/"30m"/"1H")로 편하게 호출하는 래퍼.
+    "1H"는 30분봉을 받아서 60분으로 리샘플링한다 (Schwab이 60분봉을 직접 안 줌).
+    """
+    params = _TF_PARAMS.get(timeframe)
+    if params is None:
+        return None, f"지원하지 않는 타임프레임: {timeframe}"
+
+    df, err = fetch_price_history(symbol=symbol, **params)
+    if err or df is None:
+        return None, err
+
+    if timeframe == "1H":
+        try:
+            df = df.resample("60min").agg({
+                "Open": "first", "High": "max", "Low": "min",
+                "Close": "last", "Volume": "sum",
+            }).dropna()
+        except Exception as e:
+            return None, f"1H 리샘플링 실패: {e}"
+
+    return df, None
