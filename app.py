@@ -87,6 +87,12 @@ st.markdown("""
 .bar-container { width: 100%; background-color: #ef4444; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0; }
 .bar-fill { height: 100%; background-color: #10b981; }
 hr { margin: 6px 0 !important; border-color: #1e2635 !important; }
+
+/* Streamlit 기본 툴바(Share/즐겨찾기/편집/GitHub/메뉴) 및 헤더 숨기기 */
+[data-testid="stToolbar"] { visibility: hidden !important; display: none !important; }
+[data-testid="stHeader"] { visibility: hidden !important; height: 0 !important; }
+#MainMenu { visibility: hidden !important; }
+footer { visibility: hidden !important; }
 </style>
 """, unsafe_allow_html=True)
 
