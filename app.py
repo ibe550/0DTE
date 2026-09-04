@@ -1026,7 +1026,9 @@ if _gex_result is None and spy_p is not None:
         elif not _gex_err:
             _gex_err = "계산 가능한 옵션 데이터가 부족합니다."
 
-section_header("🧲", "GEX · 감마 노출도", _gex_source_label or "데이터 없음")
+_gex_time_str = now_est.strftime('%H:%M:%S')
+_gex_header_time = f"{_gex_source_label} · {_gex_time_str} ET" if _gex_source_label else "데이터 없음"
+section_header("🧲", "GEX · 감마 노출도", _gex_header_time)
 
 if _gex_err and _gex_result is None:
     st.markdown(f"""
@@ -1372,11 +1374,13 @@ def fetch_today_session_data(timeframe="1m"):
 
 
 _vwap_source_label = None
-section_header("📈", "VWAP BANDS", f"Data as of {now_est.strftime('%H:%M:%S')} ET")
 _vwap_tf = st.radio("VWAP TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
                      horizontal=True, label_visibility="collapsed", key="vwap_timeframe")
 
 _session_df, _vwap_source_label = fetch_today_session_data(_vwap_tf)
+
+_vwap_last_bar_time = _session_df.index[-1].strftime('%H:%M:%S') if (_session_df is not None and len(_session_df) > 0) else now_est.strftime('%H:%M:%S')
+section_header("📈", "VWAP BANDS", f"마지막 봉 {_vwap_last_bar_time} ET")
 
 if _session_df is not None and len(_session_df) >= 5:
     st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_vwap_source_label} · {_vwap_tf}</div>',
@@ -1425,7 +1429,6 @@ if _session_df is not None and len(_session_df) >= 5:
     """, unsafe_allow_html=True)
 
     # --- RSI(14) - 타임프레임 선택 가능, SPX 실데이터(Schwab) 우선 ---
-    section_header("📉", "RSI (14)", None)
     _rsi_tf = st.radio("RSI TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
                         horizontal=True, label_visibility="collapsed", key="rsi_timeframe")
 
@@ -1440,6 +1443,9 @@ if _session_df is not None and len(_session_df) >= 5:
         _rsi_df = fetch_es_history_for_rsi(_rsi_tf)
         if _rsi_df is not None:
             _rsi_source = "ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)"
+
+    _rsi_last_bar_time = _rsi_df.index[-1].strftime('%H:%M:%S') if (_rsi_df is not None and len(_rsi_df) > 0) else now_est.strftime('%H:%M:%S')
+    section_header("📉", "RSI (14)", f"마지막 봉 {_rsi_last_bar_time} ET")
 
     if _rsi_df is not None and len(_rsi_df) >= 15:
         st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_rsi_source}</div>',
@@ -1497,10 +1503,11 @@ def fetch_volume_chart_data(tf):
     return None, None
 
 
-st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 VOLUME + CVD</div>", unsafe_allow_html=True)
-
 selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
 es_df_chart, _volume_source_label = fetch_volume_chart_data(selected_tf)
+
+_vol_last_bar_time = es_df_chart.index[-1].strftime('%H:%M:%S') if (es_df_chart is not None and not es_df_chart.empty) else now_est.strftime('%H:%M:%S')
+section_header("📊", "VOLUME + CVD", f"마지막 봉 {_vol_last_bar_time} ET")
 
 if es_df_chart is not None and not es_df_chart.empty:
     st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_volume_source_label}</div>',
