@@ -11,6 +11,7 @@ Schwab API 클라이언트 - 실시간 시세 + 옵션 체인 + GEX(감마 노�
 
 import base64
 import requests
+import pandas as pd
 import streamlit as st
 
 TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
