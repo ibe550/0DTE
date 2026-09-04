@@ -370,3 +370,62 @@ def fetch_price_history_tf(symbol="$SPX", timeframe="1m"):
             return None, f"1H 리샘플링 실패: {e}"
 
     return df, None
+
+
+def calculate_liquidity_metrics(chain_data, spot_price, moneyness_band=0.02):
+    """
+    옵션체인의 실제 매수/매도 호가 스프레드로 '지금 진짜 유동성이 얼마나 안 좋은지'를 측정한다.
+    스팟 근처(기본 ±2%) 콜/풋 계약들의 (ask-bid)/mid 평균을 낸다.
+    스프레드가 넓을수록 실제로 체결하기 불리하다는 뜻 (슬리피지 위험 실측치).
+
+    반환: dict 또는 None
+    {
+        'avg_spread_pct': float,   # 평균 스프레드 (%)
+        'sample_size': int,
+        'total_volume_today': float,  # 근처 계약들 오늘 거래량 합
+    }
+    """
+    if not chain_data or spot_price is None or spot_price <= 0:
+        return None
+
+    low_bound = spot_price * (1 - moneyness_band)
+    high_bound = spot_price * (1 + moneyness_band)
+
+    spreads = []
+    total_volume = 0
+
+    for exp_map_key in ("callExpDateMap", "putExpDateMap"):
+        exp_map = chain_data.get(exp_map_key, {})
+        for _exp_date, strikes in exp_map.items():
+            for strike_str, contracts in strikes.items():
+                for c in contracts:
+                    if c.get("daysToExpiration") not in (0, None):
+                        continue
+                    try:
+                        strike = float(c.get("strikePrice", strike_str))
+                    except (TypeError, ValueError):
+                        continue
+                    if not (low_bound <= strike <= high_bound):
+                        continue
+
+                    bid = c.get("bid") or 0
+                    ask = c.get("ask") or 0
+                    if bid <= 0 or ask <= 0 or ask < bid:
+                        continue
+
+                    mid = (bid + ask) / 2
+                    if mid <= 0:
+                        continue
+
+                    spread_pct = (ask - bid) / mid * 100
+                    spreads.append(spread_pct)
+                    total_volume += c.get("totalVolume") or 0
+
+    if not spreads:
+        return None
+
+    return {
+        "avg_spread_pct": sum(spreads) / len(spreads),
+        "sample_size": len(spreads),
+        "total_volume_today": total_volume,
+    }
