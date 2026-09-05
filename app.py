@@ -623,6 +623,7 @@ _effective_spx_price, _spx_is_estimated, _spx_estimate_note = get_effective_spx_
 # Schwab SPX 옵션체인에서 실제 0.15델타 스트라이크를 미리 계산 (실제 그릭스 기반).
 # 이 체인은 아래 0DTE TIME RISK 배너·GEX 섹션에서도 같은 캐시를 재사용한다 (API 중복 호출 방지).
 _real_delta_analytics = None
+_strikes_data_time_str = None  # 이 스트라이크 계산에 실제로 쓰인 데이터의 시각
 if schwab_client.is_configured() and _effective_spx_price is not None:
     _early_chain, _early_chain_err = fetch_schwab_chain_cached("$SPX", now_est.strftime("%Y-%m-%d"))
     if _early_chain:
@@ -633,6 +634,14 @@ if schwab_client.is_configured() and _effective_spx_price is not None:
                 'call_15d_strike_spx': _call_15d_spx,
                 'put_15d_strike_spx': _put_15d_spx,
             }
+            # 체인의 실제 시세 시각(quoteTime, epoch ms)을 뽑아서 ET로 변환
+            try:
+                _quote_time_ms = _early_chain.get('underlying', {}).get('quoteTime')
+                if _quote_time_ms:
+                    _quote_dt = datetime.fromtimestamp(_quote_time_ms / 1000, tz=est_tz)
+                    _strikes_data_time_str = _quote_dt.strftime('%H:%M:%S')
+            except Exception:
+                pass
 
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
 try:
@@ -644,6 +653,11 @@ try:
         strikes = {}
 except Exception:
     strikes = {}
+
+# 실제 체인 시세 시각을 못 구했으면(근사치 방식이거나 시각 필드가 없었으면)
+# 이 계산이 실행된 시각(페이지 로드/새로고침 시각)을 대신 표시한다.
+if _strikes_data_time_str is None:
+    _strikes_data_time_str = now_est.strftime('%H:%M:%S') + "(계산시각)"
 
 # --- Header ---
 st.markdown(f"""
@@ -1339,6 +1353,7 @@ else:
     _strike_method_label = "포인트 오프셋 근사치 (실제 옵션 데이터 없음)"
     _strike_method_color = "#facc15"
 
+section_header("🎯", "추천 스트라이크", f"데이터 시각 {_strikes_data_time_str} ET")
 st.markdown(f'<div style="font-size:9px; color:{_strike_method_color}; margin-bottom:2px;">📐 계산 방식: {_strike_method_label}</div>',
             unsafe_allow_html=True)
 
@@ -1351,6 +1366,7 @@ with st.expander("🔍 스트라이크 계산 진단 (N/A로 나올 때 펼쳐�
     st.write(f"_spx_is_estimated (ES 기반 추정 여부): {_spx_is_estimated}")
     st.write(f"_spx_estimate_note: {_spx_estimate_note}")
     st.write(f"_real_delta_analytics (Schwab 실제 델타): {_real_delta_analytics}")
+    st.write(f"_strikes_data_time_str (데이터 시각): {_strikes_data_time_str}")
     st.write(f"strikes 딕셔너리 원본: {strikes}")
     st.write(f"alpaca_analytics: {alpaca_analytics}")
 
