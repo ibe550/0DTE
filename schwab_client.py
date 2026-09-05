@@ -429,3 +429,43 @@ def calculate_liquidity_metrics(chain_data, spot_price, moneyness_band=0.02):
         "sample_size": len(spreads),
         "total_volume_today": total_volume,
     }
+
+
+def find_delta_strike(chain_data, target_delta=0.15, option_type="CALL"):
+    """
+    옵션체인에서 실제 델타가 target_delta에 가장 가까운 스트라이크를 찾는다.
+    (진짜 그릭스 기반 - 포인트 근사치가 아니라 시장이 실제로 반영한 델타)
+
+    option_type: "CALL" 또는 "PUT". 풋은 델타가 원래 음수라 절댓값으로 비교한다.
+    daysToExpiration == 0(0DTE)인 계약만 대상으로 한다.
+
+    반환: strike(float) 또는 None (해당 옵션타입 데이터가 없을 때)
+    """
+    if not chain_data:
+        return None
+
+    exp_map_key = "callExpDateMap" if option_type == "CALL" else "putExpDateMap"
+    exp_map = chain_data.get(exp_map_key, {})
+
+    best_strike = None
+    best_diff = None
+
+    for _exp_date, strikes in exp_map.items():
+        for strike_str, contracts in strikes.items():
+            for c in contracts:
+                if c.get("daysToExpiration") not in (0, None):
+                    continue
+                delta = c.get("delta")
+                if delta is None:
+                    continue
+
+                diff = abs(abs(delta) - target_delta)
+                if best_diff is None or diff < best_diff:
+                    try:
+                        strike = float(c.get("strikePrice", strike_str))
+                    except (TypeError, ValueError):
+                        continue
+                    best_strike = strike
+                    best_diff = diff
+
+    return best_strike
