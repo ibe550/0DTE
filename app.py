@@ -472,6 +472,19 @@ def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distanc
             'put_target': None,
         }
 
+    # 0순위: Schwab SPX 옵션체인 실제 델타 기반 (진짜 그릭스, 스케일링 불필요 - 이미 SPX 단위)
+    if option_analytics and option_analytics.get('call_15d_strike_spx'):
+        call_strike = int(round(option_analytics['call_15d_strike_spx'] / 5.0) * 5)
+        put_strike = int(round(option_analytics['put_15d_strike_spx'] / 5.0) * 5)
+
+        return {
+            'dyn_call_sell': f"{call_strike+5}/{call_strike}",
+            'dyn_put_sell': f"{put_strike-5}/{put_strike}",
+            'call_target': call_strike,
+            'put_target': put_strike,
+        }
+
+    # 1순위: Alpaca SPY 옵션 애널리틱스 (SPY 단위라 x10 스케일링 필요)
     if option_analytics and option_analytics.get('call_15d_strike'):
         c_15d = option_analytics['call_15d_strike']
         p_15d = option_analytics['put_15d_strike']
@@ -486,6 +499,7 @@ def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distanc
             'put_target': put_strike,
         }
 
+    # 2순위(최후 폴백): 포인트 오프셋 근사치 - 실제 옵션 데이터가 전혀 없을 때만
     base_span = 30.0 * distance_mult
 
     if news_score > 0:
@@ -606,9 +620,26 @@ def get_effective_spx_price():
 
 _effective_spx_price, _spx_is_estimated, _spx_estimate_note = get_effective_spx_price()
 
+# Schwab SPX 옵션체인에서 실제 0.15델타 스트라이크를 미리 계산 (실제 그릭스 기반).
+# 이 체인은 아래 0DTE TIME RISK 배너·GEX 섹션에서도 같은 캐시를 재사용한다 (API 중복 호출 방지).
+_real_delta_analytics = None
+if schwab_client.is_configured() and _effective_spx_price is not None:
+    _early_chain, _early_chain_err = fetch_schwab_chain_cached("$SPX", now_est.strftime("%Y-%m-%d"))
+    if _early_chain:
+        _call_15d_spx = schwab_client.find_delta_strike(_early_chain, target_delta=0.15, option_type="CALL")
+        _put_15d_spx = schwab_client.find_delta_strike(_early_chain, target_delta=0.15, option_type="PUT")
+        if _call_15d_spx is not None and _put_15d_spx is not None:
+            _real_delta_analytics = {
+                'call_15d_strike_spx': _call_15d_spx,
+                'put_15d_strike_spx': _put_15d_spx,
+            }
+
 alpaca_analytics = fetch_alpaca_0dte_analytics(spy_p)
 try:
-    strikes = calculate_dynamic_strikes(_effective_spx_price, news_sentiment, news_score, distance_mult, alpaca_analytics)
+    strikes = calculate_dynamic_strikes(
+        _effective_spx_price, news_sentiment, news_score, distance_mult,
+        _real_delta_analytics or alpaca_analytics,
+    )
     if not isinstance(strikes, dict):
         strikes = {}
 except Exception:
@@ -1298,7 +1329,20 @@ _strikes_put_target = strikes.get('put_target') if isinstance(strikes, dict) els
 _strikes_dyn_call_sell = strikes.get('dyn_call_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
 _strikes_dyn_put_sell = strikes.get('dyn_put_sell', 'N/A') if isinstance(strikes, dict) else 'N/A'
 
-# --- 상시 진단 라인 (신규) ---
+if _real_delta_analytics:
+    _strike_method_label = "0.15Δ 실제 그릭스 (Schwab SPX)"
+    _strike_method_color = "#10b981"
+elif alpaca_analytics:
+    _strike_method_label = "0.15Δ 실제 그릭스 (Alpaca SPY, x10 환산)"
+    _strike_method_color = "#10b981"
+else:
+    _strike_method_label = "포인트 오프셋 근사치 (실제 옵션 데이터 없음)"
+    _strike_method_color = "#facc15"
+
+st.markdown(f'<div style="font-size:9px; color:{_strike_method_color}; margin-bottom:2px;">📐 계산 방식: {_strike_method_label}</div>',
+            unsafe_allow_html=True)
+
+# --- 상시 진단 라인 ---
 # "N/A"가 왜 나오는지 매번 캡처해서 물어보는 대신, 여기서 바로 원인을 보이게 한다.
 with st.expander("🔍 스트라이크 계산 진단 (N/A로 나올 때 펼쳐서 확인)", expanded=(_strikes_call_target is None)):
     st.write(f"spx_p (원본 SPX 실시간): {spx_p}")
@@ -1306,6 +1350,7 @@ with st.expander("🔍 스트라이크 계산 진단 (N/A로 나올 때 펼쳐�
     st.write(f"_effective_spx_price (스트라이크 계산에 실제 쓰인 값): {_effective_spx_price}")
     st.write(f"_spx_is_estimated (ES 기반 추정 여부): {_spx_is_estimated}")
     st.write(f"_spx_estimate_note: {_spx_estimate_note}")
+    st.write(f"_real_delta_analytics (Schwab 실제 델타): {_real_delta_analytics}")
     st.write(f"strikes 딕셔너리 원본: {strikes}")
     st.write(f"alpaca_analytics: {alpaca_analytics}")
 
