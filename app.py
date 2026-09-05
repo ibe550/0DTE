@@ -1597,8 +1597,13 @@ if chart_data_is_live:
     _latest_volume = int(total_vol[-1]) if len(total_vol) > 0 else 0
     _total_buy_vol = int(total_buy)
     _total_sell_vol = int(total_sum - total_buy)
+    _range_start = es_df_chart.index[0].strftime('%m/%d %H:%M')
+    _range_end = es_df_chart.index[-1].strftime('%m/%d %H:%M')
     st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; font-size: 9px; color:#9ca3af; margin-top: 2px;">
+    <div style="font-size: 8px; color:#5b6474; margin-top: 2px;">
+    집계 구간: {_range_start} ~ {_range_end} ET ({len(es_df_chart)}개 {selected_tf}봉)
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 9px; color:#9ca3af; margin-top: 1px;">
     <span>최근 봉 거래량: <b class="mono-num" style="color:#e1e6ed;">{_latest_volume:,}</b></span>
     <span>구간 합계: <b class="mono-num" style="color:#e1e6ed;">{int(total_sum):,}</b></span>
     </div>
