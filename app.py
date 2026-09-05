@@ -82,7 +82,7 @@ st.markdown("""
 /* 섹션 헤더: 아이콘+제목(좌) / "Data as of..." (우) 패턴 */
 .section-header { display:flex; justify-content:space-between; align-items:baseline; margin: 6px 0 3px 0; }
 .section-title { font-size: 11px; font-weight: 700; color: #e1e6ed; }
-.section-time { font-size: 8px; color: #5b6474; font-family: 'JetBrains Mono', monospace; }
+.section-time { font-size: 11px; color: #9ca3af; font-family: 'JetBrains Mono', monospace; }
 
 .bar-container { width: 100%; background-color: #ef4444; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0; }
 .bar-fill { height: 100%; background-color: #10b981; }
@@ -134,6 +134,24 @@ def fmt(val, fmt_str="{:,.2f}"):
 def safe(val, default=0.0):
     """색상/부호 비교용: None이면 default로 대체."""
     return val if val is not None else default
+
+
+def format_volume(n):
+    """거래량처럼 큰 숫자를 K/M/B 단위로 읽기 쉽게 포맷 (예: 3443066382 -> '3.44B')."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "N/A"
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+    if n >= 1_000_000_000:
+        return f"{sign}{n/1_000_000_000:.2f}B"
+    elif n >= 1_000_000:
+        return f"{sign}{n/1_000_000:.2f}M"
+    elif n >= 1_000:
+        return f"{sign}{n/1_000:.1f}K"
+    else:
+        return f"{sign}{n:,.0f}"
 
 
 def fetch_alpaca_stock_snapshot(symbol="SPY"):
@@ -1383,7 +1401,7 @@ _vwap_last_bar_time = _session_df.index[-1].strftime('%H:%M:%S') if (_session_df
 section_header("📈", "VWAP BANDS", f"마지막 봉 {_vwap_last_bar_time} ET")
 
 if _session_df is not None and len(_session_df) >= 5:
-    st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_vwap_source_label} · {_vwap_tf}</div>',
+    st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_vwap_source_label} · {_vwap_tf}</div>',
                 unsafe_allow_html=True)
     _vwap_series, _vwap_std = market_pulse.calculate_vwap_bands(_session_df)
     _last_vwap = _vwap_series.iloc[-1]
@@ -1448,7 +1466,7 @@ if _session_df is not None and len(_session_df) >= 5:
     section_header("📉", "RSI (14)", f"마지막 봉 {_rsi_last_bar_time} ET")
 
     if _rsi_df is not None and len(_rsi_df) >= 15:
-        st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_rsi_source}</div>',
+        st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_rsi_source}</div>',
                     unsafe_allow_html=True)
         _rsi_series = market_pulse.calculate_rsi(_rsi_df['Close'], period=14)
         _last_rsi = _rsi_series.iloc[-1]
@@ -1510,7 +1528,7 @@ _vol_last_bar_time = es_df_chart.index[-1].strftime('%H:%M:%S') if (es_df_chart 
 section_header("📊", "VOLUME + CVD", f"마지막 봉 {_vol_last_bar_time} ET")
 
 if es_df_chart is not None and not es_df_chart.empty:
-    st.markdown(f'<div style="font-size:8px; color:#5b6474; margin-bottom:2px;">데이터: {_volume_source_label}</div>',
+    st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_volume_source_label}</div>',
                 unsafe_allow_html=True)
     dates_str = [d.strftime("%m/%d %H:%M") for d in es_df_chart.index]
     total_vol = es_df_chart['Volume'].values
@@ -1600,17 +1618,18 @@ if chart_data_is_live:
     _range_start = es_df_chart.index[0].strftime('%m/%d %H:%M')
     _range_end = es_df_chart.index[-1].strftime('%m/%d %H:%M')
     st.markdown(f"""
-    <div style="font-size: 8px; color:#5b6474; margin-top: 2px;">
+    <div style="font-size: 10px; color:#9ca3af; margin-top: 2px;">
     집계 구간: {_range_start} ~ {_range_end} ET ({len(es_df_chart)}개 {selected_tf}봉)
     </div>
-    <div style="display: flex; justify-content: space-between; font-size: 9px; color:#9ca3af; margin-top: 1px;">
-    <span>최근 봉 거래량: <b class="mono-num" style="color:#e1e6ed;">{_latest_volume:,}</b></span>
-    <span>구간 합계: <b class="mono-num" style="color:#e1e6ed;">{int(total_sum):,}</b></span>
+    <div style="display: flex; justify-content: space-between; font-size: 10px; color:#9ca3af; margin-top: 1px;">
+    <span>최근 봉 거래량: <b class="mono-num" style="color:#e1e6ed;">{format_volume(_latest_volume)}</b></span>
+    <span>구간 합계: <b class="mono-num" style="color:#e1e6ed;">{format_volume(total_sum)}</b></span>
     </div>
     <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; margin-top: 3px;">
-    <span style="color: #10b981;">▲ Buy {buy_pct}% <span class="mono-num" style="font-weight:400; font-size:9px;">({_total_buy_vol:,})</span></span>
-    <span style="color: #ef4444;">▼ Sell {sell_pct}% <span class="mono-num" style="font-weight:400; font-size:9px;">({_total_sell_vol:,})</span></span>
+    <span style="color: #10b981;">▲ Buy {buy_pct}% <span class="mono-num" style="font-weight:400; font-size:9px;">({format_volume(_total_buy_vol)})</span></span>
+    <span style="color: #ef4444;">▼ Sell {sell_pct}% <span class="mono-num" style="font-weight:400; font-size:9px;">({format_volume(_total_sell_vol)})</span></span>
     </div>
+    <div style="font-size:8px; color:#5b6474;">K=천, M=백만, B=십억 단위</div>
     <div class="bar-container">
     <div class="bar-fill" style="width: {buy_pct}%;"></div>
     </div>
