@@ -1409,14 +1409,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- VWAP 밴드 + RSI + 1시간 차트 - SPX 실데이터(Schwab) 우선 ---
+# --- VWAP 밴드 + RSI + 1시간 차트 - SPY 실제 거래량 기반(가격 x10 환산) ---
 @st.cache_data(ttl=30)
-def fetch_today_session_yahoo(timeframe="1m"):
-    """오늘 정규장(09:30 ET~) 봉 데이터 (야후 ES 폴백용). VWAP은 매일 09:30에 리셋되는 게 관례."""
+def fetch_today_session_yahoo_spy(timeframe="1m"):
+    """오늘 정규장(09:30 ET~) SPY 봉 데이터 (야후 폴백용). 가격은 나중에 x10 해서 SPX 환산."""
     try:
         yf_interval = "60m" if timeframe == "1H" else timeframe
         period = "1d" if timeframe in ["1m", "5m"] else "5d"
-        t = yf.Ticker("ES=F")
+        t = yf.Ticker("SPY")
         df = t.history(period=period, interval=yf_interval)
         if df.empty:
             return None
@@ -1432,24 +1432,40 @@ def fetch_today_session_yahoo(timeframe="1m"):
 
 def fetch_today_session_data(timeframe="1m"):
     """
-    오늘 정규장 봉 데이터. Schwab이 설정돼 있으면 SPX 실데이터를 1순위로 쓰고,
-    실패하면 야후 ES 선물로 폴백한다.
-    반환: (df_or_None, source_label)
+    오늘 정규장 봉 데이터 - VWAP 계산용.
+    SPX는 지수라 '진짜 거래량' 개념이 없어서(가중치 의미가 불확실), 대신 SPY(ETF)의
+    실제 체결 거래량을 쓰고 가격만 x10 해서 SPX 환산값으로 보여준다.
+    Schwab SPY를 1순위로, 실패하면 야후 SPY로 폴백한다.
+    반환: (df_or_None, source_label)  -- df의 Open/High/Low/Close는 이미 x10 환산된 값
     """
-    if schwab_client.is_configured():
-        _df, _err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=timeframe)
-        if _df is not None and not _df.empty:
-            est_tz = pytz.timezone('US/Eastern')
-            today = datetime.now(est_tz).date()
-            session_start = est_tz.localize(datetime.combine(today, datetime.min.time()).replace(hour=9, minute=30))
-            _df = _df[(_df.index.date == today) & (_df.index >= session_start)]
-            if not _df.empty:
-                return _df, "SPX 실시간 (Schwab)"
+    est_tz = pytz.timezone('US/Eastern')
+    today = datetime.now(est_tz).date()
+    session_start = est_tz.localize(datetime.combine(today, datetime.min.time()).replace(hour=9, minute=30))
 
-    _df = fetch_today_session_yahoo(timeframe)
-    if _df is not None:
-        return _df, ("ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)")
-    return None, None
+    _df, _source = None, None
+    if schwab_client.is_configured():
+        _raw, _err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=timeframe)
+        if _raw is not None and not _raw.empty:
+            _raw = _raw[(_raw.index.date == today) & (_raw.index >= session_start)]
+            if not _raw.empty:
+                _df, _source = _raw, "SPY 실시간 (Schwab) x10 환산"
+
+    if _df is None:
+        _raw = fetch_today_session_yahoo_spy(timeframe)
+        if _raw is not None:
+            _df = _raw
+            _source = ("SPY (야후, Schwab 대신 사용됨) x10 환산" if schwab_client.is_configured()
+                        else "SPY (야후) x10 환산")
+
+    if _df is None:
+        return None, None
+
+    _df = _df.copy()
+    for _col in ("Open", "High", "Low", "Close"):
+        if _col in _df.columns:
+            _df[_col] = _df[_col] * 10.0
+    # Volume은 그대로 (SPY 실제 체결 거래량 - 이게 VWAP 가중치로 쓰는 진짜 값)
+    return _df, _source
 
 
 _vwap_source_label = None
