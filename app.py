@@ -88,6 +88,24 @@ st.markdown("""
 .bar-fill { height: 100%; background-color: #10b981; }
 hr { margin: 6px 0 !important; border-color: #1e2635 !important; }
 
+/* 타임프레임 라디오를 pill(세그먼트 버튼) 스타일로 */
+div[role="radiogroup"] { gap: 4px !important; }
+div[role="radiogroup"] label {
+    background-color: #121824 !important;
+    border: 1px solid #1e2635 !important;
+    border-radius: 8px !important;
+    padding: 4px 12px !important;
+    margin: 0 !important;
+    transition: all 0.15s ease;
+}
+div[role="radiogroup"] label:has(input:checked) {
+    background-color: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+}
+div[role="radiogroup"] label > div:first-child { display: none !important; }
+div[role="radiogroup"] label p { font-size: 12px !important; font-weight: 600 !important; color: #d1d5db !important; }
+div[role="radiogroup"] label:has(input:checked) p { color: #ffffff !important; }
+
 /* Streamlit 기본 툴바(Share/즐겨찾기/편집/GitHub/메뉴) 및 헤더 숨기기 */
 [data-testid="stToolbar"] { visibility: hidden !important; display: none !important; }
 [data-testid="stHeader"] { visibility: hidden !important; height: 0 !important; }
@@ -1468,18 +1486,105 @@ def fetch_today_session_data(timeframe="1m"):
     return _df, _source
 
 
-_vwap_source_label = None
+@st.cache_data(ttl=30)
+def fetch_multiday_spy_yahoo(timeframe):
+    """1H처럼 여러 날에 걸치는 뷰용 - 야후 SPY 폴백."""
+    try:
+        yf_interval = "60m" if timeframe == "1H" else timeframe
+        t = yf.Ticker("SPY")
+        df = t.history(period="5d", interval=yf_interval)
+        if df.empty:
+            return None
+        est_tz = pytz.timezone('US/Eastern')
+        df.index = df.index.tz_convert(est_tz)
+        return df.tail(60)
+    except Exception:
+        return None
+
+
+def fetch_multiday_spx_data(timeframe):
+    """
+    1H 뷰처럼 여러 날에 걸치는 가격 추세용 데이터 (VWAP은 세션마다 리셋되는 지표라
+    여러 날에 걸치면 의미가 없으므로 이 데이터는 VWAP 없이 가격 추세만 보여줄 때 쓴다).
+    SPY 실데이터 x10 환산, Schwab 우선.
+    """
+    _df, _source = None, None
+    if schwab_client.is_configured():
+        _raw, _err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=timeframe)
+        if _raw is not None and not _raw.empty:
+            _df, _source = _raw.tail(60), "SPY 실시간 (Schwab) x10 환산"
+    if _df is None:
+        _raw = fetch_multiday_spy_yahoo(timeframe)
+        if _raw is not None:
+            _df = _raw
+            _source = "SPY (야후, Schwab 대신 사용됨) x10 환산" if schwab_client.is_configured() else "SPY (야후) x10 환산"
+    if _df is None:
+        return None, None
+    _df = _df.copy()
+    for _col in ("Open", "High", "Low", "Close"):
+        if _col in _df.columns:
+            _df[_col] = _df[_col] * 10.0
+    return _df, _source
+
+
 _vwap_tf = st.radio("VWAP TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
                      horizontal=True, label_visibility="collapsed", key="vwap_timeframe")
 
-_session_df, _vwap_source_label = fetch_today_session_data(_vwap_tf)
+_is_multiday_view = (_vwap_tf == "1H")
+
+if _is_multiday_view:
+    _session_df, _vwap_source_label = fetch_multiday_spx_data(_vwap_tf)
+else:
+    _session_df, _vwap_source_label = fetch_today_session_data(_vwap_tf)
 
 _vwap_last_bar_time = _session_df.index[-1].strftime('%H:%M:%S') if (_session_df is not None and len(_session_df) > 0) else now_est.strftime('%H:%M:%S')
-section_header("📈", "VWAP BANDS", f"마지막 봉 {_vwap_last_bar_time} ET")
+section_header("📈", f"{_vwap_tf} 차트 · VWAP BANDS", f"Data as of {_vwap_last_bar_time} ET")
 
-if _session_df is not None and len(_session_df) >= 5:
-    st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_vwap_source_label} · {_vwap_tf}</div>',
-                unsafe_allow_html=True)
+if _session_df is None or len(_session_df) < 5:
+    st.markdown("""
+    <div class="card-box" style="font-size:10px; color:#9ca3af;">
+    데이터를 아직 못 가져왔습니다 (장 시작 직후이거나 데이터 지연). 잠시 후 다시 확인해주세요.
+    </div>
+    """, unsafe_allow_html=True)
+elif _is_multiday_view:
+    # 여러 날에 걸치는 뷰: VWAP은 매일 리셋되는 지표라 이 구간엔 의미가 없다.
+    # 그래서 VWAP 밴드 없이 가격 추세만 깔끔하게 보여주고, 판단은 RSI로 참고하게 안내한다.
+    _price_fig = go.Figure()
+    _price_fig.add_trace(go.Scatter(
+        x=_session_df.index, y=_session_df['Close'],
+        line=dict(color='#22c55e', width=2), fill='tozeroy', fillcolor='rgba(34,197,94,0.08)',
+        mode='lines',
+    ))
+    _price_fig.add_trace(go.Scatter(
+        x=[_session_df.index[-1]], y=[_session_df['Close'].iloc[-1]],
+        mode='markers', marker=dict(color='#22c55e', size=7),
+    ))
+    _price_fig.update_layout(
+        template="plotly_dark", height=230, margin=dict(l=45, r=10, t=10, b=35),
+        paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
+        xaxis=dict(title=dict(text="Time", font=dict(size=10, color='#7b8494')),
+                    showgrid=False, fixedrange=True, tickfont=dict(size=9, color='#7b8494')),
+        yaxis=dict(title=dict(text="Price (SPX)", font=dict(size=10, color='#7b8494')),
+                    showgrid=True, gridcolor='#1e2635', griddash='dot', fixedrange=True,
+                    tickfont=dict(size=9, color='#7b8494')),
+    )
+    components.html(_price_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                        config={'staticPlot': True, 'displayModeBar': False}), height=235)
+
+    # 참고용 RSI (같은 데이터로 계산)
+    _quick_rsi = market_pulse.calculate_rsi(_session_df['Close'], period=14)
+    _quick_rsi_val = round(_quick_rsi.iloc[-1], 0) if len(_quick_rsi) > 0 else None
+
+    st.markdown(f"""
+    <div class="card-box" style="font-size:11px;">
+    <div style="font-weight:700; color:#9ca3af;">— 중립</div>
+    <div style="color:#d1d5db; margin-top:2px; font-size:10px;">
+    현재 {_vwap_tf}는 여러 날에 걸치는 구간이라 VWAP 기반 판단을 보류합니다.
+    RSI {fmt(_quick_rsi_val, '{:.0f}') if _quick_rsi_val is not None else 'N/A'} 및 최근 가격 흐름만 참고하세요.
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
     _vwap_series, _vwap_std = market_pulse.calculate_vwap_bands(_session_df)
     _last_vwap = _vwap_series.iloc[-1]
     _last_std = _vwap_std.iloc[-1]
@@ -1487,97 +1592,96 @@ if _session_df is not None and len(_session_df) >= 5:
 
     if _last_close > _last_vwap + _last_std:
         _vwap_note = "현재 상단 밴드 위 — 과열 구간일 수 있습니다."
+        _vwap_status_label, _vwap_status_color = "과열", "#ef4444"
     elif _last_close < _last_vwap - _last_std:
         _vwap_note = "현재 하단 밴드 아래 — 과매도 구간일 수 있습니다."
+        _vwap_status_label, _vwap_status_color = "과매도", "#3b82f6"
     else:
         _vwap_note = "현재 정상 세션 VWAP 밴드 안에 있습니다."
+        _vwap_status_label, _vwap_status_color = "중립", "#9ca3af"
 
     _vwap_fig = go.Figure()
-    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_session_df['Close'], name="가격",
-                                    line=dict(color='#e1e6ed', width=1.5)))
-    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series, name="VWAP",
-                                    line=dict(color='#facc15', width=1.5, dash='dot')))
     _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series + _vwap_std, name="+1σ",
-                                    line=dict(color='#3b82f680', width=1)))
-    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series - _vwap_std, name="-1σ",
-                                    line=dict(color='#3b82f680', width=1), fill='tonexty',
-                                    fillcolor='rgba(59,130,246,0.07)'))
-    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series + 2 * _vwap_std, name="+2σ",
-                                    line=dict(color='#3b82f640', width=1, dash='dash')))
-    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series - 2 * _vwap_std, name="-2σ",
-                                    line=dict(color='#3b82f640', width=1, dash='dash')))
+                                    line=dict(color='rgba(0,0,0,0)', width=0), showlegend=False))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series - _vwap_std, name="밴드",
+                                    line=dict(color='rgba(0,0,0,0)', width=0), fill='tonexty',
+                                    fillcolor='rgba(79,70,229,0.10)', showlegend=False))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_vwap_series, name="VWAP",
+                                    line=dict(color='#818cf8', width=1.5, dash='dot')))
+    _vwap_fig.add_trace(go.Scatter(x=_session_df.index, y=_session_df['Close'], name="가격",
+                                    line=dict(color='#22c55e', width=2), mode='lines'))
+    _vwap_fig.add_trace(go.Scatter(x=[_session_df.index[-1]], y=[_last_close],
+                                    mode='markers', marker=dict(color='#22c55e', size=7), showlegend=False))
     _vwap_fig.update_layout(
-        template="plotly_dark", height=210, margin=dict(l=0, r=0, t=10, b=20),
+        template="plotly_dark", height=230, margin=dict(l=45, r=10, t=10, b=35),
         paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
-        xaxis=dict(showgrid=False, fixedrange=True, tickfont=dict(size=9, color='#7b8494')),
-        yaxis=dict(showgrid=True, gridcolor='#1e2635', fixedrange=True, tickfont=dict(size=9, color='#7b8494')),
+        xaxis=dict(title=dict(text="Time", font=dict(size=10, color='#7b8494')),
+                    showgrid=False, fixedrange=True, tickfont=dict(size=9, color='#7b8494')),
+        yaxis=dict(title=dict(text="Price (SPX)", font=dict(size=10, color='#7b8494')),
+                    showgrid=True, gridcolor='#1e2635', griddash='dot', fixedrange=True,
+                    tickfont=dict(size=9, color='#7b8494')),
     )
     components.html(_vwap_fig.to_html(include_plotlyjs='cdn', full_html=False,
-                                       config={'staticPlot': True, 'displayModeBar': False}), height=215)
+                                       config={'staticPlot': True, 'displayModeBar': False}), height=235)
 
     st.markdown(f"""
-    <div class="card-box" style="font-size:10px;">
-    <span style="color:#facc15;">— </span>
-    <b>VWAP {round(_last_vwap,2)}</b>
-    <span style="color:#9ca3af;"> · {_vwap_note}</span>
+    <div class="card-box" style="font-size:11px;">
+    <div style="font-weight:700; color:{_vwap_status_color};">— {_vwap_status_label}</div>
+    <div style="color:#d1d5db; margin-top:2px; font-size:10px;">VWAP {round(_last_vwap,2)} · {_vwap_note}</div>
     </div>
     """, unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:9px; color:#5b6474; margin-top:2px;">데이터: {_vwap_source_label} · {_vwap_tf}</div>',
+                unsafe_allow_html=True)
 
-    # --- RSI(14) - 타임프레임 선택 가능, SPX 실데이터(Schwab) 우선 ---
-    _rsi_tf = st.radio("RSI TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
-                        horizontal=True, label_visibility="collapsed", key="rsi_timeframe")
+# --- RSI(14) - 타임프레임 선택 가능, SPX 실데이터(Schwab) 우선 (VWAP과 독립적으로 항상 렌더링) ---
+_rsi_tf = st.radio("RSI TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
+                    horizontal=True, label_visibility="collapsed", key="rsi_timeframe")
 
-    _rsi_df = None
-    _rsi_source = None
-    if schwab_client.is_configured():
-        _rsi_df, _rsi_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=_rsi_tf)
-        if _rsi_df is not None:
-            _rsi_source = "SPX 실시간 (Schwab)"
+_rsi_df = None
+_rsi_source = None
+if schwab_client.is_configured():
+    _rsi_df, _rsi_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=_rsi_tf)
+    if _rsi_df is not None:
+        _rsi_source = "SPX 실시간 (Schwab)"
 
-    if _rsi_df is None:
-        _rsi_df = fetch_es_history_for_rsi(_rsi_tf)
-        if _rsi_df is not None:
-            _rsi_source = "ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)"
+if _rsi_df is None:
+    _rsi_df = fetch_es_history_for_rsi(_rsi_tf)
+    if _rsi_df is not None:
+        _rsi_source = "ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)"
 
-    _rsi_last_bar_time = _rsi_df.index[-1].strftime('%H:%M:%S') if (_rsi_df is not None and len(_rsi_df) > 0) else now_est.strftime('%H:%M:%S')
-    section_header("📉", "RSI (14)", f"마지막 봉 {_rsi_last_bar_time} ET")
+_rsi_last_bar_time = _rsi_df.index[-1].strftime('%H:%M:%S') if (_rsi_df is not None and len(_rsi_df) > 0) else now_est.strftime('%H:%M:%S')
+section_header("📉", "RSI (14)", f"마지막 봉 {_rsi_last_bar_time} ET")
 
-    if _rsi_df is not None and len(_rsi_df) >= 15:
-        st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_rsi_source}</div>',
-                    unsafe_allow_html=True)
-        _rsi_series = market_pulse.calculate_rsi(_rsi_df['Close'], period=14)
-        _last_rsi = _rsi_series.iloc[-1]
-        _rsi_color = "#ef4444" if _last_rsi > 70 else ("#3b82f6" if _last_rsi < 30 else "#10b981")
-        _rsi_label = "과매수" if _last_rsi > 70 else ("과매도" if _last_rsi < 30 else "중립")
+if _rsi_df is not None and len(_rsi_df) >= 15:
+    st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_rsi_source}</div>',
+                unsafe_allow_html=True)
+    _rsi_series = market_pulse.calculate_rsi(_rsi_df['Close'], period=14)
+    _last_rsi = _rsi_series.iloc[-1]
+    _rsi_color = "#ef4444" if _last_rsi > 70 else ("#3b82f6" if _last_rsi < 30 else "#10b981")
+    _rsi_label = "과매수" if _last_rsi > 70 else ("과매도" if _last_rsi < 30 else "중립")
 
-        _rsi_fig = go.Figure()
-        _rsi_fig.add_trace(go.Scatter(x=_rsi_df.index, y=_rsi_series, line=dict(color=_rsi_color, width=1.5)))
-        _rsi_fig.add_hline(y=70, line_dash="dot", line_color="#ef444460", line_width=1)
-        _rsi_fig.add_hline(y=30, line_dash="dot", line_color="#3b82f660", line_width=1)
-        _rsi_fig.update_layout(
-            template="plotly_dark", height=110, margin=dict(l=0, r=0, t=5, b=15),
-            paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
-            xaxis=dict(showgrid=False, fixedrange=True, showticklabels=False),
-            yaxis=dict(showgrid=False, fixedrange=True, range=[0, 100], tickfont=dict(size=8, color='#7b8494')),
-        )
-        components.html(_rsi_fig.to_html(include_plotlyjs='cdn', full_html=False,
-                                          config={'staticPlot': True, 'displayModeBar': False}), height=115)
-        st.markdown(f"""
-        <div style="text-align:right; font-size:11px; margin-top:-6px;">
-        <span class="mono-num" style="color:{_rsi_color}; font-weight:700;">{round(_last_rsi,1)}</span>
-        <span style="color:#9ca3af;"> {_rsi_label} · {_rsi_tf}</span>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="card-box" style="font-size:10px; color:#9ca3af;">
-        이 타임프레임의 RSI 계산에 데이터가 부족합니다. 잠시 후 다시 확인해주세요.
-        </div>
-        """, unsafe_allow_html=True)
+    _rsi_fig = go.Figure()
+    _rsi_fig.add_trace(go.Scatter(x=_rsi_df.index, y=_rsi_series, line=dict(color=_rsi_color, width=1.5)))
+    _rsi_fig.add_hline(y=70, line_dash="dot", line_color="#ef444460", line_width=1)
+    _rsi_fig.add_hline(y=30, line_dash="dot", line_color="#3b82f660", line_width=1)
+    _rsi_fig.update_layout(
+        template="plotly_dark", height=110, margin=dict(l=0, r=0, t=5, b=15),
+        paper_bgcolor='#0a0e17', plot_bgcolor='#121824', showlegend=False,
+        xaxis=dict(showgrid=False, fixedrange=True, showticklabels=False),
+        yaxis=dict(showgrid=False, fixedrange=True, range=[0, 100], tickfont=dict(size=8, color='#7b8494')),
+    )
+    components.html(_rsi_fig.to_html(include_plotlyjs='cdn', full_html=False,
+                                      config={'staticPlot': True, 'displayModeBar': False}), height=115)
+    st.markdown(f"""
+    <div style="text-align:right; font-size:11px; margin-top:-6px;">
+    <span class="mono-num" style="color:{_rsi_color}; font-weight:700;">{round(_last_rsi,1)}</span>
+    <span style="color:#9ca3af;"> {_rsi_label} · {_rsi_tf}</span>
+    </div>
+    """, unsafe_allow_html=True)
 else:
     st.markdown("""
     <div class="card-box" style="font-size:10px; color:#9ca3af;">
-    오늘 세션 데이터를 아직 못 가져왔습니다 (장 시작 직후이거나 데이터 지연). 잠시 후 다시 확인해주세요.
+    이 타임프레임의 RSI 계산에 데이터가 부족합니다. 잠시 후 다시 확인해주세요.
     </div>
     """, unsafe_allow_html=True)
 
