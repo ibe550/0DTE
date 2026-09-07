@@ -578,7 +578,14 @@ else:
 
 # 0DTE는 같은 변동성이라도 시간대(세션)에 따라 감마/세타 위험이 다르므로
 # 레짐 배수와 세션 배수를 곱해서 최종 안전거리 배수를 만든다.
-session_name, session_mult = SimonsBenterQuantEngine.detect_trading_session(now_est)
+# 단, 세션(시간대) 판정은 "오늘이 실제 개장일"일 때만 의미가 있다. 주말/휴일에는
+# 시계만 보고 "지금 시간이니까 무슨 세션"이라고 판단하면 안 된다 - 애초에
+# 0DTE 만기 계약 자체가 존재하지 않는 날이기 때문이다.
+if macro_calendar.is_trading_day(now_est.date()):
+    session_name, session_mult = SimonsBenterQuantEngine.detect_trading_session(now_est)
+else:
+    session_name, session_mult = "MARKET_CLOSED", 1.0
+
 session_risk_level, session_risk_title, session_risk_message = \
     SimonsBenterQuantEngine.get_session_risk_message(session_name)
 
@@ -642,7 +649,7 @@ _effective_spx_price, _spx_is_estimated, _spx_estimate_note = get_effective_spx_
 # 이 체인은 아래 0DTE TIME RISK 배너·GEX 섹션에서도 같은 캐시를 재사용한다 (API 중복 호출 방지).
 _real_delta_analytics = None
 _strikes_data_time_str = None  # 이 스트라이크 계산에 실제로 쓰인 데이터의 시각
-if schwab_client.is_configured() and _effective_spx_price is not None:
+if macro_calendar.is_trading_day(now_est.date()) and schwab_client.is_configured() and _effective_spx_price is not None:
     _early_chain, _early_chain_err = fetch_schwab_chain_cached("$SPX", now_est.strftime("%Y-%m-%d"))
     if _early_chain:
         _call_15d_spx = schwab_client.find_delta_strike(_early_chain, target_delta=0.15, option_type="CALL")
@@ -733,7 +740,8 @@ if data_errors:
 
 _liq_metrics = None
 _liq_chain_err = None
-if schwab_client.is_configured() and _effective_spx_price is not None:
+_today_is_trading_day = macro_calendar.is_trading_day(now_est.date())
+if _today_is_trading_day and schwab_client.is_configured() and _effective_spx_price is not None:
     _liq_chain, _liq_chain_err = fetch_schwab_chain_cached("$SPX", now_est.strftime("%Y-%m-%d"))
     if _liq_chain:
         _liq_metrics = schwab_client.calculate_liquidity_metrics(_liq_chain, _effective_spx_price)
@@ -1005,7 +1013,7 @@ _gex_err = None
 # (get_effective_spx_price 정의는 이 파일 앞부분, strikes 계산 직전에 있음)
 _gex_spot, _gex_is_estimated, _gex_spot_note = _effective_spx_price, _spx_is_estimated, _spx_estimate_note
 
-if schwab_client.is_configured() and _gex_spot is not None:
+if macro_calendar.is_trading_day(now_est.date()) and schwab_client.is_configured() and _gex_spot is not None:
     # 위쪽 0DTE TIME RISK 배너에서 이미 가져온 체인을 재사용 (같은 파라미터라 캐시 히트, API 중복 호출 방지)
     _chain, _chain_err = fetch_schwab_chain_cached("$SPX", now_est.strftime("%Y-%m-%d"))
     if _chain_err:
