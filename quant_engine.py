@@ -59,6 +59,11 @@ class SimonsBenterQuantEngine:
                 "HIGH", "장외 저유동성",
                 "정규장 밖입니다 — 유동성이 얇아 슬리피지·스프레드 위험이 커집니다."
             ),
+            "MARKET_CLOSED": (
+                "EXTREME", "휴장일",
+                "오늘은 주말 또는 시장 휴장일입니다 — 0DTE 만기 계약 자체가 존재하지 않습니다. "
+                "화면의 가격·전략 정보는 지난 거래일 기준이거나 계산 불가 상태일 수 있습니다."
+            ),
         }
         return messages.get(session_name, ("LOW", "일반", "특이사항 없음."))
 
