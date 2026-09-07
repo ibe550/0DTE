@@ -130,3 +130,56 @@ def get_macro_risk_multiplier(check_date=None):
         return 1.0, []
     mult = max(e["mult"] for e in events)
     return mult, events
+
+
+# --- NYSE/Nasdaq 정규 휴장일 (2026년, NYSE 공식 발표 기준) ---
+# 마지막 확인일: 2026-09
+# 매년 초에 NYSE 공식 캘린더(nyse.com/markets/hours-calendars)에서 다음 해 일정 받아서 갱신해야 한다.
+MARKET_HOLIDAYS_2026 = {
+    "2026-01-01",  # New Year's Day
+    "2026-01-19",  # Martin Luther King Jr. Day
+    "2026-02-16",  # Washington's Birthday (President's Day)
+    "2026-04-03",  # Good Friday
+    "2026-05-25",  # Memorial Day
+    "2026-06-19",  # Juneteenth
+    "2026-07-03",  # Independence Day (관찰일, 7/4가 토요일이라 금요일로 당겨짐)
+    "2026-09-07",  # Labor Day
+    "2026-11-26",  # Thanksgiving Day
+    "2026-12-25",  # Christmas Day
+}
+
+# 조기 폐장일 (13:00 ET 마감) - 정규장 리스크 배너 등에서 참고용
+MARKET_EARLY_CLOSE_2026 = {
+    "2026-11-27",  # 추수감사절 다음날
+    "2026-12-24",  # 크리스마스 이브
+}
+
+
+def is_market_holiday(check_date=None):
+    """주어진 날짜(기본값 오늘)가 NYSE 정규 휴장일이면 True."""
+    if check_date is None:
+        check_date = date.today()
+    return check_date.isoformat() in MARKET_HOLIDAYS_2026
+
+
+def is_early_close_day(check_date=None):
+    """주어진 날짜가 조기 폐장일(13:00 ET 마감)이면 True."""
+    if check_date is None:
+        check_date = date.today()
+    return check_date.isoformat() in MARKET_EARLY_CLOSE_2026
+
+
+def is_trading_day(check_date=None):
+    """
+    주어진 날짜가 실제 정규 거래일인지 (주말도 아니고, 휴장일도 아닌지).
+    0DTE는 애초에 그 날 열려야 만기 계약이 존재하므로, 세션/시간대 판정 전에
+    반드시 이 체크부터 해야 한다 (주말/휴일에 "지금 몇 시니까 무슨 세션"이라고
+    잘못 판단하는 걸 막기 위함).
+    """
+    if check_date is None:
+        check_date = date.today()
+    if check_date.weekday() >= 5:  # 5=토요일, 6=일요일
+        return False
+    if is_market_holiday(check_date):
+        return False
+    return True
