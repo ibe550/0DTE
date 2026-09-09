@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import requests
 import yfinance as yf
+import streamlit as st
 
 RISK_TAG_KEYWORDS = {
     "FED": ["fed", "powell", "warsh", "federal reserve", "fomc", "rate hike", "rate cut"],
@@ -108,6 +109,7 @@ def fetch_google_news(query=GOOGLE_NEWS_QUERY, n=5):
     return results, None
 
 
+@st.cache_data(ttl=120)
 def fetch_news_list(ticker="ES=F", n=5):
     """
     최근 뉴스 n개를 가져온다. Google News를 우선 시도하고, 실패하면 야후로 폴백한다.
