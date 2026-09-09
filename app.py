@@ -396,39 +396,6 @@ def fetch_market_data():
     }
 
 
-@st.cache_data(ttl=60)
-def fetch_latest_news_sentiment():
-    try:
-        ticker = yf.Ticker("ES=F")
-        news_list = ticker.news
-        if news_list and len(news_list) > 0:
-            latest = news_list[0]
-            title = latest.get('title', '')
-            link = latest.get('link', '')
-        else:
-            title = "Market Holds Steady Amid Economic Data Releases"
-            link = "#"
-    except Exception:
-        title = "Market Holds Steady Amid Economic Data Releases"
-        link = "#"
-
-    bearish_words = ["hike", "war", "inflation", "cpi", "drop", "plunge", "down", "crisis", "fall", "tariff", "missed"]
-    bullish_words = ["cut", "easing", "rally", "gain", "soar", "surge", "cool", "growth", "beat", "earnings", "boost"]
-
-    title_lower = title.lower()
-    bear_score = sum(1 for w in bearish_words if w in title_lower)
-    bull_score = sum(1 for w in bullish_words if w in title_lower)
-
-    if bear_score > bull_score:
-        sentiment = "BEARISH"
-    elif bull_score > bear_score:
-        sentiment = "BULLISH"
-    else:
-        sentiment = "NEUTRAL"
-
-    return {"title": title, "sentiment": sentiment, "link": link}
-
-
 @st.cache_data(ttl=30)
 def fetch_es_history(interval_str):
     try:
@@ -556,7 +523,6 @@ except Exception:
     pass  # 신호 추적 실패가 앱 전체를 죽이면 안 되므로 조용히 무시
 
 market_data = fetch_market_data()
-news_sentiment = fetch_latest_news_sentiment()
 est_tz = pytz.timezone('US/Eastern')
 now_est = datetime.now(est_tz)
 
@@ -567,7 +533,25 @@ spy_p, spy_c, spy_pct = market_data['spy']
 data_errors = market_data.get('errors', [])
 
 es_df = fetch_es_history("5m")
-news_score = SimonsBenterQuantEngine.advanced_news_scoring(news_sentiment['title'])
+
+# 뉴스 스코어: Google News 실데이터(여러 헤드라인)로 계산한다.
+# 예전엔 야후 단일 헤드라인(자주 안 걸리는 일반적 문구)만 봐서 거의 항상 0이었다.
+try:
+    _news_items = news_feed.fetch_news_list(ticker="ES=F", n=5)
+    _risk_tags = news_feed.extract_risk_tags(_news_items)
+except Exception:
+    _news_items, _risk_tags = [], []
+
+news_score = SimonsBenterQuantEngine.advanced_news_scoring(
+    [item['title'] for item in _news_items]
+)
+if news_score > 0:
+    news_sentiment_label = "BULLISH"
+elif news_score < 0:
+    news_sentiment_label = "BEARISH"
+else:
+    news_sentiment_label = "NEUTRAL"
+news_sentiment = {"sentiment": news_sentiment_label}  # calculate_dynamic_strikes 시그니처 호환용 (내부에서 실제로 안 쓰임)
 
 if es_df is not None and not es_df.empty:
     regime, regime_mult = SimonsBenterQuantEngine.detect_market_regime(es_df, vix_p if vix_p is not None else 15.0)
@@ -693,11 +677,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- 뉴스 리스크 티커 + 최신 뉴스 ---
-try:
-    _news_items = news_feed.fetch_news_list(ticker="ES=F", n=5)
-    _risk_tags = news_feed.extract_risk_tags(_news_items)
-except Exception:
-    _news_items, _risk_tags = [], []
+# _news_items, _risk_tags는 위쪽에서 이미 가져왔음 (news_score 계산에 재사용, 중복 조회 방지)
 
 if _risk_tags:
     section_header("📰", "NEWS RISKS", f"Latest item {_news_items[0]['time_ago']}" if _news_items else None)
