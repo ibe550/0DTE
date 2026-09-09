@@ -469,3 +469,61 @@ def find_delta_strike(chain_data, target_delta=0.15, option_type="CALL"):
                     best_diff = diff
 
     return best_strike
+
+
+def calculate_expected_move(chain_data, spot_price):
+    """
+    ATM(등가격) 콜+풋 마크 가격의 합(스트래들 가격)으로 Expected Move를 계산한다.
+    이게 "옵션 시장이 오늘 하루 이 정도는 움직일 거라고 프라이싱한 값"이다.
+    0DTE 계약만 대상으로 한다.
+
+    반환: EM(포인트, float) 또는 None
+    """
+    if not chain_data or spot_price is None or spot_price <= 0:
+        return None
+
+    # 스팟에 가장 가까운 스트라이크(ATM) 찾기
+    best_strike = None
+    best_diff = None
+    for strikes in chain_data.get("callExpDateMap", {}).values():
+        for strike_str in strikes.keys():
+            try:
+                strike = float(strike_str)
+            except (TypeError, ValueError):
+                continue
+            diff = abs(strike - spot_price)
+            if best_diff is None or diff < best_diff:
+                best_strike = strike
+                best_diff = diff
+
+    if best_strike is None:
+        return None
+
+    call_mark = None
+    put_mark = None
+
+    for exp_map_key, is_call in (("callExpDateMap", True), ("putExpDateMap", False)):
+        exp_map = chain_data.get(exp_map_key, {})
+        for strikes in exp_map.values():
+            for strike_str, contracts in strikes.items():
+                try:
+                    strike = float(strike_str)
+                except (TypeError, ValueError):
+                    continue
+                if strike != best_strike:
+                    continue
+                for c in contracts:
+                    if c.get("daysToExpiration") not in (0, None):
+                        continue
+                    mark = c.get("mark")
+                    if mark is None:
+                        continue
+                    if is_call:
+                        call_mark = mark
+                    else:
+                        put_mark = mark
+
+    if call_mark is None or put_mark is None:
+        return None
+
+    return round(call_mark + put_mark, 2)
