@@ -796,6 +796,58 @@ if macro_events:
     </div>
     """, unsafe_allow_html=True)
 
+@st.cache_data(ttl=6 * 3600)
+def compute_daily_em(_date_key, _spot_rounded):
+    """
+    date_key(오늘 날짜) + 스팟가격(5포인트 단위로 반올림)으로 캐시한다.
+    체인 객체 자체를 캐시 키로 안 쓰는 이유: 체인은 30초마다 갱신되는데 그걸 그대로 키로
+    쓰면 매번 다시 계산돼서 '하루 동안 어느 정도 고정' 의도가 깨진다. 스팟을 5pt 단위로
+    반올림해서 키로 쓰면, 가격이 크게 안 움직이는 동안은 캐시가 유지되고, 스트라이크가
+    바뀔 만큼 크게 움직이면 자연스럽게 다시 계산된다.
+    """
+    _chain_for_em, _err = fetch_schwab_chain_cached("$SPX", _date_key)
+    if not _chain_for_em:
+        return None
+    return schwab_client.calculate_expected_move(_chain_for_em, _spot_rounded)
+
+
+if _today_is_trading_day and schwab_client.is_configured() and _liq_chain and _effective_spx_price is not None:
+    _spot_rounded_for_em = round(_effective_spx_price / 5) * 5
+    _em_points = compute_daily_em(now_est.strftime("%Y-%m-%d"), _spot_rounded_for_em)
+    _underlying = _liq_chain.get("underlying", {}) or {}
+    _day_open = _underlying.get("openPrice")
+    _day_high = _underlying.get("highPrice")
+    _day_low = _underlying.get("lowPrice")
+
+    if _em_points and _em_points > 0 and _day_open:
+        _em_used_pct = min(abs(_effective_spx_price - _day_open) / _em_points * 100, 100)
+        _em_used_color = "#facc15" if _em_used_pct < 90 else "#ef4444"
+
+        _rth_range = (_day_high - _day_low) if (_day_high is not None and _day_low is not None) else None
+        _range_vs_em_pct = (_rth_range / _em_points * 100) if _rth_range is not None else None
+
+        st.markdown(f"""
+        <div class="grid-2col">
+        <div class="metric-card">
+        <div style="display:flex; justify-content:space-between;">
+        <span class="metric-label">EXPECTED MOVE USED</span>
+        <span style="font-size:9px; color:#7b8494;">±{_em_points:.1f}pt</span>
+        </div>
+        <div class="metric-val" style="color:{_em_used_color};">{_em_used_pct:.0f}%</div>
+        <div class="bar-container" style="background-color:#1e2635; margin-top:4px;">
+        <div class="bar-fill" style="width:{_em_used_pct:.0f}%; background-color:{_em_used_color};"></div>
+        </div>
+        </div>
+        <div class="metric-card">
+        <div class="metric-label">INTRADAY RANGE / EM</div>
+        <div class="metric-val">{f'{_range_vs_em_pct:.0f}%' if _range_vs_em_pct is not None else 'N/A'}</div>
+        <div class="metric-sub" style="color:#9ca3af;">{f'{_rth_range:.1f}pt RTH range' if _rth_range is not None else '데이터 없음'}</div>
+        </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('<div style="font-size:8px; color:#5b6474; margin-bottom:4px;">* EM = ATM 콜+풋 마크가격 합(0DTE 스트래들). 장 시작 직후 값 기준으로 하루 동안 고정.</div>',
+                    unsafe_allow_html=True)
+
 # --- Top Cards ---
 spx_color = "#10b981" if safe(spx_c) >= 0 else "#ef4444"
 vix_color = "#ef4444" if safe(vix_c) >= 0 else "#10b981"
