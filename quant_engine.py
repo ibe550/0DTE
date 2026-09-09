@@ -144,10 +144,19 @@ class SimonsBenterQuantEngine:
         return round(fractional_kelly * 100, 1)
 
     @staticmethod
-    def advanced_news_scoring(news_title):
+    def advanced_news_scoring(news_titles):
         """
         [Multi-factor Text Analytics] 실적(Earnings) 및 장외 악재/호재 가중치 스코어
+
+        news_titles: 문자열 하나 또는 여러 헤드라인 리스트.
+        예전엔 헤드라인 딱 1개(그것도 야후의 단일 헤드라인, 자주 키워드에
+        하나도 안 걸리는 일반적인 문구)만 스캔해서 거의 항상 0이 나왔다.
+        이제 여러 헤드라인(Google News 실데이터)을 다 스캔해서 평균을 낸다
+        (평균을 쓰는 이유: 헤드라인 개수가 늘어도 점수 스케일이 커지지 않게 하기 위함).
         """
+        if isinstance(news_titles, str):
+            news_titles = [news_titles]
+
         keywords_weights = {
             # 실적 및 호재 (+ 점수)
             "earnings": 2.0, "revenue": 1.5, "beat": 2.5, "surpass": 2.0,
@@ -156,12 +165,22 @@ class SimonsBenterQuantEngine:
             "missed": -2.5, "plunge": -2.5, "drop": -2.0, "war": -3.0,
             "cpi": -2.0, "inflation": -2.0, "tariff": -2.5, "crash": -3.0
         }
-        
-        title_lower = news_title.lower()
-        score = 0.0
-        
-        for word, weight in keywords_weights.items():
-            if word in title_lower:
-                score += weight
-                
-        return round(score, 1)
+
+        if not news_titles:
+            return 0.0
+
+        scores = []
+        for title in news_titles:
+            if not title:
+                continue
+            title_lower = title.lower()
+            score = 0.0
+            for word, weight in keywords_weights.items():
+                if word in title_lower:
+                    score += weight
+            scores.append(score)
+
+        if not scores:
+            return 0.0
+
+        return round(sum(scores) / len(scores), 1)
