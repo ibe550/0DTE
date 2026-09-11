@@ -1697,6 +1697,10 @@ _rsi_schwab_err = None
 if schwab_client.is_configured():
     _rsi_df, _rsi_schwab_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=_rsi_tf)
     if _rsi_df is not None:
+        # Schwab은 요청 기간(예: 15분봉 10일치) 전체를 다 돌려준다. 그걸 그대로 다
+        # 그리면 장외시간 간격 없이 여러 날이 억지로 이어붙어서 지그재그로 보인다.
+        # 최근 100개 봉만 잘라서 쓴다 (RSI 웜업엔 충분하고 차트도 깔끔해짐).
+        _rsi_df = _rsi_df.tail(100)
         _rsi_source = "SPX 실시간 (Schwab)"
 
 if _rsi_df is None:
@@ -1747,13 +1751,21 @@ else:
 # --- Volume & CVD Chart - SPX 실데이터(Schwab) 우선 ---
 def fetch_volume_chart_data(tf):
     """
-    Schwab이 설정돼 있으면 SPX 실데이터를 1순위로, 실패하면 야후 ES 선물로 폴백한다.
+    거래량 차트용 데이터. SPX는 지수라 Schwab이 주는 Volume 필드가 사실상 0에 가까워서
+    (실제 체결량 개념이 없음 - 예전에 이미 확인한 문제) 쓸 수가 없다. 그래서 SPY(ETF)
+    실제 거래량을 쓰고 가격만 x10 해서 SPX 환산값으로 보여준다 (VWAP과 동일한 방식).
+    Schwab SPY 1순위, 실패하면 야후 ES 선물로 폴백.
     반환: (df_or_None, source_label, schwab_err_or_None)
     """
     if schwab_client.is_configured():
-        _df, _schwab_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=tf)
+        _df, _schwab_err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=tf)
         if _df is not None and not _df.empty:
-            return _df.tail(20), "SPX 실시간 (Schwab)", None
+            _df = _df.tail(20).copy()
+            for _col in ("Open", "High", "Low", "Close"):
+                if _col in _df.columns:
+                    _df[_col] = _df[_col] * 10.0
+            # Volume은 SPY 실제 체결 거래량 그대로 (환산 안 함 - 진짜 거래량 그 자체)
+            return _df, "SPY 실시간 (Schwab) x10 환산", None
     else:
         _schwab_err = None
 
@@ -1886,3 +1898,4 @@ else:
     ES=F 데이터를 불러오지 못했습니다.
     </div>
     """, unsafe_allow_html=True)
+
