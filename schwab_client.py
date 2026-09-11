@@ -12,6 +12,7 @@ Schwab API 클라이언트 - 실시간 시세 + 옵션 체인 + GEX(감마 노�
 import base64
 import requests
 import pandas as pd
+import pytz
 import streamlit as st
 
 TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
@@ -338,7 +339,11 @@ def fetch_price_history(symbol="$SPX", period_type="day", period=5,
 
     df = pd.DataFrame(candles)
     try:
-        df['datetime'] = pd.to_datetime(df['datetime'], unit='ms', utc=True).dt.tz_convert('US/Eastern')
+        # 문자열 'US/Eastern'말고 pytz 객체를 직접 넘긴다. 문자열로 넘기면 판다스가
+        # OS에 설치된 tzdata를 찾는데, 일부 배포 환경(Streamlit Cloud 등)엔 그게 없어서
+        # "No time zone found with key US/Eastern" 에러가 난다. pytz는 자체적으로
+        # 타임존 데이터를 파이썬 패키지 안에 갖고 있어서 이 문제가 없다.
+        df['datetime'] = pd.to_datetime(df['datetime'], unit='ms', utc=True).dt.tz_convert(pytz.timezone('US/Eastern'))
         df = df.set_index('datetime')
         df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low',
                                  'close': 'Close', 'volume': 'Volume'})
