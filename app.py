@@ -111,6 +111,16 @@ div[role="radiogroup"] label:has(input:checked) p { color: #ffffff !important; }
 [data-testid="stHeader"] { visibility: hidden !important; height: 0 !important; }
 #MainMenu { visibility: hidden !important; }
 footer { visibility: hidden !important; }
+
+/* Streamlit Cloud 개발자용 "Manage app" 배지 숨기기 시도.
+   주의: 이건 앱 자체가 아니라 Streamlit Cloud가 개발자(소유자) 계정으로 볼 때만
+   따로 얹어주는 배지라서, 이 CSS로 안 없어질 수도 있다. 그럴 땐 다른 사람들에게는
+   원래 이 배지가 안 보이니(방문자 화면엔 없음) 실질적인 문제는 아닐 가능성이 높다. */
+[data-testid="stStatusWidget"] { visibility: hidden !important; display: none !important; }
+.viewerBadge_container__r5tak,
+.viewerBadge_link__qRIco,
+a[href*="share.streamlit.io"],
+a[href*="/deploy"] { display: none !important; visibility: hidden !important; }
 </style>
 """, unsafe_allow_html=True)
 
