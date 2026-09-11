@@ -10,7 +10,7 @@ import time
 import yfinance as yf
 import requests
 
-from backtest import run_probability_analysis, run_walk_forward_analysis
+from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 import signal_tracker
 import macro_calendar
@@ -512,8 +512,6 @@ if "backtest_result" not in st.session_state:
     st.session_state["backtest_result"] = None
 if "data_errors" not in st.session_state:
     st.session_state["data_errors"] = []
-if "walk_forward_result" not in st.session_state:
-    st.session_state["walk_forward_result"] = None
 
 # 지난 신호 중 확인 시점이 지난 게 있으면 실제 결과를 채워넣는다.
 # (내부적으로 너무 잦은 호출은 자체적으로 막아둠 -> 매 새로고침마다 불러도 안전)
@@ -1878,125 +1876,3 @@ else:
     ES=F 데이터를 불러오지 못했습니다.
     </div>
     """, unsafe_allow_html=True)
-
-# ============================================================
-# 워크포워드 / 아웃오브샘플 검증 (신규)
-# ============================================================
-st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>🔬 워크포워드 검증 (기간별 안정성 체크)</div>", unsafe_allow_html=True)
-st.markdown("<div style='font-size:9px; color:#9ca3af; margin-bottom:4px;'>같은 규칙을 여러 구간에 나눠 적용해서, 결과가 우연이 아니라 꾸준히 재현되는지 확인합니다. (3개월치 데이터 사용, 계산에 시간이 좀 걸릴 수 있음)</div>", unsafe_allow_html=True)
-
-if st.button("🔬 워크포워드 검증 실행 (4구간)", use_container_width=True):
-    with st.spinner("3개월치 데이터를 4구간으로 나눠 분석 중... (시간이 좀 걸립니다)"):
-        wf_res = run_walk_forward_analysis("ES=F", period="3mo", interval="5m",
-                                            lookahead_bars=selected_bars, n_windows=4)
-        st.session_state["walk_forward_result"] = wf_res if wf_res is not None else "EMPTY"
-
-wf_result = st.session_state.get("walk_forward_result")
-
-if wf_result is None:
-    st.markdown("""
-    <div class="card-box" style="font-size:10px; color:#9ca3af;">
-    아직 실행 안 됨. 버튼을 누르면 최근 3개월을 4구간으로 나눠서 같은 신호 규칙을
-    각각 따로 검증합니다.
-    </div>
-    """, unsafe_allow_html=True)
-elif wf_result == "EMPTY":
-    st.markdown("<div style='font-size:10px; color:#ef4444;'>데이터가 부족해서 구간을 나눌 수 없습니다.</div>", unsafe_allow_html=True)
-else:
-    _windows = wf_result["windows"]
-    _std = wf_result["stability_std"]
-    _consistent = wf_result["consistent_direction"]
-
-    # 구간별 카드
-    _cols_html = "<div style='display:grid; grid-template-columns:repeat(4,1fr); gap:4px;'>"
-    for w in _windows:
-        _wr = w["win_rate"]
-        _wr_str = f"{_wr}%" if _wr is not None else "N/A"
-        _wr_color = "#10b981" if (_wr is not None and _wr > 50) else ("#ef4444" if _wr is not None else "#6b7280")
-        _cols_html += f"""
-        <div class="metric-card" style="padding:4px 6px;">
-        <div style="font-size:8px; color:#6b7280;">구간{w['window']} ({w['date_start']}~{w['date_end']})</div>
-        <div style="font-size:13px; font-weight:bold; color:{_wr_color};">{_wr_str}</div>
-        <div style="font-size:8px; color:#9ca3af;">n={w['total_signals']}</div>
-        </div>
-        """
-    _cols_html += "</div>"
-    st.markdown(_cols_html, unsafe_allow_html=True)
-
-    # 안정성 종합 판정
-    if _consistent is None:
-        _verdict = "판정 불가 (유효한 구간이 2개 미만)"
-        _verdict_color = "#9ca3af"
-    elif _consistent and _std is not None and _std < 10:
-        _verdict = "✅ 안정적 — 모든 구간에서 같은 방향, 편차도 작습니다."
-        _verdict_color = "#10b981"
-    elif _consistent:
-        _verdict = "🟡 방향은 일관되지만 구간별 편차가 큽니다 — 참고용으로만 쓰세요."
-        _verdict_color = "#facc15"
-    else:
-        _verdict = "⚠️ 불안정 — 구간마다 결과가 뒤집힙니다. 지금까지의 백테스트 결과는 특정 기간의 우연일 가능성이 높습니다 (과최적화 위험)."
-        _verdict_color = "#ef4444"
-
-    _std_str = f"±{_std}%p" if _std is not None else "N/A"
-    st.markdown(f"""
-    <div class="card-box" style="font-size:10px; color:#d1d5db;">
-    <div style="font-weight:bold; color:{_verdict_color};">{_verdict}</div>
-    <div style="margin-top:2px; color:#9ca3af;">구간별 승률 표준편차: {_std_str}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ============================================================
-# 신호 히스토리 · 자체 적중률 검증
-# ============================================================
-st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<div style='font-size: 11px; font-weight: bold; margin-top: 4px;'>📊 신호 히스토리 · 자체 적중률 검증</div>", unsafe_allow_html=True)
-
-try:
-    _stats = signal_tracker.get_accuracy_stats()
-except Exception as _e:
-    _stats = None
-    st.markdown(f"<div style='font-size:9px; color:#6b7280;'>적중률 통계를 불러오지 못했습니다: {_e}</div>", unsafe_allow_html=True)
-
-if _stats is None:
-    st.markdown("""
-    <div class="card-box" style="font-size: 10px; color: #9ca3af;">
-    아직 결과가 확인된 신호가 없습니다. 상단에서 백테스트를 실행하면 신호가 기록되고,
-    선택한 타임프레임(예: 30분 뒤)이 지나면 자동으로 실제 결과와 비교되어 여기 쌓입니다.
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    acc_color = "#10b981" if _stats["overall_accuracy"] >= 50 else "#ef4444"
-    st.markdown(f"""
-    <div class="grid-2col">
-    <div class="metric-card"><div class="metric-label">전체 적중률</div><div class="metric-val" style="color:{acc_color};">{_stats['overall_accuracy']}%</div><div class="metric-sub" style="color:#9ca3af;">확인된 신호 {_stats['total_resolved']}건</div></div>
-    <div class="metric-card"><div class="metric-label">해석</div><div style="font-size:10px; color:#d1d5db; margin-top:2px;">50% 미만이면 이 시스템의 방향성 신호가 동전던지기보다 못하다는 뜻입니다.</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 신뢰도 구간별 적중률 (캘리브레이션 체크) — 높음 구간이 실제로 더 잘 맞아야 정상
-    by_conf = _stats["by_confidence"]
-    if not by_conf.empty:
-        rows_html = ""
-        for tier, row in by_conf.iterrows():
-            n = int(row['count'])
-            m = row['mean']
-            m_str = f"{m}%" if pd.notna(m) else "N/A"
-            rows_html += f"<div style='display:flex; justify-content:space-between; padding:2px 0;'><span>{tier}</span><span>{m_str} (n={n})</span></div>"
-        st.markdown(f"""
-        <div class="card-box" style="font-size:10px; color:#d1d5db;">
-        <div style="font-weight:bold; margin-bottom:2px; color:#e1e6ed;">신뢰도 구간별 실제 적중률 (캘리브레이션)</div>
-        {rows_html}
-        <div style="margin-top:2px; font-size:9px; color:#6b7280;">* "높음" 구간 적중률이 "낮음" 구간보다 낮다면, 신뢰도 표시 자체를 다시 손봐야 한다는 신호입니다.</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with st.expander("최근 신호 상세 기록 보기"):
-        _hist = signal_tracker.get_signal_history(limit=50)
-        if _hist.empty:
-            st.markdown("기록 없음")
-        else:
-            _display_cols = ['logged_at', 'direction', 'confidence', 'spot_price',
-                              'call_strike', 'put_strike', 'resolved', 'actual_direction', 'correct']
-            _display_cols = [c for c in _display_cols if c in _hist.columns]
-            st.dataframe(_hist[_display_cols], use_container_width=True, hide_index=True)
