@@ -1500,13 +1500,15 @@ def fetch_today_session_data(timeframe="1m"):
     today = datetime.now(est_tz).date()
     session_start = est_tz.localize(datetime.combine(today, datetime.min.time()).replace(hour=9, minute=30))
 
-    _df, _source = None, None
+    _df, _source, _schwab_err = None, None, None
     if schwab_client.is_configured():
-        _raw, _err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=timeframe)
+        _raw, _schwab_err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=timeframe)
         if _raw is not None and not _raw.empty:
             _raw = _raw[(_raw.index.date == today) & (_raw.index >= session_start)]
             if not _raw.empty:
                 _df, _source = _raw, "SPY 실시간 (Schwab) x10 환산"
+            else:
+                _schwab_err = _schwab_err or "Schwab 응답은 받았지만 오늘 세션 구간에 해당하는 봉이 없음"
 
     if _df is None:
         _raw = fetch_today_session_yahoo_spy(timeframe)
@@ -1516,14 +1518,14 @@ def fetch_today_session_data(timeframe="1m"):
                         else "SPY (야후) x10 환산")
 
     if _df is None:
-        return None, None
+        return None, None, _schwab_err
 
     _df = _df.copy()
     for _col in ("Open", "High", "Low", "Close"):
         if _col in _df.columns:
             _df[_col] = _df[_col] * 10.0
     # Volume은 그대로 (SPY 실제 체결 거래량 - 이게 VWAP 가중치로 쓰는 진짜 값)
-    return _df, _source
+    return _df, _source, None
 
 
 @st.cache_data(ttl=30)
@@ -1548,9 +1550,9 @@ def fetch_multiday_spx_data(timeframe):
     여러 날에 걸치면 의미가 없으므로 이 데이터는 VWAP 없이 가격 추세만 보여줄 때 쓴다).
     SPY 실데이터 x10 환산, Schwab 우선.
     """
-    _df, _source = None, None
+    _df, _source, _schwab_err = None, None, None
     if schwab_client.is_configured():
-        _raw, _err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=timeframe)
+        _raw, _schwab_err = schwab_client.fetch_price_history_tf(symbol="SPY", timeframe=timeframe)
         if _raw is not None and not _raw.empty:
             _df, _source = _raw.tail(60), "SPY 실시간 (Schwab) x10 환산"
     if _df is None:
@@ -1559,12 +1561,12 @@ def fetch_multiday_spx_data(timeframe):
             _df = _raw
             _source = "SPY (야후, Schwab 대신 사용됨) x10 환산" if schwab_client.is_configured() else "SPY (야후) x10 환산"
     if _df is None:
-        return None, None
+        return None, None, _schwab_err
     _df = _df.copy()
     for _col in ("Open", "High", "Low", "Close"):
         if _col in _df.columns:
             _df[_col] = _df[_col] * 10.0
-    return _df, _source
+    return _df, _source, None
 
 
 _vwap_tf = st.radio("VWAP TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
@@ -1573,12 +1575,16 @@ _vwap_tf = st.radio("VWAP TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
 _is_multiday_view = (_vwap_tf == "1H")
 
 if _is_multiday_view:
-    _session_df, _vwap_source_label = fetch_multiday_spx_data(_vwap_tf)
+    _session_df, _vwap_source_label, _vwap_schwab_err = fetch_multiday_spx_data(_vwap_tf)
 else:
-    _session_df, _vwap_source_label = fetch_today_session_data(_vwap_tf)
+    _session_df, _vwap_source_label, _vwap_schwab_err = fetch_today_session_data(_vwap_tf)
 
 _vwap_last_bar_time = _session_df.index[-1].strftime('%H:%M:%S') if (_session_df is not None and len(_session_df) > 0) else now_est.strftime('%H:%M:%S')
 section_header("📈", f"{_vwap_tf} 차트 · VWAP BANDS", f"Data as of {_vwap_last_bar_time} ET")
+
+if _vwap_schwab_err and schwab_client.is_configured():
+    st.markdown(f'<div style="font-size:9px; color:#f87171; margin-bottom:2px;">⚠️ Schwab 실패: {_vwap_schwab_err}</div>',
+                unsafe_allow_html=True)
 
 if _session_df is None or len(_session_df) < 5:
     st.markdown("""
@@ -1679,8 +1685,9 @@ _rsi_tf = st.radio("RSI TF", ["1m", "5m", "15m", "30m", "1H"], index=0,
 
 _rsi_df = None
 _rsi_source = None
+_rsi_schwab_err = None
 if schwab_client.is_configured():
-    _rsi_df, _rsi_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=_rsi_tf)
+    _rsi_df, _rsi_schwab_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=_rsi_tf)
     if _rsi_df is not None:
         _rsi_source = "SPX 실시간 (Schwab)"
 
@@ -1691,6 +1698,10 @@ if _rsi_df is None:
 
 _rsi_last_bar_time = _rsi_df.index[-1].strftime('%H:%M:%S') if (_rsi_df is not None and len(_rsi_df) > 0) else now_est.strftime('%H:%M:%S')
 section_header("📉", "RSI (14)", f"마지막 봉 {_rsi_last_bar_time} ET")
+
+if _rsi_schwab_err and schwab_client.is_configured():
+    st.markdown(f'<div style="font-size:9px; color:#f87171; margin-bottom:2px;">⚠️ Schwab 실패: {_rsi_schwab_err}</div>',
+                unsafe_allow_html=True)
 
 if _rsi_df is not None and len(_rsi_df) >= 15:
     st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_rsi_source}</div>',
@@ -1729,24 +1740,30 @@ else:
 def fetch_volume_chart_data(tf):
     """
     Schwab이 설정돼 있으면 SPX 실데이터를 1순위로, 실패하면 야후 ES 선물로 폴백한다.
-    반환: (df_or_None, source_label)
+    반환: (df_or_None, source_label, schwab_err_or_None)
     """
     if schwab_client.is_configured():
-        _df, _err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=tf)
+        _df, _schwab_err = schwab_client.fetch_price_history_tf(symbol="$SPX", timeframe=tf)
         if _df is not None and not _df.empty:
-            return _df.tail(20), "SPX 실시간 (Schwab)"
+            return _df.tail(20), "SPX 실시간 (Schwab)", None
+    else:
+        _schwab_err = None
 
     _df = fetch_es_history(tf)
     if _df is not None:
-        return _df, ("ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)")
-    return None, None
+        return _df, ("ES 선물 (야후, Schwab 대신 사용됨)" if schwab_client.is_configured() else "ES 선물 (야후)"), _schwab_err
+    return None, None, _schwab_err
 
 
 selected_tf = st.radio("TF", ["1m", "5m", "15m", "30m", "1H"], index=2, horizontal=True, label_visibility="collapsed")
-es_df_chart, _volume_source_label = fetch_volume_chart_data(selected_tf)
+es_df_chart, _volume_source_label, _volume_schwab_err = fetch_volume_chart_data(selected_tf)
 
 _vol_last_bar_time = es_df_chart.index[-1].strftime('%H:%M:%S') if (es_df_chart is not None and not es_df_chart.empty) else now_est.strftime('%H:%M:%S')
 section_header("📊", "VOLUME + CVD", f"마지막 봉 {_vol_last_bar_time} ET")
+
+if _volume_schwab_err and schwab_client.is_configured():
+    st.markdown(f'<div style="font-size:9px; color:#f87171; margin-bottom:2px;">⚠️ Schwab 실패: {_volume_schwab_err}</div>',
+                unsafe_allow_html=True)
 
 if es_df_chart is not None and not es_df_chart.empty:
     st.markdown(f'<div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">데이터: {_volume_source_label}</div>',
