@@ -718,76 +718,12 @@ if data_errors:
     </div>
     """, unsafe_allow_html=True)
 
-# --- 0DTE TIME RISK 배너: 실측 데이터 기반 (신규) ---
-# 기존엔 "지금 몇 시니까 이 문구"라는 고정 규칙이었다. 이제는:
-#  1) 시간대(세션) - 구조적 요인, 여전히 유효한 근거
-#  2) 실제 옵션체인 호가 스프레드 (Schwab) - "진짜 지금 유동성이 안 좋은지" 실측
-#  3) 오늘 매크로 이벤트 (FOMC/CPI/NFP 등)
-#  4) 오늘 뉴스 리스크 태그 (FED/INFLATION 등)
-# 을 합쳐서 레벨과 메시지를 다시 계산한다.
-
-_liq_metrics = None
-_liq_chain_err = None
+# --- Schwab 체인 가져오기 (실측 스프레드는 안 쓰지만, 아래 Expected Move 카드에서 필요) ---
 _today_is_trading_day = macro_calendar.is_trading_day(now_est.date())
+_liq_chain = None
+_liq_chain_err = None
 if _today_is_trading_day and schwab_client.is_configured() and _effective_spx_price is not None:
     _liq_chain, _liq_chain_err = fetch_schwab_chain_cached("$SPX", now_est.strftime("%Y-%m-%d"))
-    if _liq_chain:
-        _liq_metrics = schwab_client.calculate_liquidity_metrics(_liq_chain, _effective_spx_price)
-
-# 세션(시간대) 기준 레벨을 시작점으로 삼는다
-_risk_level_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "EXTREME": 3}
-_final_level = session_risk_level
-_reasons = [session_risk_message]
-
-# 실측 스프레드가 넓으면(체결 불리) 레벨을 실제로 끌어올린다 (또는 좁으면 정보만 추가)
-if _liq_metrics is not None:
-    _spread_pct = _liq_metrics['avg_spread_pct']
-    if _spread_pct > 10:
-        _reasons.append(f"실측 스프레드 {_spread_pct:.1f}% (매우 넓음 - 체결 불리)")
-        if _risk_level_rank.get("HIGH", 2) > _risk_level_rank.get(_final_level, 0):
-            _final_level = "HIGH"
-    elif _spread_pct > 5:
-        _reasons.append(f"실측 스프레드 {_spread_pct:.1f}% (다소 넓음)")
-        if _risk_level_rank.get("MEDIUM", 1) > _risk_level_rank.get(_final_level, 0):
-            _final_level = "MEDIUM"
-    else:
-        _reasons.append(f"실측 스프레드 {_spread_pct:.1f}% (양호)")
-
-# 오늘 매크로 이벤트가 있으면 이벤트 위험도에 맞게 반영 (FOMC>CPI/NFP>쿼드위칭>월간OPEX)
-if macro_events:
-    _macro_names = ", ".join(e['name'] for e in macro_events)
-    _reasons.append(f"오늘 매크로: {_macro_names}")
-    _macro_rank = {"LOW": 0, "MEDIUM": 1, "MEDIUM_HIGH": 1.5, "HIGH": 2, "EXTREME": 3}
-    _worst_event = max(macro_events, key=lambda e: _macro_rank.get(e['risk'], 0))
-    _macro_level = "HIGH" if _worst_event['risk'] == "MEDIUM_HIGH" else _worst_event['risk']
-    if _risk_level_rank.get(_macro_level, 0) > _risk_level_rank.get(_final_level, 0):
-        _final_level = _macro_level
-
-# 활성 뉴스 리스크 태그가 있으면 메시지에 반영 (레벨은 안 올림 - 태그는 소음이 많음)
-if _risk_tags:
-    _reasons.append(f"뉴스 태그: {', '.join(_risk_tags)}")
-
-_session_colors = {
-    "EXTREME": ("#ef4444", "#2a1414"),
-    "HIGH": ("#f97316", "#2a1c0e"),
-    "MEDIUM": ("#facc15", "#241f0a"),
-    "LOW": ("#60a5fa", "#111a24"),
-}
-_sr_fg, _sr_bg = _session_colors.get(_final_level, ("#9ca3af", "#161616"))
-_reasons_html = " · ".join(_reasons)
-st.markdown(f"""
-<div style="background-color:{_sr_bg}; border:1px solid {_sr_fg}55; border-radius:6px;
-            padding:6px 8px; margin-bottom:4px;">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<span style="font-size:10px; font-weight:bold; color:{_sr_fg};">⏱️ 0DTE TIME RISK — {session_risk_title}</span>
-<span style="font-size:9px; font-weight:bold; color:{_sr_fg}; background-color:{_sr_fg}22; padding:1px 6px; border-radius:4px;">{_final_level}</span>
-</div>
-<div style="font-size:10px; color:#d1d5db; margin-top:3px;">{_reasons_html}</div>
-</div>
-""", unsafe_allow_html=True)
-if not schwab_client.is_configured():
-    st.markdown('<div style="font-size:8px; color:#5b6474; margin-top:-2px; margin-bottom:4px;">* 스프레드 실측치는 Schwab 연동 시 표시됩니다. 지금은 시간대·매크로·뉴스만 반영된 상태입니다.</div>',
-                unsafe_allow_html=True)
 
 # --- 매크로 이벤트 배너 ---
 if macro_events:
