@@ -10,7 +10,6 @@ import time
 import yfinance as yf
 import requests
 
-from backtest import run_probability_analysis
 from quant_engine import SimonsBenterQuantEngine
 import signal_tracker
 import macro_calendar
@@ -518,8 +517,6 @@ def calculate_dynamic_strikes(current_price, news_sentiment, news_score, distanc
     }
 
 
-if "backtest_result" not in st.session_state:
-    st.session_state["backtest_result"] = None
 if "data_errors" not in st.session_state:
     st.session_state["data_errors"] = []
 
@@ -1162,183 +1159,6 @@ else:
             unsafe_allow_html=True,
         )
 
-# --- Backtest Controls ---
-tf_option = st.radio("타임프레임", ["10분 뒤", "30분 뒤", "1시간 뒤"], index=1, horizontal=True, label_visibility="collapsed")
-bars_map = {"10분 뒤": 2, "30분 뒤": 6, "1시간 뒤": 12}
-selected_bars = bars_map[tf_option]
-
-if st.button(f"🚀 [{tf_option}] 승률/기대값 검증 실행", use_container_width=True):
-    with st.spinner("과거 데이터 분석 중..."):
-        res = run_probability_analysis("ES=F", period="1mo", interval="5m", lookahead_bars=selected_bars)
-        if res:
-            res["tf_option"] = tf_option
-            st.session_state["backtest_result"] = res
-
-            # --- 신호 기록 (신규) ---
-            # 지금 이 순간의 판단(방향/신뢰도/스트라이크)을 DB에 남겨서,
-            # timeframe_minutes 뒤 실제로 어떻게 됐는지 나중에 자동으로 채워지고,
-            # 그걸 누적하면 "이 시스템이 실제로 얼마나 맞는지" 스스로 검증할 수 있다.
-            try:
-                _win = res.get('win_rate', 0.0)
-                _loss = res.get('loss_rate', 0.0)
-                _ev = res.get('expected_value', 0.0)
-                if _win > _loss and _ev > 0:
-                    _direction = "BULLISH"
-                elif _loss > _win:
-                    _direction = "BEARISH"
-                else:
-                    _direction = "WAIT"
-                _confidence = min(round(abs(_win - _loss) * 2), 100)
-
-                if spx_p is not None:
-                    signal_tracker.log_signal(
-                        spot_price=spx_p,
-                        direction=_direction,
-                        confidence=_confidence,
-                        win_rate=_win,
-                        loss_rate=_loss,
-                        call_strike=strikes.get('call_target'),
-                        put_strike=strikes.get('put_target'),
-                        timeframe_label=tf_option,
-                        timeframe_minutes=selected_bars * 5,
-                    )
-            except Exception:
-                pass  # 기록 실패가 백테스트 결과 표시를 막으면 안 됨
-
-result = st.session_state.get("backtest_result")
-
-if result:
-    win_rate = result.get('win_rate', 0.0)
-    loss_rate = result.get('loss_rate', round(100.0 - win_rate, 1))
-    total_signals = result.get('total_signals', 0)
-    ev = result.get('expected_value', 0.0)
-    bullish_signals = result.get('bullish_signals')
-    bearish_signals = result.get('bearish_signals')
-    confidence_level = result.get('confidence_level')
-    margin_of_error = result.get('margin_of_error')
-    date_start = result.get('date_start')
-    date_end = result.get('date_end')
-    call_spread_win_rate = result.get('call_spread_win_rate')
-    put_spread_win_rate = result.get('put_spread_win_rate')
-    spread_sample_size = result.get('spread_sample_size', 0)
-    spread_offset_mult = result.get('spread_offset_atr_mult')
-
-    st.markdown(f"""
-<div class="card-box">
-<div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; text-align: center;">
-<div><div style="font-size: 8px; color: #6b7280;">총시그널</div><div style="font-size: 12px; font-weight: bold;">{total_signals}회</div></div>
-<div><div style="font-size: 8px; color: #6b7280;">▲ 상승</div><div style="font-size: 12px; font-weight: bold; color: #10b981;">{win_rate}%</div></div>
-<div><div style="font-size: 8px; color: #6b7280;">▼ 하락</div><div style="font-size: 12px; font-weight: bold; color: #ef4444;">{loss_rate}%</div></div>
-<div><div style="font-size: 8px; color: #6b7280;">EV</div><div style="font-size: 12px; font-weight: bold; color: #facc15;">+{ev}pt</div></div>
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-    # --- 스프레드 브리치 기준 승률 (신규) ---
-    # 위 win_rate/loss_rate는 "N봉 뒤 방향"만 본 것이고, 아래는 "그 구간에
-    # 스트라이크를 실제로 건드렸는지"까지 반영한 훨씬 실전에 가까운 수치다.
-    if call_spread_win_rate is not None and put_spread_win_rate is not None:
-        st.markdown(f"""
-<div class="card-box" style="font-size: 9px; color: #9ca3af;">
-<div style="font-weight:bold; color:#e1e6ed; margin-bottom:2px;">📐 스프레드 브리치 기준 승률 (ATR×{spread_offset_mult} 근사 스트라이크, n={spread_sample_size})</div>
-<div style="display:flex; justify-content:space-between;">
-<span>🔴 CALL 스프레드 안 건드림: <b style="color:#10b981;">{call_spread_win_rate}%</b></span>
-<span>🟢 PUT 스프레드 안 건드림: <b style="color:#10b981;">{put_spread_win_rate}%</b></span>
-</div>
-<div style="margin-top:2px; color:#6b7280;">* 실제 옵션 IV/프리미엄 데이터가 아직 없어 ATR 기반 근사치입니다.</div>
-</div>
-""", unsafe_allow_html=True)
-
-    # --- 신뢰도 / 표본 구성 안내 ---
-    if confidence_level is not None:
-        conf_colors = {"LOW": "#ef4444", "MEDIUM": "#facc15", "HIGH": "#10b981"}
-        conf_labels = {"LOW": "낮음", "MEDIUM": "보통", "HIGH": "높음"}
-        conf_color = conf_colors.get(confidence_level, "#9ca3af")
-        conf_label = conf_labels.get(confidence_level, confidence_level)
-
-        low_conf_warning = ""
-        if confidence_level == "LOW":
-            low_conf_warning = ("<div style='margin-top:2px; color:#fca5a5;'>"
-                                 "⚠️ 표본이 30개 미만이라 승률/하락률이 노이즈일 가능성이 높습니다. "
-                                 "참고용으로만 활용하세요.</div>")
-
-        period_str = f"{date_start} ~ {date_end}" if date_start and date_end else ""
-
-        st.markdown(f"""
-<div class="card-box" style="font-size: 9px; color: #9ca3af;">
-<div style="display:flex; justify-content:space-between;">
-<span>신뢰도: <b style="color:{conf_color};">{conf_label}</b> (오차범위 ±{margin_of_error}%p, 95% 신뢰구간)</span>
-<span>상승신호 {bullish_signals}회 / 하락신호 {bearish_signals}회</span>
-</div>
-<div style="margin-top:2px;">분석 구간: {period_str}</div>
-{low_conf_warning}
-</div>
-""", unsafe_allow_html=True)
-
-    # --- 켈리 공식 기반 포지션 사이징 (신규: 기존에 정의만 되고 안 쓰이던 함수를 연결) ---
-    avg_win = result.get('avg_win', 0.0)
-    avg_loss = result.get('avg_loss', 0.0)
-    if avg_loss and avg_loss > 0:
-        reward_to_risk = avg_win / avg_loss
-        kelly_pct = SimonsBenterQuantEngine.calculate_fractional_kelly(
-            win_rate, reward_to_risk, fraction=0.25
-        )
-        kelly_color = "#10b981" if kelly_pct > 0 else "#9ca3af"
-        kelly_desc = (f"손익비 {round(reward_to_risk, 2)} · 1/4 켈리 기준"
-                       if kelly_pct > 0 else "승률/손익비 조합상 배팅 근거 부족 (0% 권장)")
-        st.markdown(f"""
-<div class="card-box" style="display:flex; justify-content:space-between; align-items:center; font-size:10px;">
-<span style="color:#9ca3af;">💰 권장 포지션 크기 (Kelly)</span>
-<span style="text-align:right;">
-<b style="font-size:14px; color:{kelly_color};">{kelly_pct}%</b>
-<div style="font-size:9px; color:#9ca3af;">{kelly_desc}</div>
-</span>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Decision Signal Box ---
-if result:
-    win = result.get('win_rate', 0.0)
-    loss = result.get('loss_rate', 0.0)
-    ev_val = result.get('expected_value', 0.0)
-    confidence = min(round(abs(win - loss) * 2), 100)
-
-    if win > loss and ev_val > 0:
-        sig_title = "PUT CREDIT SPREAD"
-        sig_badge = '<span class="badge-green">BULLISH</span>'
-        sig_color = "#10b981"
-        sig_desc = f"상승 확률({win}%) 우세. Put Credit Spread 권장."
-    elif loss > win:
-        sig_title = "CALL CREDIT SPREAD"
-        sig_badge = '<span class="badge-red">BEARISH</span>'
-        sig_color = "#ef4444"
-        sig_desc = f"하락 확률({loss}%) 우세. Call Credit Spread 권장."
-    else:
-        sig_title = "관망 (NEUTRAL)"
-        sig_badge = '<span class="badge-yellow">WAIT</span>'
-        sig_color = "#fbbf24"
-        sig_desc = "방향성 불분명. 수급 추가 확인 필요."
-else:
-    sig_title = "백테스트 검증 필요"
-    sig_badge = '<span class="badge-yellow">⏱️ READY</span>'
-    sig_color = "#fbbf24"
-    confidence = 0
-    sig_desc = "상단 버튼을 눌러 승률을 검증하세요."
-
-st.markdown(f"""
-<div class="signal-box">
-<div style="display: flex; justify-content: space-between; align-items: center;">
-<span style="font-size: 10px; font-weight: bold; color: #9ca3af;">🚨 DECISION SIGNAL</span>
-{sig_badge}
-</div>
-<div style="margin-top: 2px; display: flex; justify-content: space-between; align-items: center;">
-<span style="font-size: 15px; font-weight: bold; color: {sig_color};">{sig_title}</span>
-<span style="font-size: 9px; color: #9ca3af;">CONF <b style="font-size: 12px; color: {sig_color};">{confidence}%</b></span>
-</div>
-<div style="font-size: 10px; color: #d1d5db; margin-top: 2px;">{sig_desc}</div>
-</div>
-""", unsafe_allow_html=True)
-
 # --- Dynamic Recommended Strikes ---
 _strikes_call_target = strikes.get('call_target') if isinstance(strikes, dict) else None
 _strikes_put_target = strikes.get('put_target') if isinstance(strikes, dict) else None
@@ -1834,4 +1654,3 @@ else:
     ES=F 데이터를 불러오지 못했습니다.
     </div>
     """, unsafe_allow_html=True)
-
