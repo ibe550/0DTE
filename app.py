@@ -1657,4 +1657,4 @@ else:
 # --- 하단 여백 스페이서 ---
 # Streamlit Cloud가 화면 우하단에 띄우는 플로팅 배지/아이콘들이 마지막 콘텐츠(Buy/Sell 표시줄)를
 # 가리는 걸 막기 위해 검정 여백을 넉넉히 깔아둔다.
-st.markdown('<div style="height:100px; background-color:#0a0e17;"></div>', unsafe_allow_html=True)
+st.markdown('<div style="height:50px; background-color:#0a0e17;"></div>', unsafe_allow_html=True)
