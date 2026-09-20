@@ -5,7 +5,7 @@ from datetime import datetime
 
 app = FastAPI()
 
-# 프론트엔드(대시보드 화면)와의 원활한 통신 허용
+# 프론트엔드(HTML)와의 통신을 위한 CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,12 +19,9 @@ def get_market_data():
     # 1순위: Charles Schwab API 연동 구간
     # ==========================================
     try:
-        # TODO: 찰스스왑 OAuth 토큰 및 옵션 체인 API 호출 코드 작성
-        # 예: response = requests.get("https://api.schwabapi.com/...", headers=...)
-        # 정상 데이터를 받아오면 아래와 같이 리턴합니다.
-        
-        # 현재는 테스트를 위해 일부러 에러를 발생시켜 백업으로 넘어가게 합니다.
-        raise Exception("Schwab API 토큰 대기 중")
+        # TODO: 찰스스왑 API 호출 코드 입력 자리
+        # 현재는 테스트를 위해 의도적으로 에러를 발생시켜 야후 파이낸스로 넘어갑니다.
+        raise Exception("Schwab API 토큰 설정 대기 중")
 
     except Exception as e1:
         # ==========================================
@@ -38,25 +35,14 @@ def get_market_data():
             change = current_price - prev_close
             change_pct = (change / prev_close) * 100
 
-            # 앞서 만든 대시보드 UI에 꽂아넣을 JSON 데이터 구조
             return {
                 "status": "success",
-                "source": "Yahoo Finance Fallback",
+                "source": "Yahoo Finance (Backup)",
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S ET"),
                 "spx": {
                     "price": round(current_price, 2),
                     "change": round(change, 2),
                     "change_pct": round(change_pct, 2)
-                },
-                "vix": {"price": 14.81, "change": -0.63},
-                "vix_9d": {"price": 12.27, "change": -1.12},
-                "es": {"price": 7712.50, "change_pct": 0.07},
-                "mag7": {"price": 70.51, "change_pct": -0.38},
-                "yields": {
-                    "y2": "4.756%", "y2_bp": "+6.6 bp",
-                    "y10": "5.000%", "y10_bp": "+5.3 bp",
-                    "y30": "5.328%", "y30_bp": "+3.2 bp",
-                    "spread": "+24 bp"
                 }
             }
         except Exception as e2:
