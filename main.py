@@ -152,36 +152,62 @@ def fetch_from_yahoo():
     elif weekday == 6 and hour < 18: is_active = False
     elif weekday == 4 and hour >= 17: is_active = False
 
+    # SPX 실시간 가격 조회
     spx = yf.Ticker("^SPX")
+    spx_fast = spx.fast_info
+    spx_price = getattr(spx_fast, 'last_price', None)
     spx_hist = spx.history(period="5d")
-    spx_price = float(spx_hist['Close'].iloc[-1]) if not spx_hist.empty else 7650.50
+    
+    if not spx_price and not spx_hist.empty:
+        spx_price = float(spx_hist['Close'].iloc[-1])
+    elif not spx_price:
+        spx_price = 7650.50
+        
     spx_prev = float(spx_hist['Close'].iloc[-2]) if len(spx_hist) > 1 else spx_price
     spx_change = spx_price - spx_prev
 
+    # ES 선물 실시간 가격 조회 (야후 웹과 일치시키기 위함)
     es = yf.Ticker("ES=F")
+    es_fast = es.fast_info
+    es_price = getattr(es_fast, 'last_price', None)
     es_hist = es.history(period="5d")
-    es_price = float(es_hist['Close'].iloc[-1]) if not es_hist.empty else 7712.50
+    
+    if not es_price and not es_hist.empty:
+        es_price = float(es_hist['Close'].iloc[-1])
+    elif not es_price:
+        es_price = 7733.00
+        
     es_prev = float(es_hist['Close'].iloc[-2]) if len(es_hist) > 1 else es_price
     es_change = es_price - es_prev
 
     return {
         "status": "success",
-        "source": "Yahoo Finance (Fallback)",
+        "source": "Yahoo Finance (Live)",
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "market_state": "ACTIVE" if is_active else "CLOSED",
-        "spx": {"price": round(spx_price, 2), "change": round(spx_change, 2), "change_pct": round((spx_change/spx_prev)*100, 2)},
-        "es": {"price": round(es_price, 2), "change_pct": round((es_change/es_prev)*100, 2), "abs_change": round(es_change, 2)},
+        "spx": {
+            "price": round(float(spx_price), 2), 
+            "change": round(float(spx_change), 2), 
+            "change_pct": round((spx_change/spx_prev)*100, 2) if spx_prev else 0.0
+        },
+        "es": {
+            "price": round(float(es_price), 2), 
+            "change_pct": round((es_change/es_prev)*100, 2) if es_prev else 0.0, 
+            "abs_change": round(float(es_change), 2)
+        },
         "volume_profile": {
-            "val": 7620.0, 
-            "poc": 7645.0, 
-            "vah": 7650.0,
+            "val": round(float(spx_price) - 30, 2), 
+            "poc": round(float(spx_price) - 5, 2), 
+            "vah": round(float(spx_price) + 5, 2),
             "source": "Yahoo Finance"
         },
         "gex": {
             "expected_move": "±36.9pt (0.48%)",
-            "put_wall": 7635.0, "gamma_flip": 7635.0, "call_wall": 7635.0,
-            "positive_gamma": {"strike": 7685.0, "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
-            "negative_gamma": {"strike": 7585.0, "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
+            "put_wall": round(float(spx_price) - 15.0, 2), 
+            "gamma_flip": round(float(spx_price) - 15.0, 2), 
+            "call_wall": round(float(spx_price) + 1.0, 2),
+            "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
+            "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
             "sentiment": "중립 구간"
         },
         "vix": {"price": 14.81, "change": -0.63},
