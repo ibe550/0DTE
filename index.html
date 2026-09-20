@@ -450,3 +450,20 @@
     </script>
 </body>
 </html>
+
+
+async function fetchMarketData() {
+    try {
+        // 올바른 본인의 Vercel 서버 주소로 수정
+        const response = await fetch('https://0-dte-seven.vercel.app/api/market-data');
+        const data = await response.json();
+
+        if (data.status === "success") {
+            document.getElementById('spx-price').innerText = data.spx.price;
+            document.getElementById('spx-change').innerText = `${data.spx.change} (${data.spx.change_pct}%)`;
+            console.log("데이터 갱신 완료:", data.source);
+        }
+    } catch (error) {
+        console.error("서버 통신 실패:", error);
+    }
+}
