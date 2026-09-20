@@ -81,31 +81,37 @@ def fetch_from_schwab():
     
     headers = {"Authorization": f"Bearer {access_token}"}
     
-    # SPX 시세 조회
-    quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX"
+    # 찰스스왑 마켓 시세 조회 ($SPX 및 선물 심볼 동시 요청)
+    quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX,/ES"
     res = requests.get(quote_url, headers=headers)
     
     if res.status_code != 200:
-        raise Exception(f"스왑 API 응답 에러 (코드 {res.status_code}): {res.text}")
+        raise Exception(f"스왑 API 응답 에러 ({res.status_code}): {res.text}")
     
     quote_data = res.json()
-    spx_info = quote_data.get("$SPX", {})
-    quote_fields = spx_info.get("quote", {})
     
-    spx_price = quote_fields.get("lastPrice") or quote_fields.get("closePrice")
+    spx_quote = quote_data.get("$SPX", {}).get("quote", {})
+    es_quote = quote_data.get("/ES", {}).get("quote", {}) or quote_data.get("ES", {}).get("quote", {})
+    
+    spx_price = spx_quote.get("lastPrice") or spx_quote.get("closePrice")
     if not spx_price:
-        raise Exception(f"스왑 데이터 구조 파싱 실패. 응답 내용: {quote_data}")
+        raise Exception(f"스왑 SPX 가격 데이터 누락. 전체 응답: {quote_data}")
         
-    spx_prev = quote_fields.get("closePrice", spx_price)
+    spx_prev = spx_quote.get("closePrice", spx_price)
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
+
+    es_price = es_quote.get("lastPrice") or es_quote.get("closePrice") or (spx_price + 6.25)
+    es_prev = es_quote.get("closePrice", es_price)
+    es_change = es_price - es_prev
+    es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
 
     et_tz = pytz.timezone('US/Eastern')
     now_et = datetime.now(et_tz)
 
     return {
         "status": "success",
-        "source": "Charles Schwab API",
+        "source": "Charles Schwab API",  # 찰스스왑 정상 연동 표시
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "market_state": "ACTIVE",
         "spx": {
@@ -114,11 +120,15 @@ def fetch_from_schwab():
             "change_pct": round(float(spx_change_pct), 2)
         },
         "es": {
-            "price": round(float(spx_price) + 6.25, 2),
-            "change_pct": round(float(spx_change_pct), 2),
-            "abs_change": round(float(spx_change), 2)
+            "price": round(float(es_price), 2),
+            "change_pct": round(float(es_change_pct), 2),
+            "abs_change": round(float(es_change), 2)
         },
-        "volume_profile": {"val": round(float(spx_price) - 30, 2), "poc": round(float(spx_price) - 5, 2), "vah": round(float(spx_price) + 5, 2)},
+        "volume_profile": {
+            "val": round(float(spx_price) - 30, 2), 
+            "poc": round(float(spx_price) - 5, 2), 
+            "vah": round(float(spx_price) + 5, 2)
+        },
         "gex": {
             "expected_move": f"±{round(float(spx_price) * 0.0048, 2)}pt (0.48%)",
             "put_wall": round(float(spx_price) - 15.0, 2),
@@ -175,11 +185,18 @@ def fetch_from_yahoo():
 
 @app.get("/api/market-data")
 def get_market_data():
-    # [디버깅 모드] 스왑 실패 시 야후로 바로 숨기지 않고 에러를 직접 보여줍니다.
+    # 1순위: 찰스스왑 API 시도
     try:
-        return fetch_from_schwab()
+        schwab_data = fetch_from_schwab()
+        if schwab_data:
+            return schwab_data
     except Exception as e:
-        return {
-            "status": "schwab_fail_debug",
-            "error_message": str(e)
-        }
+        # 스왑 실패 시 콘솔에 로그를 남기고 야후 폴백으로 안전하게 전환
+        print(f"Schwab API Error Fallback: {str(e)}")
+        pass
+
+    # 2순위: 야후 파이낸스 백업
+    try:
+        return fetch_from_yahoo()
+    except Exception as err:
+        return {"status": "fail", "error": str(err)}
