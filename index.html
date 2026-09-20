@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SPX 0DTE DEFENDER</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 차트 라이브러리 버전을 4.1.1로 고정하여 에러 방지 -->
+    <!-- 차트 라이브러리 고정 버전 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; }
@@ -15,6 +15,7 @@
     <div class="max-w-md mx-auto">
         <h1 class="text-xl font-bold text-gray-300 mb-3">🛡️ SPX 0DTE DEFENDER</h1>
         
+        <!-- 현재가 표시 카드 -->
         <div class="bg-gray-800 rounded-lg p-5 mb-4 shadow-lg flex justify-between items-center border border-gray-700">
             <div>
                 <p class="text-sm text-gray-400 font-medium">SPX 현재가</p>
@@ -26,6 +27,25 @@
             </div>
         </div>
 
+        <!-- 새로 추가된 옵션 데이터 표시 영역 -->
+        <div class="bg-gray-800 rounded-lg p-4 mb-4 shadow-lg border border-gray-700 hidden" id="options-panel">
+            <div class="flex justify-between items-center mb-2">
+                <p class="text-sm text-gray-400 font-medium">0DTE 옵션 거래량 (임시 백업용)</p>
+                <span id="expiry-date" class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">-</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mt-3">
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700">
+                    <p class="text-xs text-gray-500 mb-1">콜(Call) 거래량</p>
+                    <p id="call-volume" class="text-lg font-bold text-green-500">-</p>
+                </div>
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700">
+                    <p class="text-xs text-gray-500 mb-1">풋(Put) 거래량</p>
+                    <p id="put-volume" class="text-lg font-bold text-red-500">-</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 차트 영역 -->
         <div class="bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700">
             <p class="text-sm text-gray-400 mb-3 font-medium">S&P 500 실시간 흐름</p>
             <div id="chart-container" class="w-full h-64"></div>
@@ -49,11 +69,21 @@
                 const data = await response.json();
 
                 if(data.status === 'success') {
+                    // 가격 및 데이터 소스 텍스트 업데이트
                     document.getElementById('spx-price').innerText = data.spx_price.toLocaleString('en-US');
                     document.getElementById('data-source').innerText = data.source;
 
+                    // 차트에 실시간 가격 점 찍기
                     const timeNow = Math.floor(Date.now() / 1000);
                     lineSeries.update({ time: timeNow, value: data.spx_price });
+
+                    // 백엔드에서 옵션 데이터를 넘겨주면, 숨겨뒀던 패널을 보여주고 숫자 업데이트
+                    if (data.options_data) {
+                        document.getElementById('options-panel').classList.remove('hidden');
+                        document.getElementById('expiry-date').innerText = "만기일: " + data.options_data.expiry;
+                        document.getElementById('call-volume').innerText = data.options_data.total_call_volume.toLocaleString('en-US');
+                        document.getElementById('put-volume').innerText = data.options_data.total_put_volume.toLocaleString('en-US');
+                    }
                 }
             } catch (error) {
                 console.error('API 연결 실패:', error);
