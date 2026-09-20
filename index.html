@@ -40,7 +40,7 @@
         </div>
     </div>
 
-    <!-- ================= 2. 지표 카드 그리드 (상단부 - SPX, ES 실시간 연동) ================= -->
+    <!-- ================= 2. 지표 카드 그리드 (상단부 - SPX, ES 실시간 및 세션 연동) ================= -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2.5">
         <div class="card p-3">
             <div class="text-[11px] text-gray-400 font-medium mb-1">SPX</div>
@@ -62,7 +62,7 @@
         <div class="card p-3 relative">
             <div class="flex justify-between items-start mb-1">
                 <span class="text-[11px] text-gray-400 font-medium">ES</span>
-                <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded font-bold">ACTIVE</span>
+                <span id="es-status-badge" class="text-[10px] px-1.5 py-0.5 rounded font-bold bg-gray-800 text-gray-400 border border-gray-700">CHECKING</span>
             </div>
             <div id="es-price" class="text-xl font-bold text-emerald-400 tracking-tight">로딩 중...</div>
             <div id="es-change" class="text-xs font-semibold text-emerald-400 mt-0.5">-</div>
@@ -425,7 +425,7 @@
         </div>
     </div>
 
-    <!-- ================= 백엔드 데이터 연동 스크립트 (SPX + ES 실시간 바인딩) ================= -->
+    <!-- ================= 백엔드 데이터 연동 스크립트 ================= -->
     <script>
         async function fetchMarketData() {
             try {
@@ -433,24 +433,35 @@
                 const data = await response.json();
 
                 if (data.status === "success") {
-                    // 1. SPX 가격 및 등락 연동
+                    // 1. SPX 연동
                     document.getElementById('spx-price').innerText = data.spx.price;
                     document.getElementById('spx-change').innerText = `${data.spx.change >= 0 ? '+' : ''}${data.spx.change} (${data.spx.change_pct >= 0 ? '+' : ''}${data.spx.change_pct}%)`;
                     
-                    // 2. ES 선물 가격 및 등락 연동
+                    // 2. ES 선물 연동
                     if (data.es) {
                         document.getElementById('es-price').innerText = data.es.price;
                         document.getElementById('es-change').innerText = `${data.es.change_pct >= 0 ? '+' : ''}${data.es.change_pct}%`;
                     }
+                    
+                    // 3. 시장 세션 상태 (ACTIVE / CLOSED) 뱃지 동적 변경 연동
+                    if (data.market_state) {
+                        const badge = document.getElementById('es-status-badge');
+                        badge.innerText = data.market_state;
+                        if (data.market_state === "ACTIVE") {
+                            badge.className = "text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded font-bold";
+                        } else {
+                            badge.className = "text-[10px] bg-gray-800 text-gray-400 border border-gray-700 px-1.5 py-0.5 rounded font-bold";
+                        }
+                    }
 
-                    // 3. Volume Profile (VAL, POC, VAH) 연동
+                    // 4. Volume Profile 연동
                     if (data.volume_profile) {
                         document.getElementById('val-price').innerText = data.volume_profile.val;
                         document.getElementById('poc-price').innerText = data.volume_profile.poc;
                         document.getElementById('vah-price').innerText = data.volume_profile.vah;
                     }
                     
-                    console.log("실시간 SPX 및 ES 데이터 갱신 완료:", data.source);
+                    console.log("시장 세션 및 가격 갱신 완료:", data.source);
                 }
             } catch (error) {
                 console.error("서버 통신 실패:", error);
