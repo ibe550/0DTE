@@ -75,31 +75,26 @@ def auth_callback(code: str = None):
         return {"status": "fail", "detail": str(e)}
 
 def fetch_from_schwab():
-    """
-    [1순위] 찰스스왑 API 실시간 시세 및 옵션 체인 파싱 연동
-    """
     access_token = get_schwab_access_token()
     if not access_token:
         raise Exception("유효한 Access Token이 없습니다.")
     
     headers = {"Authorization": f"Bearer {access_token}"}
     
-    # SPX 및 선물 시세 조회
+    # SPX 시세 조회
     quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX"
     res = requests.get(quote_url, headers=headers)
     
     if res.status_code != 200:
-        raise Exception(f"스왑 시세 조회 실패: {res.text}")
+        raise Exception(f"스왑 API 응답 에러 (코드 {res.status_code}): {res.text}")
     
     quote_data = res.json()
-    
-    # 찰스스왑 SPX 응답 구조 파싱 ($SPX 심볼 데이터 추출)
     spx_info = quote_data.get("$SPX", {})
     quote_fields = spx_info.get("quote", {})
     
     spx_price = quote_fields.get("lastPrice") or quote_fields.get("closePrice")
     if not spx_price:
-        raise Exception("스왑 API로부터 유효한 SPX 가격을 가져오지 못했습니다.")
+        raise Exception(f"스왑 데이터 구조 파싱 실패. 응답 내용: {quote_data}")
         
     spx_prev = quote_fields.get("closePrice", spx_price)
     spx_change = spx_price - spx_prev
@@ -110,7 +105,7 @@ def fetch_from_schwab():
 
     return {
         "status": "success",
-        "source": "Charles Schwab API",  # 찰스스왑 정상 연동 시 명시될 소스명
+        "source": "Charles Schwab API",
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "market_state": "ACTIVE",
         "spx": {
@@ -119,7 +114,7 @@ def fetch_from_schwab():
             "change_pct": round(float(spx_change_pct), 2)
         },
         "es": {
-            "price": round(float(spx_price) + 6.25, 2),  # ES 기준 연동 전 보정치
+            "price": round(float(spx_price) + 6.25, 2),
             "change_pct": round(float(spx_change_pct), 2),
             "abs_change": round(float(spx_change), 2)
         },
@@ -180,15 +175,11 @@ def fetch_from_yahoo():
 
 @app.get("/api/market-data")
 def get_market_data():
+    # [디버깅 모드] 스왑 실패 시 야후로 바로 숨기지 않고 에러를 직접 보여줍니다.
     try:
-        schwab_data = fetch_from_schwab()
-        if schwab_data:
-            return schwab_data
+        return fetch_from_schwab()
     except Exception as e:
-        # 스왑 조회 중 에러 발생 시 로그를 남기고 야후로 폴백
-        pass
-
-    try:
-        return fetch_from_yahoo()
-    except Exception as err:
-        return {"status": "fail", "error": str(err)}
+        return {
+            "status": "schwab_fail_debug",
+            "error_message": str(e)
+        }
