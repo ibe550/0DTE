@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SPX 0DTE DEFENDER</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 차트 라이브러리 고정 버전 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; }
@@ -15,7 +14,7 @@
     <div class="max-w-md mx-auto">
         <h1 class="text-xl font-bold text-gray-300 mb-3">🛡️ SPX 0DTE DEFENDER</h1>
         
-        <!-- 현재가 표시 카드 -->
+        <!-- 1. 현재가 및 데이터 소스 카드 -->
         <div class="bg-gray-800 rounded-lg p-5 mb-4 shadow-lg flex justify-between items-center border border-gray-700">
             <div>
                 <p class="text-sm text-gray-400 font-medium">SPX 현재가</p>
@@ -27,25 +26,39 @@
             </div>
         </div>
 
-        <!-- 새로 추가된 옵션 데이터 표시 영역 -->
+        <!-- 2. 0DTE 옵션 핵심 지표 카드 (감마/델타 추가) -->
         <div class="bg-gray-800 rounded-lg p-4 mb-4 shadow-lg border border-gray-700 hidden" id="options-panel">
-            <div class="flex justify-between items-center mb-2">
-                <p class="text-sm text-gray-400 font-medium">0DTE 옵션 거래량 (임시 백업용)</p>
+            <div class="flex justify-between items-center mb-3">
+                <p class="text-sm text-gray-400 font-medium">0DTE 옵션 현황</p>
                 <span id="expiry-date" class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">-</span>
             </div>
-            <div class="grid grid-cols-2 gap-4 mt-3">
-                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700">
-                    <p class="text-xs text-gray-500 mb-1">콜(Call) 거래량</p>
-                    <p id="call-volume" class="text-lg font-bold text-green-500">-</p>
+            
+            <!-- 4칸 그리드 배치 (모바일 2x2, PC 1x4) -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <!-- 콜 거래량 -->
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col justify-center items-center text-center">
+                    <p class="text-xs text-gray-500 mb-1">Call 볼륨</p>
+                    <p id="call-volume" class="text-base font-bold text-green-500">-</p>
                 </div>
-                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700">
-                    <p class="text-xs text-gray-500 mb-1">풋(Put) 거래량</p>
-                    <p id="put-volume" class="text-lg font-bold text-red-500">-</p>
+                <!-- 풋 거래량 -->
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col justify-center items-center text-center">
+                    <p class="text-xs text-gray-500 mb-1">Put 볼륨</p>
+                    <p id="put-volume" class="text-base font-bold text-red-500">-</p>
+                </div>
+                <!-- 델타 (Delta) -->
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col justify-center items-center text-center">
+                    <p class="text-xs text-gray-500 mb-1">Delta (Δ)</p>
+                    <p id="net-delta" class="text-base font-bold text-blue-400">-</p>
+                </div>
+                <!-- 감마 (Gamma) -->
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col justify-center items-center text-center">
+                    <p class="text-xs text-gray-500 mb-1">Gamma (Γ)</p>
+                    <p id="net-gamma" class="text-base font-bold text-purple-400">-</p>
                 </div>
             </div>
         </div>
 
-        <!-- 차트 영역 -->
+        <!-- 3. 실시간 차트 영역 -->
         <div class="bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700">
             <p class="text-sm text-gray-400 mb-3 font-medium">S&P 500 실시간 흐름</p>
             <div id="chart-container" class="w-full h-64"></div>
@@ -55,6 +68,7 @@
     <script>
         const API_URL = 'https://0-dte-seven.vercel.app/api/market';
 
+        // 차트 초기화 설정
         const chartOptions = { 
             layout: { textColor: '#9ca3af', background: { type: 'solid', color: '#1f2937' } },
             grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
@@ -63,26 +77,32 @@
         const chart = LightweightCharts.createChart(document.getElementById('chart-container'), chartOptions);
         const lineSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2 });
 
+        // 데이터 불러오기 함수
         async function fetchData() {
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
 
                 if(data.status === 'success') {
-                    // 가격 및 데이터 소스 텍스트 업데이트
+                    // 1. 가격 및 데이터 소스 업데이트
                     document.getElementById('spx-price').innerText = data.spx_price.toLocaleString('en-US');
                     document.getElementById('data-source').innerText = data.source;
 
-                    // 차트에 실시간 가격 점 찍기
+                    // 2. 차트에 실시간 가격 점 찍기
                     const timeNow = Math.floor(Date.now() / 1000);
                     lineSeries.update({ time: timeNow, value: data.spx_price });
 
-                    // 백엔드에서 옵션 데이터를 넘겨주면, 숨겨뒀던 패널을 보여주고 숫자 업데이트
+                    // 3. 옵션 데이터 업데이트
                     if (data.options_data) {
                         document.getElementById('options-panel').classList.remove('hidden');
-                        document.getElementById('expiry-date').innerText = "만기일: " + data.options_data.expiry;
+                        document.getElementById('expiry-date').innerText = "만기: " + data.options_data.expiry;
+                        
                         document.getElementById('call-volume').innerText = data.options_data.total_call_volume.toLocaleString('en-US');
                         document.getElementById('put-volume').innerText = data.options_data.total_put_volume.toLocaleString('en-US');
+                        
+                        // 감마, 델타 값이 백엔드에서 넘어오면 표시, 없으면 '대기중'
+                        document.getElementById('net-delta').innerText = data.options_data.delta !== undefined ? data.options_data.delta : '대기중';
+                        document.getElementById('net-gamma').innerText = data.options_data.gamma !== undefined ? data.options_data.gamma : '대기중';
                     }
                 }
             } catch (error) {
@@ -91,6 +111,7 @@
             }
         }
 
+        // 최초 1회 실행 후 5초마다 반복
         fetchData();
         setInterval(fetchData, 5000);
     </script>
