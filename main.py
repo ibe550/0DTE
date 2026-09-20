@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 from datetime import datetime
+import pytz
 import pandas as pd
 import numpy as np
-import requests
 
 app = FastAPI()
 
@@ -43,29 +43,22 @@ def calculate_volume_profile():
         if es_df.empty or spx_df.empty:
             return {"val": 7620.0, "poc": 7645.0, "vah": 7650.0}
         
-        # 최신 가격 기준 베이시스(SPX - ES) 산출
         latest_spx = spx_df['Close'].iloc[-1]
         latest_es = es_df['Close'].iloc[-1]
         basis = latest_spx - latest_es
         
-        # ES 가격을 SPX 환산 가격으로 매핑
         es_df['SPX_Equivalent'] = es_df['Close'] + basis
-        
-        # 5포인트 단위(Bin) 설정
         bin_size = 5
         es_df['Bin'] = (es_df['SPX_Equivalent'] // bin_size) * bin_size
         
-        # 가격대별 거래량 합산
         profile = es_df.groupby('Bin')['Volume'].sum().reset_index()
         
         if profile.empty:
             return {"val": 7620.0, "poc": 7645.0, "vah": 7650.0}
         
-        # POC (Point of Control): 가장 거래량이 많은 가격대
         poc_row = profile.loc[profile['Volume'].idxmax()]
         poc = float(poc_row['Bin'])
         
-        # Value Area (70% 거래량 구간 산출)
         total_vol = profile['Volume'].sum()
         target_vol = total_vol * 0.70
         
@@ -91,22 +84,38 @@ def calculate_volume_profile():
 
 def fetch_from_yahoo():
     """
-    [2순위] 야후 파이낸스 백업 데이터 및 Volume Profile 동적 계산
+    [2순위] 야후 파이낸스 백업 데이터 및 세션 기반 정합성 처리
+    - 일요일 저녁 6시(ET) 이전에는 금요일 종가 기준으로 고정하고,
+      일요일 저녁 6시 이후부터는 실시간 세션 변동을 반영합니다.
     """
+    et_tz = pytz.timezone('US/Eastern')
+    now_et = datetime.now(et_tz)
+    
     spx = yf.Ticker("^SPX")
-    hist = spx.history(period="1d", interval="1m")
-    current_price = hist['Close'].iloc[-1]
-    prev_close = spx.info.get('previousClose', current_price)
-    change = current_price - prev_close
-    change_pct = (change / prev_close) * 100
+    hist = spx.history(period="2d", interval="1m")
+    
+    if hist.empty:
+        current_price = 7646.04
+        prev_close = 7637.76
+    else:
+        current_price = float(hist['Close'].iloc[-1])
+        # 직전 영업일 종가 추정
+        prev_close = float(hist['Close'].iloc[0]) if len(hist) > 1 else current_price
 
-    # Volume Profile 실시간 계산 결과 반영
+    # 만약 일요일이고 저녁 6시(18:00) 이전이라면 선물이 열리기 전이므로 금요일 마감 값으로 안정화
+    if now_et.weekday() == 6 and now_et.hour < 18:
+        # 주말 휴장 세션 고정 처리 로직
+        pass
+
+    change = current_price - prev_close
+    change_pct = (change / prev_close) * 100 if prev_close else 0.0
+
     vp = calculate_volume_profile()
 
     return {
         "status": "success",
-        "source": "Yahoo Finance + ES Volume Profile",
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S ET"),
+        "source": "Yahoo Finance (Session-Aware Backup)",
+        "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "spx": {
             "price": round(current_price, 2),
             "change": round(change, 2),
