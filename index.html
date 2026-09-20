@@ -6,118 +6,127 @@
     <title>SPX 0DTE DEFENDER</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #07090e; color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .card { background-color: #111827; border: 1px solid #1f2937; border-radius: 10px; }
+        body { background-color: #0b0f19; color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .card { background-color: #131827; border: 1px solid #1e293b; border-radius: 8px; }
     </style>
 </head>
-<body class="p-3 max-w-lg mx-auto">
+<body class="p-3 max-w-5xl mx-auto">
 
-    <!-- 1단: 상단 타이틀 및 상태 -->
-    <div class="flex justify-between items-center mb-3 px-1">
-        <div class="flex items-center space-x-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <h1 class="text-sm font-black tracking-wide text-gray-100">SPX 0DTE DEFENDER</h1>
-        </div>
-        <div class="flex space-x-1.5 text-[10px]">
-            <span class="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-900 font-semibold">SCHWAB</span>
-            <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-900 font-semibold">LIVE</span>
-        </div>
-    </div>
-
-    <!-- 2단: 주요 핵심 지표 4개 그리드 -->
-    <div class="grid grid-cols-4 gap-2 mb-3">
-        <div class="card p-2.5 text-center">
-            <div class="text-[10px] text-gray-400 mb-1">SPX</div>
-            <div class="text-sm font-bold text-white">5,850.30</div>
-        </div>
-        <div class="card p-2.5 text-center">
-            <div class="text-[10px] text-gray-400 mb-1">IV</div>
-            <div class="text-sm font-bold text-emerald-400">14.93</div>
-        </div>
-        <div class="card p-2.5 text-center">
-            <div class="text-[10px] text-gray-400 mb-1">IVP</div>
-            <div class="text-sm font-bold text-blue-400">77.18</div>
-        </div>
-        <div class="card p-2.5 text-center">
-            <div class="text-[10px] text-gray-400 mb-1">IVC</div>
-            <div class="text-sm font-bold text-purple-400">10.13</div>
-        </div>
-    </div>
-
-    <!-- 3단: GEX 및 OI 요약 바 -->
+    <!-- 1. 최상단: LATEST HIGH-IMPACT NEWS 섹션 -->
     <div class="card p-3 mb-3">
-        <div class="flex justify-between items-center mb-2">
-            <span class="text-xs font-bold text-gray-300">GEX & OPEN INTEREST</span>
-            <span class="text-[10px] text-gray-500">EXTENDED</span>
+        <!-- 뉴스 헤더 -->
+        <div class="flex justify-between items-center mb-2.5 text-xs">
+            <div class="flex items-center space-x-1.5 text-gray-400 font-semibold tracking-wide">
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span>LATEST HIGH-IMPACT NEWS</span>
+            </div>
+            <div class="text-[11px] text-gray-500">
+                Google News <span class="text-gray-400 ml-1">Latest item 09/20 08:34:00 ET</span>
+            </div>
         </div>
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
-            <div class="bg-gray-900 p-2 rounded border border-gray-800">
-                <div class="text-[10px] text-gray-400">Net GEX</div>
-                <div class="font-bold text-blue-300">+4.75B</div>
-            </div>
-            <div class="bg-gray-900 p-2 rounded border border-gray-800">
-                <div class="text-[10px] text-gray-400">0DTE GEX</div>
-                <div class="font-bold text-purple-300">+5.00B</div>
-            </div>
-            <div class="bg-gray-900 p-2 rounded border border-gray-800">
-                <div class="text-[10px] text-gray-400">Total OI</div>
-                <div class="font-bold text-amber-300">+5.13B</div>
-            </div>
+
+        <!-- 뉴스 아이템 1 -->
+        <div class="flex justify-between items-start mb-2 text-xs">
+            <a href="#" class="text-blue-400 hover:underline font-medium leading-snug pr-2">
+                'This could be something more substantial': Wall Street braces for more Fed rate hikes <span class="text-gray-500">- Yahoo Finance</span>
+            </a>
+            <span class="text-[11px] text-gray-500 whitespace-nowrap">2h ago</span>
+        </div>
+
+        <!-- 뉴스 아이템 2 -->
+        <div class="flex justify-between items-start mb-3 text-xs">
+            <a href="#" class="text-gray-200 hover:underline leading-snug pr-2">
+                What Happens To Stocks And Bonds When The Fed Raises Rates? <span class="text-gray-500">- Forbes</span>
+            </a>
+            <span class="text-[11px] text-gray-500 whitespace-nowrap">3h ago</span>
+        </div>
+
+        <!-- 더보기 버튼 -->
+        <div class="text-center border-t border-gray-800/65 pt-2">
+            <button class="text-[11px] text-gray-400 hover:text-gray-200 font-semibold tracking-wider">
+                MORE NEWS · 4
+            </button>
         </div>
     </div>
 
-    <!-- 4단: Volume Profile & Gamma Flip -->
-    <div class="card p-3 mb-3">
-        <div class="text-xs font-bold text-gray-300 mb-2">VOLUME PROFILE / KEY LEVELS</div>
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
-            <div class="bg-gray-900 p-2 rounded border border-gray-800">
-                <div class="text-[10px] text-gray-400">Gamma Flip</div>
-                <div class="font-bold text-gray-100">5,840</div>
-            </div>
-            <div class="bg-gray-900 p-2 rounded border border-gray-800">
-                <div class="text-[10px] text-gray-400">Volume POC</div>
-                <div class="font-bold text-gray-100">5,845</div>
-            </div>
-            <div class="bg-gray-900 p-2 rounded border border-gray-800">
-                <div class="text-[10px] text-gray-400">VWAP Flip</div>
-                <div class="font-bold text-gray-100">5,848</div>
-            </div>
+    <!-- 2. 지표 카드 그리드 (상단부) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2.5">
+        
+        <!-- SPX 카드 -->
+        <div class="card p-3">
+            <div class="text-[11px] text-gray-400 font-medium mb-1">SPX</div>
+            <div class="text-xl font-bold text-emerald-400 tracking-tight">7650.50</div>
+            <div class="text-xs font-semibold text-emerald-400 mt-0.5">+12.74 (+0.17%)</div>
         </div>
+
+        <!-- VIX / VIX 9D 카드 -->
+        <div class="card p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-center">
+                <span class="text-[11px] text-gray-400 font-medium">VIX</span>
+                <span class="text-base font-bold text-emerald-400">14.81</span>
+            </div>
+            <div class="text-[10px] text-red-400 text-right -mt-1 mb-1">-0.63</div>
+            <div class="border-t border-gray-800/80 pt-1.5 flex justify-between items-center">
+                <span class="text-[11px] text-gray-400 font-medium">VIX 9D</span>
+                <span class="text-sm font-bold text-emerald-400">12.27</span>
+            </div>
+            <div class="text-[10px] text-red-400 text-right -mt-1">-1.12</div>
+        </div>
+
+        <!-- ES (ACTIVE) 카드 -->
+        <div class="card p-3 relative">
+            <div class="flex justify-between items-start mb-1">
+                <span class="text-[11px] text-gray-400 font-medium">ES</span>
+                <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded font-bold">ACTIVE</span>
+            </div>
+            <div class="text-xl font-bold text-emerald-400 tracking-tight">7712.50</div>
+            <div class="text-xs font-semibold text-emerald-400 mt-0.5">+5.25 (+0.07%)</div>
+        </div>
+
+        <!-- MAG7 카드 -->
+        <div class="card p-3">
+            <div class="text-[11px] text-gray-400 font-medium mb-1">MAG7</div>
+            <div class="text-xl font-bold text-red-400 tracking-tight">70.51</div>
+            <div class="text-xs font-semibold text-red-400 mt-0.5">-0.27 (-0.38%)</div>
+        </div>
+
     </div>
 
-    <!-- 5단: Expected Move (기대 이동 폭) -->
-    <div class="card p-3 mb-3">
-        <div class="text-xs font-bold text-gray-300 mb-2">EXPECTED MOVE (EM)</div>
-        <div class="grid grid-cols-3 gap-2 text-center text-xs mb-3">
-            <div class="p-2 rounded bg-red-950/30 border border-red-900/40">
-                <div class="text-[10px] text-red-400">PUT 10%</div>
-                <div class="font-bold text-red-300">5,810 (-1.2%)</div>
-            </div>
-            <div class="p-2 rounded bg-gray-900 border border-gray-800">
-                <div class="text-[10px] text-gray-400">ATM</div>
-                <div class="font-bold text-white">5,850 (0.0%)</div>
-            </div>
-            <div class="p-2 rounded bg-emerald-950/30 border border-emerald-900/40">
-                <div class="text-[10px] text-emerald-400">CALL 10%</div>
-                <div class="font-bold text-emerald-300">5,890 (+1.2%)</div>
-            </div>
+    <!-- 3. 금리 및 스프레드 카드 그리드 (하단부) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+        
+        <!-- 2Y YIELD -->
+        <div class="card p-3">
+            <div class="text-[10px] text-gray-400 font-medium mb-1">2Y YIELD</div>
+            <div class="text-lg font-bold text-emerald-400">4.756%</div>
+            <div class="text-[11px] font-semibold text-emerald-400 mt-0.5">+6.6 bp</div>
+            <div class="text-[10px] text-gray-500 mt-1">Tradeweb delayed · 17:05:00 ET</div>
         </div>
-        <!-- 비주얼 게이지 바 -->
-        <div class="w-full bg-gray-900 h-2.5 rounded-full relative overflow-hidden border border-gray-800">
-            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-400 z-10"></div>
-            <div class="absolute left-1/4 right-1/4 top-0 bottom-0 bg-blue-600/60 rounded-full"></div>
-        </div>
-    </div>
 
-    <!-- 6단: Decision Signal (의사결정 시그널) -->
-    <div class="card p-3 border-l-4 border-l-amber-500">
-        <div class="flex justify-between items-center">
-            <span class="text-xs font-bold text-amber-400">DECISION SIGNAL</span>
-            <span class="text-[10px] px-2 py-0.5 rounded bg-amber-950 text-amber-300 font-bold border border-amber-900">HOLD</span>
+        <!-- 10Y YIELD -->
+        <div class="card p-3">
+            <div class="text-[10px] text-gray-400 font-medium mb-1">10Y YIELD</div>
+            <div class="text-lg font-bold text-emerald-400">5.000%</div>
+            <div class="text-[11px] font-semibold text-emerald-400 mt-0.5">+5.3 bp</div>
+            <div class="text-[10px] text-gray-500 mt-1">Tradeweb delayed · 17:05:00 ET</div>
         </div>
-        <div class="text-xs text-gray-300 mt-1.5">
-            현재 0DTE 감마 및 VWAP 밴드 내 수렴 구간. 방향성 결정 대기 중.
+
+        <!-- 30Y YIELD -->
+        <div class="card p-3">
+            <div class="text-[10px] text-gray-400 font-medium mb-1">30Y YIELD</div>
+            <div class="text-lg font-bold text-emerald-400">5.328%</div>
+            <div class="text-[11px] font-semibold text-emerald-400 mt-0.5">+3.2 bp</div>
+            <div class="text-[10px] text-gray-500 mt-1">Tradeweb delayed · 17:05:00 ET</div>
         </div>
+
+        <!-- 10Y-2Y SPREAD -->
+        <div class="card p-3">
+            <div class="text-[10px] text-gray-400 font-medium mb-1">10Y-2Y SPREAD</div>
+            <div class="text-lg font-bold text-emerald-400">+24 bp</div>
+            <div class="text-[11px] font-semibold text-red-400 mt-0.5">-1.3 bp</div>
+            <div class="text-[10px] text-gray-400 mt-1">Normal yield curve</div>
+        </div>
+
     </div>
 
 </body>
