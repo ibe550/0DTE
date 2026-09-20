@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPX 0DTE DEFENDER</title>
+    <!-- 가장 가볍고 빠른 Tailwind CSS와 TradingView 차트 라이브러리 불러오기 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        /* 기본 다크 테마 배경 */
+        body { background-color: #0d1117; color: #c9d1d9; }
+    </style>
+</head>
+<body class="p-4 sm:p-6">
+    <div class="max-w-md mx-auto">
+        <h1 class="text-xl font-bold text-gray-300 mb-3">🛡️ SPX 0DTE DEFENDER</h1>
+        
+        <!-- 현재가 표시 카드 -->
+        <div class="bg-gray-800 rounded-lg p-5 mb-4 shadow-lg flex justify-between items-center border border-gray-700">
+            <div>
+                <p class="text-sm text-gray-400 font-medium">SPX 현재가</p>
+                <p id="spx-price" class="text-3xl font-bold text-green-400 mt-1">로딩중...</p>
+            </div>
+            <div class="text-right">
+                <p class="text-xs text-gray-500">데이터 소스</p>
+                <p id="data-source" class="text-sm font-semibold text-blue-400 mt-1">-</p>
+            </div>
+        </div>
+
+        <!-- 차트 영역 -->
+        <div class="bg-gray-800 rounded-lg p-4 shadow-lg border border-gray-700">
+            <p class="text-sm text-gray-400 mb-3 font-medium">S&P 500 실시간 흐름</p>
+            <div id="chart-container" class="w-full h-64"></div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 방금 만드신 백엔드 API 주소 연결
+        const API_URL = 'https://0-dte-seven.vercel.app/api/market';
+
+        // 2. TradingView 차트 디자인 세팅 (다크 테마)
+        const chartOptions = { 
+            layout: { textColor: '#9ca3af', background: { type: 'solid', color: '#1f2937' } },
+            grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
+            timeScale: { timeVisible: true, secondsVisible: false },
+        };
+        const chart = LightweightCharts.createChart(document.getElementById('chart-container'), chartOptions);
+        const lineSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2 });
+
+        // 3. 백엔드에서 데이터 가져오는 함수
+        async function fetchData() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+
+                if(data.status === 'success') {
+                    // 화면에 글자 업데이트 (전체 새로고침 없이 숫자만 바뀜)
+                    document.getElementById('spx-price').innerText = data.spx_price.toLocaleString('en-US');
+                    document.getElementById('data-source').innerText = data.source;
+
+                    // 차트에 실시간 가격 점 찍기
+                    const timeNow = Math.floor(Date.now() / 1000);
+                    lineSeries.update({ time: timeNow, value: data.spx_price });
+                }
+            } catch (error) {
+                console.error('API 연결 실패:', error);
+                document.getElementById('spx-price').innerText = '연결 오류';
+            }
+        }
+
+        // 4. 앱 실행 시 즉시 데이터 1번 가져오고, 이후 5초마다 자동 갱신
+        fetchData();
+        setInterval(fetchData, 5000);
+    </script>
+</body>
+</html>
