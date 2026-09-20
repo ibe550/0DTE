@@ -8,7 +8,6 @@ import numpy as np
 
 app = FastAPI()
 
-# 프론트엔드와 원활한 통신을 위한 CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,22 +16,12 @@ app.add_middleware(
 )
 
 def fetch_from_schwab():
-    """
-    [1순위] 찰스스왑(Charles Schwab) API 데이터 조회 함수
-    - 추후 토큰이 준비되면 이 함수 안에서 스왑 API를 호출하도록 구현하면 됩니다.
-    """
-    access_token = None  # 추후 발급받은 토큰 설정 자리
-    
+    access_token = None
     if not access_token:
         raise Exception("찰스스왑 Access Token이 아직 설정되지 않았습니다.")
-    
     return None
 
 def calculate_volume_profile():
-    """
-    ES 선물 거래량 데이터를 기반으로 SPX 가격대에 매핑하여 
-    VAL, POC, VAH를 계산하는 실시간 로직
-    """
     try:
         es_ticker = yf.Ticker("ES=F")
         spx_ticker = yf.Ticker("^SPX")
@@ -83,36 +72,38 @@ def calculate_volume_profile():
         return {"val": 7620.0, "poc": 7645.0, "vah": 7650.0}
 
 def fetch_from_yahoo():
-    """
-    [2순위] 야후 파이낸스 백업 데이터 (SPX 및 ES 선물 실제 시세 연동)
-    """
     et_tz = pytz.timezone('US/Eastern')
     now_et = datetime.now(et_tz)
     
-    # 1. SPX 데이터 조회
-    spx = yf.Ticker("^SPX")
-    spx_hist = spx.history(period="2d", interval="1m")
+    # 주말 여부 및 시간 체크 (월~금 혹은 일요일 저녁 6시 이후는 실시간 세션 활성화)
+    is_weekend_closed = (now_et.weekday() == 5) or (now_et.weekday() == 6 and now_et.hour < 18)
     
-    if spx_hist.empty:
-        spx_price = 7650.50
-        spx_prev = 7637.76
-    else:
+    # 1. SPX 가격 조회 (장중에는 1분봉 시도, 장 외에는 일봉/최근값 활용)
+    spx = yf.Ticker("^SPX")
+    try:
+        spx_hist = spx.history(period="1d", interval="1m") if not is_weekend_closed else spx.history(period="5d")
+        if spx_hist.empty:
+            spx_hist = spx.history(period="5d")
+            
         spx_price = float(spx_hist['Close'].iloc[-1])
         spx_prev = float(spx_hist['Close'].iloc[0]) if len(spx_hist) > 1 else spx_price
+    except:
+        spx_price, spx_prev = 7650.50, 7637.76
 
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # 2. ES 선물 (ES=F) 실제 데이터 조회
+    # 2. ES 선물 가격 조회
     es = yf.Ticker("ES=F")
-    es_hist = es.history(period="2d", interval="1m")
-    
-    if es_hist.empty:
-        es_price = 7712.50
-        es_prev = 7707.25
-    else:
+    try:
+        es_hist = es.history(period="1d", interval="1m") if not is_weekend_closed else es.history(period="5d")
+        if es_hist.empty:
+            es_hist = es.history(period="5d")
+            
         es_price = float(es_hist['Close'].iloc[-1])
         es_prev = float(es_hist['Close'].iloc[0]) if len(es_hist) > 1 else es_price
+    except:
+        es_price, es_prev = 7712.50, 7707.25
 
     es_change = es_price - es_prev
     es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
@@ -121,7 +112,7 @@ def fetch_from_yahoo():
 
     return {
         "status": "success",
-        "source": "Yahoo Finance (SPX & ES Live Backup)",
+        "source": "Yahoo Finance (Smart Hybrid Feed)",
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "spx": {
             "price": round(spx_price, 2),
