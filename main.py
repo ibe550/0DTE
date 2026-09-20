@@ -84,46 +84,56 @@ def calculate_volume_profile():
 
 def fetch_from_yahoo():
     """
-    [2순위] 야후 파이낸스 백업 데이터 및 세션 기반 정합성 처리
-    - 일요일 저녁 6시(ET) 이전에는 금요일 종가 기준으로 고정하고,
-      일요일 저녁 6시 이후부터는 실시간 세션 변동을 반영합니다.
+    [2순위] 야후 파이낸스 백업 데이터 (SPX 및 ES 선물 실제 시세 연동)
     """
     et_tz = pytz.timezone('US/Eastern')
     now_et = datetime.now(et_tz)
     
+    # 1. SPX 데이터 조회
     spx = yf.Ticker("^SPX")
-    hist = spx.history(period="2d", interval="1m")
+    spx_hist = spx.history(period="2d", interval="1m")
     
-    if hist.empty:
-        current_price = 7646.04
-        prev_close = 7637.76
+    if spx_hist.empty:
+        spx_price = 7650.50
+        spx_prev = 7637.76
     else:
-        current_price = float(hist['Close'].iloc[-1])
-        # 직전 영업일 종가 추정
-        prev_close = float(hist['Close'].iloc[0]) if len(hist) > 1 else current_price
+        spx_price = float(spx_hist['Close'].iloc[-1])
+        spx_prev = float(spx_hist['Close'].iloc[0]) if len(spx_hist) > 1 else spx_price
 
-    # 만약 일요일이고 저녁 6시(18:00) 이전이라면 선물이 열리기 전이므로 금요일 마감 값으로 안정화
-    if now_et.weekday() == 6 and now_et.hour < 18:
-        # 주말 휴장 세션 고정 처리 로직
-        pass
+    spx_change = spx_price - spx_prev
+    spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    change = current_price - prev_close
-    change_pct = (change / prev_close) * 100 if prev_close else 0.0
+    # 2. ES 선물 (ES=F) 실제 데이터 조회
+    es = yf.Ticker("ES=F")
+    es_hist = es.history(period="2d", interval="1m")
+    
+    if es_hist.empty:
+        es_price = 7712.50
+        es_prev = 7707.25
+    else:
+        es_price = float(es_hist['Close'].iloc[-1])
+        es_prev = float(es_hist['Close'].iloc[0]) if len(es_hist) > 1 else es_price
+
+    es_change = es_price - es_prev
+    es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
 
     vp = calculate_volume_profile()
 
     return {
         "status": "success",
-        "source": "Yahoo Finance (Session-Aware Backup)",
+        "source": "Yahoo Finance (SPX & ES Live Backup)",
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "spx": {
-            "price": round(current_price, 2),
-            "change": round(change, 2),
-            "change_pct": round(change_pct, 2)
+            "price": round(spx_price, 2),
+            "change": round(spx_change, 2),
+            "change_pct": round(spx_change_pct, 2)
+        },
+        "es": {
+            "price": round(es_price, 2),
+            "change_pct": round(es_change_pct, 2)
         },
         "volume_profile": vp,
         "vix": {"price": 14.81, "change": -0.63},
-        "es": {"price": 7712.50, "change_pct": 0.07},
         "mag7": {"price": 70.51, "change_pct": -0.38}
     }
 
