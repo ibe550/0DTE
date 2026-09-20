@@ -74,7 +74,7 @@
         </div>
     </div>
 
-    <!-- ================= 3. 금리 및 스프레드 카드 그리드 (하단부) ================= -->
+    <!-- ================= 3. 금리 및 스프레드 카드 그리드 ================= -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3">
         <div class="card p-3">
             <div class="text-[10px] text-gray-400 font-medium mb-1">2Y YIELD</div>
@@ -222,7 +222,6 @@
                 <div class="text-xs font-bold text-blue-300 mt-0.5">VWAP 7633.80</div>
             </div>
         </div>
-        <!-- 타임프레임 버튼들 -->
         <div class="flex space-x-1 mb-3">
             <button class="px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">1m</button>
             <button class="px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">5m</button>
@@ -230,14 +229,7 @@
             <button class="px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">30m</button>
             <button class="px-2 py-0.5 rounded text-[10px] bg-blue-600 text-white font-bold">1H</button>
         </div>
-        <!-- 차트 영역 프레임 (실제 TradingView 차트 연동부) -->
         <div class="bg-gray-950 h-44 rounded border border-gray-800/80 relative flex items-center justify-center mb-2">
-            <!-- 가상 차트 시각화 선 (추후 TradingView Lightweight Charts로 대체) -->
-            <div class="absolute inset-0 p-3 flex flex-col justify-between opacity-70">
-                <div class="border-b border-gray-800/50 h-1/4"></div>
-                <div class="border-b border-gray-800/50 h-1/4"></div>
-                <div class="border-b border-gray-800/50 h-1/4"></div>
-            </div>
             <svg class="absolute inset-0 w-full h-full p-2" preserveAspectRatio="none" viewBox="0 0 300 100">
                 <path d="M 10 70 Q 60 40, 100 80 T 200 50 T 290 20" fill="none" stroke="#10b981" stroke-width="2"/>
                 <path d="M 10 85 Q 60 65, 100 90 T 200 70 T 290 40" fill="none" stroke="#8b5cf6" stroke-dasharray="3,3" stroke-width="1.5"/>
@@ -264,7 +256,6 @@
                 </div>
             </div>
         </div>
-        <!-- RSI 서브 차트 박스 -->
         <div class="bg-gray-950 h-28 rounded border border-gray-800/80 relative flex items-center justify-center mb-2">
             <div class="absolute inset-0 flex flex-col justify-between p-2 pointer-events-none">
                 <div class="border-b border-red-900/40 text-[9px] text-red-400/60 pl-1">70 Overbought</div>
@@ -291,7 +282,6 @@
                 <span class="inline-block mt-1 text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-bold">↑ Buying Pressure</span>
             </div>
         </div>
-
         <div class="flex space-x-1 mb-2">
             <button class="px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">1m</button>
             <button class="px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">5m</button>
@@ -299,15 +289,11 @@
             <button class="px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">30m</button>
             <button class="px-2 py-0.5 rounded text-[10px] bg-blue-600 text-white font-bold">1H</button>
         </div>
-
         <div class="flex justify-between text-[10px] text-gray-400 mb-1">
             <span>집계 구간: 09/17 18:30:00 ET ~ 09/18 16:30:00 ET (24개 1H 봉)</span>
             <span class="text-yellow-400">- CVD</span>
         </div>
-
-        <!-- 볼륨 바차트 시각화 영역 -->
         <div class="bg-gray-950 h-32 rounded border border-gray-800/80 p-2 relative flex items-end justify-between mb-2">
-            <!-- 가상 바 형태 (초록/빨강) -->
             <div class="w-2 bg-emerald-600 h-[30%] rounded-t"></div>
             <div class="w-2 bg-emerald-600 h-[25%] rounded-t"></div>
             <div class="w-2 bg-emerald-600 h-[20%] rounded-t"></div>
@@ -319,13 +305,10 @@
             <div class="w-2 bg-emerald-600 h-[40%] rounded-t"></div>
             <div class="w-2 bg-emerald-600 h-[90%] rounded-t"></div>
         </div>
-
         <div class="flex justify-between items-center text-[10px] text-gray-400 mb-2">
             <span>마지막 봉 16:30:00 ET</span>
             <span>최근 봉 13.3K · 구간 합계 1.28M</span>
         </div>
-
-        <!-- 매수/매도 비율 프로그레스 바 -->
         <div class="flex justify-between text-xs font-bold mb-1">
             <span class="text-emerald-400">▲ Buy 61% (781.1K)</span>
             <span class="text-red-400">▼ Sell 39% (503.3K)</span>
@@ -334,13 +317,9 @@
             <div class="bg-emerald-500 h-full" style="width: 61%;"></div>
             <div class="bg-red-500 h-full" style="width: 39%;"></div>
         </div>
-
-        <!-- 모더레이트 바잉 프레셔 박스 -->
         <div class="bg-gray-900 border border-gray-800 p-2 rounded text-xs text-gray-300 mb-3">
             Moderate buying pressure — 61% buy vs 39% sell volume.
         </div>
-
-        <!-- WEIGHTED FLOW SIGNAL -->
         <div class="card p-2.5 mb-2 bg-gray-900/80">
             <div class="flex justify-between items-center mb-1">
                 <span class="text-[11px] font-bold text-gray-400">WEIGHTED FLOW SIGNAL</span>
@@ -354,8 +333,6 @@
                 <span>rule-based</span>
             </div>
         </div>
-
-        <!-- ORDER BOOK IMBALANCE -->
         <div class="card p-2.5 bg-gray-900/80 mb-2">
             <div class="flex justify-between items-center mb-1">
                 <span class="text-[11px] font-bold text-gray-400">ORDER BOOK IMBALANCE</span>
@@ -365,9 +342,94 @@
                 현재 데이터 소스가 SPX의 Bid/Ask 잔량을 제공하지 않아 지정가 매수벽은 계산하지 않습니다.
             </div>
         </div>
-
         <div class="text-[10px] text-gray-500 leading-tight">
             참고: SPX 현물에는 단일 거래소의 공식 체결 거래량이 없으므로, ES 선물 거래량을 가장 가까운 SPX 거래량 프록시로 사용합니다. CVD는 봉 기반 추정치입니다.
+        </div>
+    </div>
+
+    <!-- ================= 9. SPX 방향분석 섹션 (최하단) ================= -->
+    <div class="card p-3 mb-3">
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex items-center space-x-1.5 text-xs font-bold text-emerald-400">
+                <span>📈 SPX 방향분석 · 상승 우세</span>
+            </div>
+            <div class="text-xs font-bold text-emerald-400">
+                종합 점수 +5.2
+            </div>
+        </div>
+        <div class="text-xs text-gray-300 mb-3">
+            큰 방향과 장중 흐름이 상승 쪽으로 기울었습니다. 75%의 시간봉이 상승 또는 상승 편향을 보입니다.
+        </div>
+        <!-- 방향성 게이지 바 -->
+        <div class="w-full bg-gray-900 h-2.5 rounded-md relative overflow-hidden border border-gray-800 mb-3">
+            <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-red-600 via-gray-700 to-emerald-500 w-full opacity-70"></div>
+            <div class="absolute right-[25%] top-0 bottom-0 w-2 bg-emerald-400 rounded shadow"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-gray-500 mb-3">
+            <span>BEARISH</span>
+            <span>NEUTRAL</span>
+            <span>BULLISH</span>
+        </div>
+
+        <!-- 4개 타임프레임 카드 그리드 (1H, 15m, 5m, 1m) -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs mb-3">
+            <div class="bg-gray-900 border border-gray-800 p-2.5 rounded">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="font-bold text-emerald-400">1H</span>
+                    <span class="text-[10px] text-gray-400">큰 방향</span>
+                </div>
+                <div class="font-bold text-emerald-400 mb-1">상승 우세</div>
+                <div class="flex justify-between text-[10px] text-gray-500 border-t border-gray-800/80 pt-1">
+                    <span>이동평균 배열</span>
+                    <span class="text-emerald-400 font-bold">+6</span>
+                </div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 p-2.5 rounded">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="font-bold text-emerald-400">15m</span>
+                    <span class="text-[10px] text-gray-400">장중 구조</span>
+                </div>
+                <div class="font-bold text-emerald-400 mb-1">상승 우세</div>
+                <div class="flex justify-between text-[10px] text-gray-500 border-t border-gray-800/80 pt-1">
+                    <span>이동평균 배열</span>
+                    <span class="text-emerald-400 font-bold">+6</span>
+                </div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 p-2.5 rounded">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="font-bold text-emerald-400">5m</span>
+                    <span class="text-[10px] text-gray-400">진입 확인</span>
+                </div>
+                <div class="font-bold text-emerald-400 mb-1">상승 우세</div>
+                <div class="flex justify-between text-[10px] text-gray-500 border-t border-gray-800/80 pt-1">
+                    <span>이동평균 배열</span>
+                    <span class="text-emerald-400 font-bold">+5</span>
+                </div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 p-2.5 rounded">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="font-bold text-gray-300">1m</span>
+                    <span class="text-[10px] text-gray-400">미세 타이밍</span>
+                </div>
+                <div class="font-bold text-gray-300 mb-1">중립</div>
+                <div class="flex justify-between text-[10px] text-gray-500 border-t border-gray-800/80 pt-1">
+                    <span>이동평균 배열</span>
+                    <span class="text-gray-400 font-bold">0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end text-[10px] text-gray-400 mb-2">
+            시간봉 일치도 75%
+        </div>
+
+        <!-- 세부 근거 보기 토글 바 -->
+        <div class="border-t border-gray-800 pt-2 flex justify-between items-center text-xs text-gray-400">
+            <span>세부 근거 보기 · 1H</span>
+            <span class="cursor-pointer hover:text-gray-200">클릭하여 펼치기</span>
+        </div>
+        <div class="text-[10px] text-gray-500 mt-2 leading-tight">
+            1H는 큰 방향, 15m·5m은 장중 확인, 1m은 진입 타이밍 참고입니다. 모든 신호는 OHLCV 기반 참고용이며 옵션 체결 방향이나 L2 주문창 신호는 아닙니다.
         </div>
     </div>
 
