@@ -26,8 +26,8 @@ def calculate_volume_profile():
         es_ticker = yf.Ticker("ES=F")
         spx_ticker = yf.Ticker("^SPX")
         
-        es_df = es_ticker.history(period="2d", interval="1h")
-        spx_df = spx_ticker.history(period="2d", interval="1h")
+        es_df = es_ticker.history(period="5d", interval="1h")
+        spx_df = spx_ticker.history(period="5d", interval="1h")
         
         if es_df.empty or spx_df.empty:
             return {"val": 7620.0, "poc": 7645.0, "vah": 7650.0}
@@ -75,35 +75,40 @@ def fetch_from_yahoo():
     et_tz = pytz.timezone('US/Eastern')
     now_et = datetime.now(et_tz)
     
-    # 주말 여부 및 시간 체크 (월~금 혹은 일요일 저녁 6시 이후는 실시간 세션 활성화)
-    is_weekend_closed = (now_et.weekday() == 5) or (now_et.weekday() == 6 and now_et.hour < 18)
+    weekday = now_et.weekday() # 0:월 ~ 6:일
+    hour = now_et.hour
     
-    # 1. SPX 가격 조회 (장중에는 1분봉 시도, 장 외에는 일봉/최근값 활용)
+    # CME 선물 기준: 금요일 17:00 ~ 일요일 18:00 사이는 휴장(CLOSED)
+    is_active = True
+    if weekday == 5:
+        is_active = False
+    elif weekday == 6 and hour < 18:
+        is_active = False
+    elif weekday == 4 and hour >= 17:
+        is_active = False
+
+    # 1. SPX 데이터 조회
     spx = yf.Ticker("^SPX")
-    try:
-        spx_hist = spx.history(period="1d", interval="1m") if not is_weekend_closed else spx.history(period="5d")
-        if spx_hist.empty:
-            spx_hist = spx.history(period="5d")
-            
-        spx_price = float(spx_hist['Close'].iloc[-1])
-        spx_prev = float(spx_hist['Close'].iloc[0]) if len(spx_hist) > 1 else spx_price
-    except:
+    spx_hist = spx.history(period="5d")
+    
+    if spx_hist.empty:
         spx_price, spx_prev = 7650.50, 7637.76
+    else:
+        spx_price = float(spx_hist['Close'].iloc[-1])
+        spx_prev = float(spx_hist['Close'].iloc[-2]) if len(spx_hist) > 1 else spx_price
 
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # 2. ES 선물 가격 조회
+    # 2. ES 선물 데이터 조회
     es = yf.Ticker("ES=F")
-    try:
-        es_hist = es.history(period="1d", interval="1m") if not is_weekend_closed else es.history(period="5d")
-        if es_hist.empty:
-            es_hist = es.history(period="5d")
-            
-        es_price = float(es_hist['Close'].iloc[-1])
-        es_prev = float(es_hist['Close'].iloc[0]) if len(es_hist) > 1 else es_price
-    except:
+    es_hist = es.history(period="5d")
+    
+    if es_hist.empty:
         es_price, es_prev = 7712.50, 7707.25
+    else:
+        es_price = float(es_hist['Close'].iloc[-1])
+        es_prev = float(es_hist['Close'].iloc[-2]) if len(es_hist) > 1 else es_price
 
     es_change = es_price - es_prev
     es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
@@ -112,8 +117,9 @@ def fetch_from_yahoo():
 
     return {
         "status": "success",
-        "source": "Yahoo Finance (Smart Hybrid Feed)",
+        "source": "Yahoo Finance (Accurate Session Feed v2)",
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
+        "market_state": "ACTIVE" if is_active else "CLOSED",
         "spx": {
             "price": round(spx_price, 2),
             "change": round(spx_change, 2),
@@ -121,7 +127,8 @@ def fetch_from_yahoo():
         },
         "es": {
             "price": round(es_price, 2),
-            "change_pct": round(es_change_pct, 2)
+            "change_pct": round(es_change_pct, 2),
+            "abs_change": round(es_change, 2)
         },
         "volume_profile": vp,
         "vix": {"price": 14.81, "change": -0.63},
