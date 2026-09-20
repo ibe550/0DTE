@@ -44,8 +44,8 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2.5">
         <div class="card p-3">
             <div class="text-[11px] text-gray-400 font-medium mb-1">SPX</div>
-            <div id="spx-price" class="text-xl font-bold text-emerald-400 tracking-tight">7650.50</div>
-            <div id="spx-change" class="text-xs font-semibold text-emerald-400 mt-0.5">+12.74 (+0.17%)</div>
+            <div id="spx-price" class="text-xl font-bold text-emerald-400 tracking-tight">로딩 중...</div>
+            <div id="spx-change" class="text-xs font-semibold text-emerald-400 mt-0.5">-</div>
         </div>
         <div class="card p-3 flex flex-col justify-between">
             <div class="flex justify-between items-center">
@@ -429,8 +429,7 @@
     <script>
         async function fetchMarketData() {
             try {
-                // Vercel에 배포된 백엔드 서버 주소로 변경 (예: https://0-dte-seven.vercel.app/api/market-data)
-                // 현재 백엔드 URL 주소에 맞게 아래 링크를 수정해 주세요.
+                // 본인의 Vercel 백엔드 서버 주소
                 const response = await fetch('https://0-dte-seven.vercel.app/api/market-data');
                 const data = await response.json();
 
@@ -450,20 +449,3 @@
     </script>
 </body>
 </html>
-
-
-async function fetchMarketData() {
-    try {
-        // 올바른 본인의 Vercel 서버 주소로 수정
-        const response = await fetch('https://0-dte-seven.vercel.app/api/market-data');
-        const data = await response.json();
-
-        if (data.status === "success") {
-            document.getElementById('spx-price').innerText = data.spx.price;
-            document.getElementById('spx-change').innerText = `${data.spx.change} (${data.spx.change_pct}%)`;
-            console.log("데이터 갱신 완료:", data.source);
-        }
-    } catch (error) {
-        console.error("서버 통신 실패:", error);
-    }
-}
