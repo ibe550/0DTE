@@ -43,19 +43,23 @@ def get_schwab_access_token():
 
 @app.get("/api/callback")
 def auth_callback(code: str = None):
-    """
-    [자동 토큰 교환 엔드포인트]
-    찰스스왑 로그인 승인 후 code와 함께 이 주소로 진입하면, 
-    서버가 자동으로 Refresh Token을 발급하여 화면에 띄워줍니다.
-    """
     if not code:
         return {"status": "fail", "detail": "인증 코드(code)가 전달되지 않았습니다."}
         
     app_key = os.environ.get("SCHWAB_APP_KEY")
     app_secret = os.environ.get("SCHWAB_SECRET")
     
-    if not app_key or not app_secret:
-        return {"status": "fail", "detail": "Vercel 환경 변수에 SCHWAB_APP_KEY 또는 SCHWAB_APP_SECRET이 설정되지 않았습니다."}
+    # 디버깅용 체크: 환경 변수가 잘 읽히고 있는지 확인
+    missing = []
+    if not app_key: missing.append("SCHWAB_APP_KEY")
+    if not app_secret: missing.append("SCHWAB_SECRET")
+    
+    if missing:
+        return {
+            "status": "fail", 
+            "detail": f"Vercel 환경 변수를 읽지 못했습니다. 누락된 변수: {', '.join(missing)}",
+            "env_keys_found": [k for k in os.environ.keys() if "SCHWAB" in k]
+        }
     
     token_url = "https://api.schwabapi.com/v1/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -86,7 +90,6 @@ def fetch_from_schwab():
     access_token = get_schwab_access_token()
     if not access_token:
         raise Exception("유효한 Access Token이 없습니다.")
-    # 추후 스왑 마켓 데이터 연동 자리
     raise Exception("스왑 데이터 파싱 준비 중 - 야후 폴백 전환")
 
 def calculate_gex_and_em():
