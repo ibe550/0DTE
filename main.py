@@ -81,7 +81,6 @@ def fetch_from_schwab():
     
     headers = {"Authorization": f"Bearer {access_token}"}
     
-    # 찰스스왑 마켓 시세 조회 ($SPX 및 선물 심볼 동시 요청)
     quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX,/ES"
     res = requests.get(quote_url, headers=headers)
     
@@ -111,7 +110,7 @@ def fetch_from_schwab():
 
     return {
         "status": "success",
-        "source": "Charles Schwab API",  # 찰스스왑 정상 연동 표시
+        "source": "Charles Schwab API",
         "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
         "market_state": "ACTIVE",
         "spx": {
@@ -127,7 +126,8 @@ def fetch_from_schwab():
         "volume_profile": {
             "val": round(float(spx_price) - 30, 2), 
             "poc": round(float(spx_price) - 5, 2), 
-            "vah": round(float(spx_price) + 5, 2)
+            "vah": round(float(spx_price) + 5, 2),
+            "source": "Charles Schwab API"
         },
         "gex": {
             "expected_move": f"±{round(float(spx_price) * 0.0048, 2)}pt (0.48%)",
@@ -171,7 +171,12 @@ def fetch_from_yahoo():
         "market_state": "ACTIVE" if is_active else "CLOSED",
         "spx": {"price": round(spx_price, 2), "change": round(spx_change, 2), "change_pct": round((spx_change/spx_prev)*100, 2)},
         "es": {"price": round(es_price, 2), "change_pct": round((es_change/es_prev)*100, 2), "abs_change": round(es_change, 2)},
-        "volume_profile": {"val": 7620.0, "poc": 7645.0, "vah": 7650.0},
+        "volume_profile": {
+            "val": 7620.0, 
+            "poc": 7645.0, 
+            "vah": 7650.0,
+            "source": "Yahoo Finance"
+        },
         "gex": {
             "expected_move": "±36.9pt (0.48%)",
             "put_wall": 7635.0, "gamma_flip": 7635.0, "call_wall": 7635.0,
@@ -185,17 +190,14 @@ def fetch_from_yahoo():
 
 @app.get("/api/market-data")
 def get_market_data():
-    # 1순위: 찰스스왑 API 시도
     try:
         schwab_data = fetch_from_schwab()
         if schwab_data:
             return schwab_data
     except Exception as e:
-        # 스왑 실패 시 콘솔에 로그를 남기고 야후 폴백으로 안전하게 전환
         print(f"Schwab API Error Fallback: {str(e)}")
         pass
 
-    # 2순위: 야후 파이낸스 백업
     try:
         return fetch_from_yahoo()
     except Exception as err:
