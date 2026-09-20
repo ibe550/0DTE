@@ -1,9 +1,64 @@
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+import yfinance as yf
+import requests
+import os
+import base64
+import json
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 1. 환경 변수 금고에서 정보 불러오기
+APP_KEY = os.environ.get("SCHWAB_APP_KEY")
+APP_SECRET = os.environ.get("SCHWAB_APP_SECRET")
+REDIRECT_URI = "https://0-dte-seven.vercel.app/api/callback"
+
+# Upstash Redis 주소
+KV_URL = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ.get("KV_REST_API_URL")
+KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ.get("KV_REST_API_TOKEN")
+
+# --- [토큰 발급 및 로그인 라우터] ---
+
+@app.get("/api/login")
+def login():
+    auth_url = f"https://api.schwabapi.com/v1/oauth/authorize?client_id={APP_KEY}&redirect_uri={REDIRECT_URI}"
+    return RedirectResponse(url=auth_url)
+
+@app.get("/api/callback")
+def callback(code: str):
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(f'{APP_KEY}:{APP_SECRET}'.encode()).decode()}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI
+    }
+    
+    res = requests.post("https://api.schwabapi.com/v1/oauth/token", headers=headers, data=data)
+    
+    if res.status_code == 200:
+        token_data = res.json()
+        kv_headers = {"Authorization": f"Bearer {KV_TOKEN}"}
+        requests.post(f"{KV_URL}/set/schwab_token", headers=kv_headers, json=json.dumps(token_data))
+        return {"status": "success", "message": "찰스스왑 토큰 발급 및 저장 성공!"}
+    
+    return {"status": "fail", "error": "토큰 교환 실패", "details": res.json()}
+
 # --- [실시간 시장 데이터 및 백업 라우터] ---
 
 @app.get("/api/market")
 def get_market_data():
     try:
-        # 1. Upstash Redis 금고에서 토큰 꺼내기
         kv_headers = {"Authorization": f"Bearer {KV_TOKEN}"}
         token_res = requests.get(f"{KV_URL}/get/schwab_token", headers=kv_headers)
         
@@ -13,7 +68,6 @@ def get_market_data():
         token_data = json.loads(token_res.json()['result'])
         access_token = token_data['access_token']
         
-        # 2. 찰스스왑 API로 실시간 데이터 가져오기
         schwab_headers = {"Authorization": f"Bearer {access_token}"}
         quote_res = requests.get("https://api.schwabapi.com/marketdata/v1/quotes?symbols=$SPX", headers=schwab_headers)
         
@@ -28,21 +82,16 @@ def get_market_data():
             raise Exception("찰스스왑 응답 에러")
             
     except Exception as e:
-        # --- [2순위 백업: 야후 파이낸스 가격 & 0DTE 옵션 체인] ---
         try:
             spx = yf.Ticker("^SPX")
-            
-            # 1. SPX 현재 가격 가져오기
             hist = spx.history(period="5d")
             current_price = hist['Close'].iloc[-1]
             
-            # 2. 가장 가까운 만기일(0DTE)의 옵션 체인 가져오기
             expirations = spx.options
             if expirations:
-                nearest_expiry = expirations[0]  # 0DTE
+                nearest_expiry = expirations[0] 
                 opt_chain = spx.option_chain(nearest_expiry)
                 
-                # 콜/풋 총 거래량 등 기초 지표 계산 가능
                 total_call_volume = int(opt_chain.calls['volume'].fillna(0).sum())
                 total_put_volume = int(opt_chain.puts['volume'].fillna(0).sum())
             else:
@@ -60,4 +109,4 @@ def get_market_data():
                 }
             }
         except Exception as backup_error:
-            return {"status": "fail", "error": f"백업 서버도 실패했습니다: {str(backup_error)}"}
+            return {"status": "fail", "error": f"백업 서버도 실패: {str(backup_error)}"}
