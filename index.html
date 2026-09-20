@@ -40,7 +40,7 @@
         </div>
     </div>
 
-    <!-- ================= 2. 지표 카드 그리드 (상단부) ================= -->
+    <!-- ================= 2. 지표 카드 그리드 (상단부 - SPX, ES 실시간 연동) ================= -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-2.5">
         <div class="card p-3">
             <div class="text-[11px] text-gray-400 font-medium mb-1">SPX</div>
@@ -64,8 +64,8 @@
                 <span class="text-[11px] text-gray-400 font-medium">ES</span>
                 <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded font-bold">ACTIVE</span>
             </div>
-            <div class="text-xl font-bold text-emerald-400 tracking-tight">7712.50</div>
-            <div class="text-xs font-semibold text-emerald-400 mt-0.5">+5.25 (+0.07%)</div>
+            <div id="es-price" class="text-xl font-bold text-emerald-400 tracking-tight">로딩 중...</div>
+            <div id="es-change" class="text-xs font-semibold text-emerald-400 mt-0.5">-</div>
         </div>
         <div class="card p-3">
             <div class="text-[11px] text-gray-400 font-medium mb-1">MAG7</div>
@@ -107,27 +107,27 @@
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-xs font-bold text-emerald-400 tracking-wide">VOLUME PROFILE · ES EXTENDED VOLUME → SPX PRICE</h2>
             <div class="text-[10px] text-gray-400 text-right">
-                <span class="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">Source</span> Yahoo ES extended<br>
-                <span class="text-gray-500">Data as of 09/18 16:59:58 ET</span>
+                <span class="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">Source</span> ES Calculated<br>
+                <span class="text-gray-500" id="vp-timestamp">Live Calculated</span>
             </div>
         </div>
         <div class="text-[10px] text-gray-400 mb-3">5pt SPX bins · 70% value area · ES=F RTH + pre/post volume</div>
         <div class="grid grid-cols-3 gap-2 text-center text-xs mb-3">
             <div class="bg-gray-900 p-2.5 rounded border border-gray-800">
                 <div class="text-[10px] text-gray-400 mb-1">Value Area Low</div>
-                <div class="text-sm font-bold text-white">7620</div>
+                <div id="val-price" class="text-sm font-bold text-white">--</div>
             </div>
             <div class="bg-gray-900 p-2.5 rounded border border-gray-800">
                 <div class="text-[10px] text-gray-400 mb-1">Point of Control</div>
-                <div class="text-sm font-bold text-white">7645</div>
+                <div id="poc-price" class="text-sm font-bold text-white">--</div>
             </div>
             <div class="bg-gray-900 p-2.5 rounded border border-gray-800">
                 <div class="text-[10px] text-gray-400 mb-1">Value Area High</div>
-                <div class="text-sm font-bold text-white">7645</div>
+                <div id="vah-price" class="text-sm font-bold text-white">--</div>
             </div>
         </div>
         <div class="text-[10px] text-gray-500 leading-relaxed">
-            ES=F 정규장·프리·애프터마켓 거래량을 마지막 SPX-ES 정규장 베이시스로 SPX 가격 구간에 매핑한 OHLCV 근사치입니다. Order book 데이터가 아닙니다.
+            ES=F 정규장·프리·애프터마켓 거래량을 마지막 SPX-ES 정규장 베이시스로 SPX 가격 구간에 매핑한 동적 계산치입니다.
         </div>
     </div>
 
@@ -425,7 +425,7 @@
         </div>
     </div>
 
-    <!-- ================= 백엔드 데이터 연동 스크립트 ================= -->
+    <!-- ================= 백엔드 데이터 연동 스크립트 (SPX + ES 실시간 바인딩) ================= -->
     <script>
         async function fetchMarketData() {
             try {
@@ -433,9 +433,24 @@
                 const data = await response.json();
 
                 if (data.status === "success") {
+                    // 1. SPX 가격 및 등락 연동
                     document.getElementById('spx-price').innerText = data.spx.price;
-                    document.getElementById('spx-change').innerText = `${data.spx.change} (${data.spx.change_pct}%)`;
-                    console.log("데이터 갱신 완료 (소스):", data.source);
+                    document.getElementById('spx-change').innerText = `${data.spx.change >= 0 ? '+' : ''}${data.spx.change} (${data.spx.change_pct >= 0 ? '+' : ''}${data.spx.change_pct}%)`;
+                    
+                    // 2. ES 선물 가격 및 등락 연동
+                    if (data.es) {
+                        document.getElementById('es-price').innerText = data.es.price;
+                        document.getElementById('es-change').innerText = `${data.es.change_pct >= 0 ? '+' : ''}${data.es.change_pct}%`;
+                    }
+
+                    // 3. Volume Profile (VAL, POC, VAH) 연동
+                    if (data.volume_profile) {
+                        document.getElementById('val-price').innerText = data.volume_profile.val;
+                        document.getElementById('poc-price').innerText = data.volume_profile.poc;
+                        document.getElementById('vah-price').innerText = data.volume_profile.vah;
+                    }
+                    
+                    console.log("실시간 SPX 및 ES 데이터 갱신 완료:", data.source);
                 }
             } catch (error) {
                 console.error("서버 통신 실패:", error);
