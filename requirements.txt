@@ -1,9 +1,3 @@
-streamlit
-pandas
-numpy
-pytz
+fastapi
+uvicorn
 yfinance
-plotly
-scipy
-statsmodels
-quantstats
