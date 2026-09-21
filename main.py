@@ -86,7 +86,7 @@ def fetch_market_data_robust():
 
     source_name = "Yahoo Finance (Live)"
     
-    # 1. SPX 실시간 가격 및 정확한 전일 종가(previous_close) 가져오기
+    # 1. SPX 실시간 가격 및 전일 종가 가져오기
     spx_price, spx_prev = None, None
     try:
         spx = yf.Ticker("^SPX")
@@ -110,7 +110,7 @@ def fetch_market_data_robust():
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # 2. ES(선물) 실시간 가격 및 정확한 전일 종가(previous_close) 가져오기
+    # 2. ES(선물) 실시간 가격 및 전일 종가 가져오기
     es_price, es_prev = None, None
     try:
         es = yf.Ticker("ES=F")
@@ -118,7 +118,6 @@ def fetch_market_data_robust():
         es_price = getattr(es_fast, 'last_price', None)
         es_prev = getattr(es_fast, 'previous_close', None)
         
-        # fast_info가 비어있을 경우 일별 데이터의 첫째 날(어제 종가)과 마지막 날(오늘 실시간) 활용
         if not es_price or not es_prev:
             es_hist = es.history(period="2d")
             if len(es_hist) >= 2:
@@ -130,10 +129,34 @@ def fetch_market_data_robust():
     if not es_price:
         es_price = 7733.00
     if not es_prev:
-        es_prev = 7712.50 # 야후 웹 화면 기준 전일 종가 보정치
+        es_prev = 7712.50
 
     es_change = es_price - es_prev
     es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
+
+    # 3. MAGS ETF(MAG7 대표 종목 집합) 실시간 가격 및 변동률 가져오기
+    mags_price, mags_prev = None, None
+    try:
+        mags = yf.Ticker("MAGS")
+        mags_fast = mags.fast_info
+        mags_price = getattr(mags_fast, 'last_price', None)
+        mags_prev = getattr(mags_fast, 'previous_close', None)
+        
+        if not mags_price or not mags_prev:
+            mags_hist = mags.history(period="2d")
+            if len(mags_hist) >= 2:
+                mags_prev = float(mags_hist['Close'].iloc[0])
+                mags_price = float(mags_hist['Close'].iloc[-1])
+    except Exception:
+        pass
+
+    if not mags_price:
+        mags_price = 70.51
+    if not mags_prev:
+        mags_prev = mags_price
+
+    mags_change = mags_price - mags_prev
+    mags_change_pct = (mags_change / mags_prev) * 100 if mags_prev else 0.0
 
     return {
         "status": "success",
@@ -166,7 +189,10 @@ def fetch_market_data_robust():
             "sentiment": "폭발적 구간 – 가격이 Gamma Flip 위. 딜러들이 추세 방향 헷징 → 상방 가속 가능성."
         },
         "vix": {"price": 14.81, "change": -0.63},
-        "mag7": {"price": 70.51, "change_pct": -0.38}
+        "mag7": {
+            "price": round(float(mags_price), 2), 
+            "change_pct": round(float(mags_change_pct), 2)
+        }
     }
 
 @app.get("/api/market-data")
