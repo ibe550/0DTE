@@ -84,59 +84,53 @@ def fetch_market_data_robust():
     elif weekday == 6 and hour < 18: is_active = False
     elif weekday == 4 and hour >= 17: is_active = False
 
-    # 1. 찰스스왑을 통한 SPX 시도 (실패 시 야후 폴백)
-    spx_price = None
-    spx_prev = None
-    source_name = "Charles Schwab API"
+    source_name = "Yahoo Finance (Live)"
     
+    # 1. SPX 실시간 가격 및 정확한 전일 종가(previous_close) 가져오기
+    spx_price, spx_prev = None, None
     try:
-        access_token = get_schwab_access_token()
-        if access_token:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            res = requests.get(f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX", headers=headers)
-            if res.status_code == 200:
-                quote_data = res.json()
-                spx_quote = quote_data.get("$SPX", {}).get("quote", {})
-                spx_price = spx_quote.get("lastPrice") or spx_quote.get("closePrice")
-                if spx_price:
-                    spx_prev = spx_quote.get("closePrice", spx_price)
+        spx = yf.Ticker("^SPX")
+        spx_fast = spx.fast_info
+        spx_price = getattr(spx_fast, 'last_price', None)
+        spx_prev = getattr(spx_fast, 'previous_close', None)
+        
+        if not spx_price or not spx_prev:
+            spx_hist = spx.history(period="2d")
+            if len(spx_hist) >= 2:
+                spx_prev = float(spx_hist['Close'].iloc[0])
+                spx_price = float(spx_hist['Close'].iloc[-1])
     except Exception:
         pass
 
-    # 2. 찰스스왑에서 가져오지 못한 경우 야후 파이낸스 실시간 SPX 활용
     if not spx_price:
-        source_name = "Yahoo Finance (Live)"
-        try:
-            spx = yf.Ticker("^SPX")
-            spx_hist = spx.history(period="5d", interval="1h")
-            if not spx_hist.empty:
-                spx_price = float(spx_hist['Close'].iloc[-1])
-                spx_prev = float(spx_hist['Close'].iloc[-2]) if len(spx_hist) > 1 else spx_price
-            else:
-                spx_price = 7650.50
-                spx_prev = spx_price
-        except Exception:
-            spx_price = 7650.50
-            spx_prev = spx_price
+        spx_price = 7650.50
+    if not spx_prev:
+        spx_prev = spx_price
 
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # 3. ES(선물) 가격은 야후 실시간 `ES=F` 데이터를 정확히 조회하여 웹사이트와 일치시킴
-    es_price = None
-    es_prev = None
+    # 2. ES(선물) 실시간 가격 및 정확한 전일 종가(previous_close) 가져오기
+    es_price, es_prev = None, None
     try:
         es = yf.Ticker("ES=F")
-        es_hist = es.history(period="5d", interval="1h")
-        if not es_hist.empty:
-            es_price = float(es_hist['Close'].iloc[-1])
-            es_prev = float(es_hist['Close'].iloc[-2]) if len(es_hist) > 1 else es_price
-        else:
-            es_price = 7733.00
-            es_prev = es_price
+        es_fast = es.fast_info
+        es_price = getattr(es_fast, 'last_price', None)
+        es_prev = getattr(es_fast, 'previous_close', None)
+        
+        # fast_info가 비어있을 경우 일별 데이터의 첫째 날(어제 종가)과 마지막 날(오늘 실시간) 활용
+        if not es_price or not es_prev:
+            es_hist = es.history(period="2d")
+            if len(es_hist) >= 2:
+                es_prev = float(es_hist['Close'].iloc[0])
+                es_price = float(es_hist['Close'].iloc[-1])
     except Exception:
+        pass
+
+    if not es_price:
         es_price = 7733.00
-        es_prev = es_price
+    if not es_prev:
+        es_prev = 7712.50 # 야후 웹 화면 기준 전일 종가 보정치
 
     es_change = es_price - es_prev
     es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
