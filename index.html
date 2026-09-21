@@ -316,7 +316,6 @@
 
     <!-- 10. SPX 방향분석 (요청하신 사진 속 디자인 100% 반영) -->
     <div class="card p-2 md:p-3 mb-3">
-        <!-- 헤더 -->
         <div class="flex justify-between items-center mb-1">
             <div class="flex items-center space-x-1.5 text-xs font-bold text-emerald-400">
                 <span>📈 SPX 방향분석 · <span id="dir-main-status">상승 우세</span></span>
@@ -327,7 +326,6 @@
             큰 방향과 장중 흐름이 상승 쪽으로 기울었습니다. 75%의 시간봉이 상승 또는 상승 편향을 보입니다.
         </div>
         
-        <!-- 상단 게이지 바 -->
         <div class="w-full bg-slate-900 h-2 rounded-md relative overflow-hidden border border-slate-800 mb-1">
             <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-rose-600 via-slate-700 to-emerald-500 w-full opacity-70"></div>
             <div id="dir-gauge-pin" class="absolute right-[25%] top-0 bottom-0 w-2 bg-emerald-400 rounded shadow"></div>
@@ -338,7 +336,6 @@
             <span>BULLISH</span>
         </div>
 
-        <!-- 4개 타임프레임 카드 그리드 (1H, 15m, 5m, 1m) -->
         <div class="grid grid-cols-2 gap-1.5 text-xs mb-2">
             <div class="bg-slate-900 border border-slate-800 p-2 rounded">
                 <div class="flex justify-between items-center text-[10px]">
@@ -387,7 +384,6 @@
         </div>
         <div class="flex justify-end text-[9px] text-slate-500 mb-2 font-mono">시간봉 일치도 <span id="tf-match-pct">75</span>%</div>
 
-        <!-- 세부 근거 아코디언 토글 바 -->
         <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
             <span class="flex items-center space-x-1 font-semibold text-slate-300">
                 <svg id="evidence-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
@@ -396,7 +392,6 @@
             <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
 
-        <!-- 세부 근거 & 차트 패턴 아코디언 패널 (캡처 사진 속 항목 100% 반영) -->
         <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-2">
             <div class="text-[9px] font-bold text-slate-400 tracking-wider">방향성 근거</div>
             
@@ -472,7 +467,6 @@
         </div>
     </div>
 
-    <!-- 스크립트 -->
     <script>
         function updateClock() {
             const now = new Date();
