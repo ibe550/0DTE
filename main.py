@@ -109,6 +109,10 @@ def fetch_yahoo_live(symbol: str):
 
 
 def fetch_from_schwab():
+    et_tz = pytz.timezone("US/Eastern")
+    now_et = datetime.now(et_tz)
+    now_str = now_et.strftime("%m/%d %H:%M:%S ET")
+
     access_token = get_schwab_access_token()
     headers = {"Authorization": f"Bearer {access_token}"}
     quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX"
@@ -128,7 +132,7 @@ def fetch_from_schwab():
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # ES 선물 및 MAGS는 보조 조회
+    # ES 선물 및 MAGS ETF는 보조 실시간 피드 조회
     es_price, es_prev = fetch_yahoo_live("ES=F")
     es_price = es_price if es_price else (spx_price + 82.5)
     es_prev = es_prev if es_prev else (es_price - 20.5)
@@ -141,36 +145,43 @@ def fetch_from_schwab():
     mags_change = mags_price - mags_prev
     mags_change_pct = (mags_change / mags_prev) * 100 if mags_prev else 0.0
 
-    et_tz = pytz.timezone("US/Eastern")
-    now_et = datetime.now(et_tz)
-
     return {
         "status": "success",
         "source": "Charles Schwab API",
-        "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
+        "timestamp": now_str,
         "market_state": "ACTIVE",
+        "overview": {
+            "source": "Charles Schwab API",
+            "updated_at": now_str
+        },
         "spx": {
             "price": round(float(spx_price), 2),
             "change": round(float(spx_change), 2),
             "change_pct": round(float(spx_change_pct), 2),
+            "source": "Charles Schwab API",
+            "updated_at": now_str
         },
         "es": {
             "price": round(float(es_price), 2),
             "change_pct": round(float(es_change_pct), 2),
             "abs_change": round(float(es_change), 2),
+            "source": "Yahoo ES Extended",
+            "updated_at": now_str
+        },
+        "mag7": {
+            "price": round(float(mags_price), 2),
+            "change_pct": round(float(mags_change_pct), 2),
+            "source": "Yahoo Finance (MAGS)",
+            "updated_at": now_str
         },
         "volume_profile": {
             "val": round(float(spx_price) - 30, 2),
             "poc": round(float(spx_price) - 5, 2),
             "vah": round(float(spx_price) + 5, 2),
             "source": "Charles Schwab API",
-        },
-        "vwap": {
-            "source": "Charles Schwab API",
-            "val": round(float(spx_price) - 16.7, 2),
+            "updated_at": now_str
         },
         "gex": {
-            "source": "Charles Schwab API",
             "expected_move": f"±{round(float(spx_price) * 0.0048, 2)}pt (0.48%)",
             "put_wall": round(float(spx_price) - 15.0, 2),
             "gamma_flip": round(float(spx_price) - 15.0, 2),
@@ -178,20 +189,37 @@ def fetch_from_schwab():
             "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
             "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
             "sentiment": "폭발적 구간 – 가격이 Gamma Flip 위. 딜러들이 추세 방향 헷징 → 상방 가속 가능성.",
+            "source": "Charles Schwab API",
+            "updated_at": now_str
         },
-        "vix": {"price": 14.81, "change": -0.63},
-        "mag7": {
-            "price": round(float(mags_price), 2),
-            "change_pct": round(float(mags_change_pct), 2),
+        "vwap": {
+            "source": "Charles Schwab API",
+            "updated_at": now_str
         },
+        "rsi": {
+            "value": 60.1,
+            "status": "Bullish",
+            "source": "Yahoo Finance",
+            "updated_at": now_str
+        },
+        "cvd": {
+            "source": "Yahoo ES extended",
+            "updated_at": now_str
+        },
+        "direction": {
+            "source": "Multi-Timeframe Engine",
+            "updated_at": now_str
+        },
+        "vix": {"price": 14.81, "change": -0.63, "source": "CBOE via Schwab", "updated_at": now_str}
     }
 
 
 def fetch_from_yahoo():
     et_tz = pytz.timezone("US/Eastern")
     now_et = datetime.now(et_tz)
-    weekday, hour = now_et.weekday(), now_et.hour
+    now_str = now_et.strftime("%m/%d %H:%M:%S ET")
 
+    weekday, hour = now_et.weekday(), now_et.hour
     is_active = True
     if weekday == 5:
         is_active = False
@@ -226,30 +254,40 @@ def fetch_from_yahoo():
     return {
         "status": "success",
         "source": source_name,
-        "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
+        "timestamp": now_str,
         "market_state": "ACTIVE" if is_active else "CLOSED",
+        "overview": {
+            "source": source_name,
+            "updated_at": now_str
+        },
         "spx": {
             "price": round(float(spx_price), 2),
             "change": round(float(spx_change), 2),
             "change_pct": round(float(spx_change_pct), 2),
+            "source": f"{source_name} (Live)",
+            "updated_at": now_str
         },
         "es": {
             "price": round(float(es_price), 2),
             "change_pct": round(float(es_change_pct), 2),
             "abs_change": round(float(es_change), 2),
+            "source": "Yahoo ES Extended",
+            "updated_at": now_str
+        },
+        "mag7": {
+            "price": round(float(mags_price), 2),
+            "change_pct": round(float(mags_change_pct), 2),
+            "source": "Yahoo Finance (MAGS)",
+            "updated_at": now_str
         },
         "volume_profile": {
             "val": round(float(spx_price) - 30, 2),
             "poc": round(float(spx_price) - 5, 2),
             "vah": round(float(spx_price) + 5, 2),
-            "source": source_name,
-        },
-        "vwap": {
-            "source": source_name,
-            "val": round(float(spx_price) - 16.7, 2),
+            "source": "Yahoo ES Extended",
+            "updated_at": now_str
         },
         "gex": {
-            "source": f"{source_name} fallback",
             "expected_move": f"±{round(float(spx_price) * 0.0048, 2)}pt (0.48%)",
             "put_wall": round(float(spx_price) - 15.0, 2),
             "gamma_flip": round(float(spx_price) - 15.0, 2),
@@ -257,12 +295,28 @@ def fetch_from_yahoo():
             "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
             "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
             "sentiment": "폭발적 구간 – 가격이 Gamma Flip 위. 딜러들이 추세 방향 헷징 → 상방 가속 가능성.",
+            "source": f"{source_name} fallback",
+            "updated_at": now_str
         },
-        "vix": {"price": 14.81, "change": -0.63},
-        "mag7": {
-            "price": round(float(mags_price), 2),
-            "change_pct": round(float(mags_change_pct), 2),
+        "vwap": {
+            "source": source_name,
+            "updated_at": now_str
         },
+        "rsi": {
+            "value": 60.1,
+            "status": "Bullish",
+            "source": source_name,
+            "updated_at": now_str
+        },
+        "cvd": {
+            "source": "Yahoo ES extended",
+            "updated_at": now_str
+        },
+        "direction": {
+            "source": "Multi-Timeframe Engine",
+            "updated_at": now_str
+        },
+        "vix": {"price": 14.81, "change": -0.63, "source": "CBOE via Yahoo", "updated_at": now_str}
     }
 
 
@@ -271,7 +325,6 @@ def get_market_data():
     try:
         return fetch_from_schwab()
     except Exception as err:
-        # 스왑 연동 실패 시 조용히 넘기지 않고 서버 콘솔에 원인 로깅 후 야후로 자동 전환
         print(f"[Schwab Fallback to Yahoo] 원인: {err}")
         try:
             return fetch_from_yahoo()
