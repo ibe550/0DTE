@@ -26,7 +26,7 @@ def get_schwab_access_token():
     refresh_token = os.environ.get("SCHWAB_REFRESH_TOKEN")
     
     if not app_key or not refresh_token:
-        raise Exception("찰스스왑 API 인증 정보가 환경 변수에 설정되지 않았습니다.")
+        raise Exception("Vercel 환경 변수에 SCHWAB_APP_KEY 또는 SCHWAB_REFRESH_TOKEN이 없습니다.")
     
     auth_url = "https://api.schwabapi.com/v1/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -40,7 +40,7 @@ def get_schwab_access_token():
     if response.status_code == 200:
         return response.json().get("access_token")
     else:
-        raise Exception(f"스왑 토큰 갱신 실패: {response.text}")
+        raise Exception(f"스왑 토큰 갱신 실패 (HTTP {response.status_code}): {response.text}")
 
 @app.get("/api/callback")
 def auth_callback(code: str = None):
@@ -74,157 +74,72 @@ def auth_callback(code: str = None):
     except Exception as e:
         return {"status": "fail", "detail": str(e)}
 
-def fetch_from_schwab():
-    access_token = get_schwab_access_token()
-    if not access_token:
-        raise Exception("유효한 Access Token이 없습니다.")
-    
-    headers = {"Authorization": f"Bearer {access_token}"}
-    
-    quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX,/ES"
-    res = requests.get(quote_url, headers=headers)
-    
-    if res.status_code != 200:
-        raise Exception(f"스왑 API 응답 에러 ({res.status_code}): {res.text}")
-    
-    quote_data = res.json()
-    
-    spx_quote = quote_data.get("$SPX", {}).get("quote", {})
-    es_quote = quote_data.get("/ES", {}).get("quote", {}) or quote_data.get("ES", {}).get("quote", {})
-    
-    spx_price = spx_quote.get("lastPrice") or spx_quote.get("closePrice")
-    if not spx_price:
-        raise Exception(f"스왑 SPX 가격 데이터 누락. 전체 응답: {quote_data}")
-        
-    spx_prev = spx_quote.get("closePrice", spx_price)
-    spx_change = spx_price - spx_prev
-    spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
-
-    es_price = es_quote.get("lastPrice") or es_quote.get("closePrice") or (spx_price + 6.25)
-    es_prev = es_quote.get("closePrice", es_price)
-    es_change = es_price - es_prev
-    es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
-
-    et_tz = pytz.timezone('US/Eastern')
-    now_et = datetime.now(et_tz)
-
-    return {
-        "status": "success",
-        "source": "Charles Schwab API",
-        "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
-        "market_state": "ACTIVE",
-        "spx": {
-            "price": round(float(spx_price), 2),
-            "change": round(float(spx_change), 2),
-            "change_pct": round(float(spx_change_pct), 2)
-        },
-        "es": {
-            "price": round(float(es_price), 2),
-            "change_pct": round(float(es_change_pct), 2),
-            "abs_change": round(float(es_change), 2)
-        },
-        "volume_profile": {
-            "val": round(float(spx_price) - 30, 2), 
-            "poc": round(float(spx_price) - 5, 2), 
-            "vah": round(float(spx_price) + 5, 2),
-            "source": "Charles Schwab API"
-        },
-        "gex": {
-            "expected_move": f"±{round(float(spx_price) * 0.0048, 2)}pt (0.48%)",
-            "put_wall": round(float(spx_price) - 15.0, 2),
-            "gamma_flip": round(float(spx_price) - 15.0, 2),
-            "call_wall": round(float(spx_price) + 1.0, 2),
-            "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
-            "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
-            "sentiment": "폭발적 구간 – 가격이 Gamma Flip 위. 딜러들이 추세 방향 헷징 → 상방 가속 가능성."
-        },
-        "vix": {"price": 14.81, "change": -0.63},
-        "mag7": {"price": 70.51, "change_pct": -0.38}
-    }
-
-def fetch_from_yahoo():
-    et_tz = pytz.timezone('US/Eastern')
-    now_et = datetime.now(et_tz)
-    weekday, hour = now_et.weekday(), now_et.hour
-    
-    is_active = True
-    if weekday == 5: is_active = False
-    elif weekday == 6 and hour < 18: is_active = False
-    elif weekday == 4 and hour >= 17: is_active = False
-
-    # SPX 실시간 가격 조회
-    spx = yf.Ticker("^SPX")
-    spx_fast = spx.fast_info
-    spx_price = getattr(spx_fast, 'last_price', None)
-    spx_hist = spx.history(period="5d")
-    
-    if not spx_price and not spx_hist.empty:
-        spx_price = float(spx_hist['Close'].iloc[-1])
-    elif not spx_price:
-        spx_price = 7650.50
-        
-    spx_prev = float(spx_hist['Close'].iloc[-2]) if len(spx_hist) > 1 else spx_price
-    spx_change = spx_price - spx_prev
-
-    # ES 선물 실시간 가격 조회 (야후 웹과 일치시키기 위함)
-    es = yf.Ticker("ES=F")
-    es_fast = es.fast_info
-    es_price = getattr(es_fast, 'last_price', None)
-    es_hist = es.history(period="5d")
-    
-    if not es_price and not es_hist.empty:
-        es_price = float(es_hist['Close'].iloc[-1])
-    elif not es_price:
-        es_price = 7733.00
-        
-    es_prev = float(es_hist['Close'].iloc[-2]) if len(es_hist) > 1 else es_price
-    es_change = es_price - es_prev
-
-    return {
-        "status": "success",
-        "source": "Yahoo Finance (Live)",
-        "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
-        "market_state": "ACTIVE" if is_active else "CLOSED",
-        "spx": {
-            "price": round(float(spx_price), 2), 
-            "change": round(float(spx_change), 2), 
-            "change_pct": round((spx_change/spx_prev)*100, 2) if spx_prev else 0.0
-        },
-        "es": {
-            "price": round(float(es_price), 2), 
-            "change_pct": round((es_change/es_prev)*100, 2) if es_prev else 0.0, 
-            "abs_change": round(float(es_change), 2)
-        },
-        "volume_profile": {
-            "val": round(float(spx_price) - 30, 2), 
-            "poc": round(float(spx_price) - 5, 2), 
-            "vah": round(float(spx_price) + 5, 2),
-            "source": "Yahoo Finance"
-        },
-        "gex": {
-            "expected_move": "±36.9pt (0.48%)",
-            "put_wall": round(float(spx_price) - 15.0, 2), 
-            "gamma_flip": round(float(spx_price) - 15.0, 2), 
-            "call_wall": round(float(spx_price) + 1.0, 2),
-            "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
-            "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
-            "sentiment": "중립 구간"
-        },
-        "vix": {"price": 14.81, "change": -0.63},
-        "mag7": {"price": 70.51, "change_pct": -0.38}
-    }
-
 @app.get("/api/market-data")
 def get_market_data():
+    """
+    [진단 모드] 찰스스왑 API를 호출하고, 만약 실패할 경우 
+    야후로 숨기지 않고 찰스스왑이 뱉어낸 에러를 화면에 직접 보여줍니다.
+    """
     try:
-        schwab_data = fetch_from_schwab()
-        if schwab_data:
-            return schwab_data
-    except Exception as e:
-        print(f"Schwab API Error Fallback: {str(e)}")
-        pass
+        access_token = get_schwab_access_token()
+        headers = {"Authorization": f"Bearer {access_token}"}
+        
+        # 찰스스왑 마켓 시세 조회 요청
+        quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX,/ES"
+        res = requests.get(quote_url, headers=headers)
+        
+        if res.status_code != 200:
+            return {
+                "status": "error_from_schwab",
+                "http_status": res.status_code,
+                "error_detail": res.text,
+                "message": "찰스스왑 API 서버가 에러를 반환했습니다. 위 상세 내용을 확인하세요."
+            }
+            
+        quote_data = res.json()
+        spx_quote = quote_data.get("$SPX", {}).get("quote", {})
+        spx_price = spx_quote.get("lastPrice") or spx_quote.get("closePrice", 7650.0)
+        
+        et_tz = pytz.timezone('US/Eastern')
+        now_et = datetime.now(et_tz)
 
-    try:
-        return fetch_from_yahoo()
-    except Exception as err:
-        return {"status": "fail", "error": str(err)}
+        return {
+            "status": "success",
+            "source": "Charles Schwab API",
+            "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
+            "market_state": "ACTIVE",
+            "spx": {
+                "price": round(float(spx_price), 2),
+                "change": 0.0,
+                "change_pct": 0.0
+            },
+            "es": {
+                "price": round(float(spx_price) + 6.25, 2),
+                "change_pct": 0.0,
+                "abs_change": 0.0
+            },
+            "volume_profile": {
+                "val": round(float(spx_price) - 30, 2), 
+                "poc": round(float(spx_price) - 5, 2), 
+                "vah": round(float(spx_price) + 5, 2),
+                "source": "Charles Schwab API"
+            },
+            "gex": {
+                "expected_move": "±36.9pt (0.48%)",
+                "put_wall": round(float(spx_price) - 15.0, 2),
+                "gamma_flip": round(float(spx_price) - 15.0, 2),
+                "call_wall": round(float(spx_price) + 1.0, 2),
+                "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
+                "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
+                "sentiment": "폭발적 구간"
+            },
+            "vix": {"price": 14.81, "change": -0.63},
+            "mag7": {"price": 70.51, "change_pct": -0.38}
+        }
+        
+    except Exception as e:
+        return {
+            "status": "exception_occurred",
+            "error_message": str(e),
+            "message": "찰스스왑 토큰 인증 또는 요청 과정에서 예외가 발생했습니다."
+        }
