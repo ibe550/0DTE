@@ -70,7 +70,7 @@
         </div>
     </div>
 
-    <!-- ================= 3. 메인 시세 그리드 (4열 유지) ================= -->
+    <!-- ================= 3. 메인 시세 그리드 (4열) ================= -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="text-[9px] md:text-[11px] text-slate-400 font-medium">SPX</div>
@@ -104,31 +104,27 @@
         </div>
     </div>
 
-    <!-- ================= 4. 국채 금리 및 스프레드 ================= -->
+    <!-- ================= 4. 국채 금리 그리드 ================= -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">2Y YIELD</div>
             <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">4.757%</div>
             <div class="text-[8px] md:text-[10px] font-semibold text-emerald-400">+1.4 bp</div>
-            <div class="text-[7px] md:text-[9px] text-slate-500 mt-0.5 hidden sm:block">Tradeweb delayed · 17:05:00 ET</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y YIELD</div>
             <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">5.000%</div>
             <div class="text-[8px] md:text-[10px] font-semibold text-emerald-400">+0.4 bp</div>
-            <div class="text-[7px] md:text-[9px] text-slate-500 mt-0.5 hidden sm:block">Tradeweb delayed · 17:05:00 ET</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">30Y YIELD</div>
             <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">5.328%</div>
             <div class="text-[8px] md:text-[10px] font-semibold text-emerald-400">+0.1 bp</div>
-            <div class="text-[7px] md:text-[9px] text-slate-500 mt-0.5 hidden sm:block">Tradeweb delayed · 17:05:00 ET</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y-2Y SPREAD</div>
             <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">+24 bp</div>
             <div class="text-[8px] md:text-[10px] font-semibold text-slate-400 truncate">-1.0 bp</div>
-            <div class="text-[7px] md:text-[9px] text-slate-400 mt-0.5 hidden sm:block">Normal yield curve</div>
         </div>
     </div>
 
@@ -162,7 +158,7 @@
         </div>
     </div>
 
-    <!-- ================= 6. GEX · 감마 노출도 섹션 ================= -->
+    <!-- ================= 6. GEX · 감마 노출도 & 개선된 EM Range 시각화 ================= -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-[11px] md:text-xs font-bold text-slate-200">⚡ GEX · 감마 노출도</h2>
@@ -172,44 +168,88 @@
                 <span class="inline-block mt-0.5 text-[9px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.2 rounded font-bold">⚡ Explosive</span>
             </div>
         </div>
+
         <div class="flex justify-between items-center mb-2">
-            <span class="text-[10px] md:text-xs font-bold text-slate-300">EXPECTED MOVE</span>
+            <span class="text-[10px] md:text-xs font-bold text-slate-300">EXPECTED MOVE (1D)</span>
             <span id="gex-em" class="text-[10px] md:text-xs font-bold text-blue-400">±36.9pt (0.48%)</span>
         </div>
 
-        <div class="grid grid-cols-3 gap-1.5 text-center mb-2">
+        <div class="grid grid-cols-3 gap-1.5 text-center mb-3">
             <div class="bg-rose-950/20 border border-rose-900/40 p-1.5 rounded">
                 <div class="text-[8px] md:text-[10px] text-rose-400 font-semibold leading-tight">PUT VOL WALL</div>
-                <div id="gex-put-wall" class="text-xs md:text-base font-bold text-rose-300">7635</div>
+                <div id="gex-put-wall" class="text-xs md:text-base font-bold text-rose-300">7635.5</div>
                 <div class="text-[8px] text-slate-400 mt-0.5">SPY 거래량 프록시</div>
             </div>
             <div class="bg-purple-950/20 border border-purple-900/40 p-1.5 rounded">
                 <div class="text-[8px] md:text-[10px] text-purple-400 font-semibold leading-tight">GAMMA FLIP (OI)</div>
-                <div id="gex-flip" class="text-xs md:text-base font-bold text-purple-300">7635</div>
+                <div id="gex-flip" class="text-xs md:text-base font-bold text-purple-300">7635.5</div>
                 <div class="text-[8px] text-purple-300/80 mt-0.5">전환점</div>
             </div>
             <div class="bg-emerald-950/20 border border-emerald-900/40 p-1.5 rounded">
                 <div class="text-[8px] md:text-[10px] text-emerald-400 font-semibold leading-tight">CALL VOL WALL</div>
-                <div id="gex-call-wall" class="text-xs md:text-base font-bold text-emerald-300">7635</div>
+                <div id="gex-call-wall" class="text-xs md:text-base font-bold text-emerald-300">7651.5</div>
                 <div class="text-[8px] text-slate-400 mt-0.5">SPY 거래량 프록시</div>
             </div>
         </div>
 
-        <div class="w-full bg-slate-900 h-3 rounded relative overflow-hidden border border-slate-800 mb-2">
-            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-400 z-10"></div>
-            <div class="absolute left-1/4 right-1/4 top-0 bottom-0 bg-indigo-600/50 rounded"></div>
-            <div class="absolute bottom-0 left-[20%] text-[8px] text-slate-500">7614</div>
-            <div class="absolute bottom-0 left-[48%] text-[8px] text-amber-400 font-bold">OF</div>
-            <div class="absolute bottom-0 left-[53%] text-[8px] text-white font-bold">7651</div>
-            <div class="absolute bottom-0 right-[15%] text-[8px] text-slate-500">7687</div>
+        <!-- 🚀 [개선됨] 직관적이고 큼직한 EM Range 게이지 바 영역 -->
+        <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3 mb-2.5">
+            <!-- 1. 게이지 상단: 현재가 및 주요 지점 동적 핀 (Marker Label) -->
+            <div class="relative h-6 text-[10px] font-mono select-none">
+                <!-- 현재가 핀 -->
+                <div id="marker-current" class="absolute -translate-x-1/2 flex flex-col items-center transition-all duration-300" style="left: 50%;">
+                    <span class="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded text-[9px] shadow-sm flex items-center">
+                        현 <span id="marker-current-val" class="ml-0.5">7650.5</span>
+                    </span>
+                    <span class="w-0.5 h-1.5 bg-amber-400"></span>
+                </div>
+            </div>
+
+            <!-- 2. 게이지 본체: 전체 가격 축 & 가운데 보라색 EM 기대변동 구간 -->
+            <div class="relative h-4 bg-slate-900 rounded-full border border-slate-700/60 overflow-visible my-1 flex items-center">
+                <!-- EM Range (보라색 하이라이트 구간) -->
+                <div id="em-range-bar" class="absolute h-full bg-indigo-600/70 border-x-2 border-indigo-400 rounded-sm shadow-inner transition-all duration-300" style="left: 25%; width: 50%;">
+                    <div class="w-full h-full flex items-center justify-center text-[9px] font-bold text-indigo-100 tracking-wider">
+                        EM RANGE
+                    </div>
+                </div>
+
+                <!-- Put Wall 위치선 -->
+                <div id="marker-put-line" class="absolute top-0 bottom-0 w-0.5 bg-rose-400 z-10" style="left: 35%;"></div>
+                <!-- Call Wall 위치선 -->
+                <div id="marker-call-line" class="absolute top-0 bottom-0 w-0.5 bg-emerald-400 z-10" style="left: 65%;"></div>
+            </div>
+
+            <!-- 3. 게이지 하단: 명확한 가격 눈금 수치 (Low, High, Axis Bounds) -->
+            <div class="flex justify-between items-center text-[10px] font-mono mt-1 text-slate-400">
+                <div>
+                    <span class="text-[8px] text-slate-500 block">AXIS MIN</span>
+                    <span id="scale-min" class="font-bold text-slate-400">7600</span>
+                </div>
+                
+                <!-- EM Low & High 명확한 표시 -->
+                <div class="text-center px-2 py-0.5 bg-indigo-950/60 border border-indigo-800/60 rounded">
+                    <span class="text-indigo-300 text-[9px] font-semibold">EM 하단: </span>
+                    <span id="em-low-val" class="text-indigo-200 font-bold text-xs">7613.6</span>
+                    <span class="text-slate-500 mx-1">~</span>
+                    <span class="text-indigo-300 text-[9px] font-semibold">EM 상단: </span>
+                    <span id="em-high-val" class="text-indigo-200 font-bold text-xs">7687.4</span>
+                </div>
+
+                <div class="text-right">
+                    <span class="text-[8px] text-slate-500 block">AXIS MAX</span>
+                    <span id="scale-max" class="font-bold text-slate-400">7700</span>
+                </div>
+            </div>
         </div>
 
-        <div class="flex flex-wrap gap-2 md:gap-3 text-[9px] text-slate-400 mb-2 pt-0.5">
+        <!-- 범례 리스트 -->
+        <div class="flex flex-wrap gap-2.5 md:gap-4 text-[9px] text-slate-400 mb-2 pt-0.5">
             <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span><span>현재가</span></div>
             <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-rose-400 inline-block"></span><span>P-Put Wall</span></div>
             <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-purple-400 inline-block"></span><span>GF-Gamma Flip</span></div>
             <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span><span>C-Call Wall</span></div>
-            <div class="flex items-center space-x-1"><span class="w-3 h-1 bg-slate-600 inline-block rounded"></span><span>EM Range</span></div>
+            <div class="flex items-center space-x-1"><span class="w-3 h-1.5 bg-indigo-500 inline-block rounded"></span><span>EM Range (기대변동범위)</span></div>
         </div>
 
         <div class="text-[10px] md:text-xs font-bold text-slate-300 mb-1.5">GAMMA EXPOSURE BY STRIKE</div>
@@ -246,7 +286,7 @@
         </div>
     </div>
 
-    <!-- ================= 7. 1H 차트 · VWAP BANDS 섹션 (동적 타임프레임 연동) ================= -->
+    <!-- ================= 7. 1H 차트 · VWAP BANDS 섹션 ================= -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2">
             <div class="flex items-center space-x-1.5 text-[11px] md:text-xs font-bold text-blue-400">
@@ -259,7 +299,6 @@
             </div>
         </div>
         
-        <!-- 시간대별 선택 버튼 그룹 -->
         <div class="flex space-x-1 mb-2" id="vwap-tf-group">
             <button onclick="changeVwapTimeframe('1m')" class="vwap-tf-btn px-2 py-0.5 rounded text-[9px] bg-slate-800 text-slate-300" data-tf="1m">1m</button>
             <button onclick="changeVwapTimeframe('5m')" class="vwap-tf-btn px-2 py-0.5 rounded text-[9px] bg-slate-800 text-slate-300" data-tf="5m">5m</button>
@@ -270,7 +309,6 @@
 
         <div class="bg-slate-950 h-36 md:h-44 rounded border border-slate-800 relative flex items-center justify-center mb-2 overflow-hidden">
             <svg id="vwap-svg-chart" class="absolute inset-0 w-full h-full p-2 transition-all duration-300" preserveAspectRatio="none" viewBox="0 0 300 100">
-                <!-- 동적 렌더링 경로 -->
                 <path id="vwap-line" d="M 10 70 Q 60 40, 100 80 T 200 50 T 290 20" fill="none" stroke="#10b981" stroke-width="2"/>
                 <path id="vwap-sigma-pos" d="M 10 50 Q 60 20, 100 60 T 200 30 T 290 10" fill="none" stroke="#8b5cf6" stroke-dasharray="3,3" stroke-width="1.2"/>
                 <path id="vwap-sigma-neg" d="M 10 90 Q 60 60, 100 100 T 200 70 T 290 30" fill="none" stroke="#8b5cf6" stroke-dasharray="3,3" stroke-width="1.2"/>
@@ -313,7 +351,7 @@
         </div>
     </div>
 
-    <!-- ================= 9. ES 24H VOLUME + CVD 섹션 (동적 타임프레임 연동) ================= -->
+    <!-- ================= 9. ES 24H VOLUME + CVD 섹션 ================= -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2">
             <div class="text-[11px] md:text-xs font-bold text-slate-200">📊 ES 24H VOLUME + CVD — <span id="cvd-title-tf">15m</span></div>
@@ -463,11 +501,10 @@
         </div>
     </div>
 
-    <!-- ================= 실시간 연동 & 시간대 변경 스크립트 ================= -->
+    <!-- ================= 실시간 연동 & EM 동적 게이지 계산 스크립트 ================= -->
     <script>
         let currentSpxPrice = 7650.50;
 
-        // 1. 시계
         function updateClock() {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false });
@@ -476,17 +513,54 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // 2. VWAP 타임프레임 동적 변경 함수
+        // 🎯 EM Range 및 감마 핀 위치 동적 계산 함수 (0% ~ 100% 매핑)
+        function updateEmGauge(spx, emPt, putWall, callWall) {
+            const emHalf = emPt || 36.9;
+            const emLow = spx - emHalf;
+            const emHigh = spx + emHalf;
+
+            // 전체 축의 최소값과 최대값 (여유 폭을 주어 바 전체에 균형 배치)
+            const axisMin = Math.floor((emLow - 15) / 10) * 10;
+            const axisMax = Math.ceil((emHigh + 15) / 10) * 10;
+            const totalRange = axisMax - axisMin;
+
+            // 퍼센트 계산 헬퍼
+            const getPct = (val) => Math.max(2, Math.min(98, ((val - axisMin) / totalRange) * 100));
+
+            const curPct = getPct(spx);
+            const emLowPct = getPct(emLow);
+            const emHighPct = getPct(emHigh);
+            const putPct = getPct(putWall || (spx - 15));
+            const callPct = getPct(callWall || (spx + 1));
+
+            // 1. 눈금 수치 업데이트
+            document.getElementById('scale-min').innerText = axisMin;
+            document.getElementById('scale-max').innerText = axisMax;
+            document.getElementById('em-low-val').innerText = emLow.toFixed(1);
+            document.getElementById('em-high-val').innerText = emHigh.toFixed(1);
+            document.getElementById('marker-current-val').innerText = spx.toFixed(1);
+
+            // 2. EM Range 바 폭 및 위치 지정
+            const emBar = document.getElementById('em-range-bar');
+            emBar.style.left = `${emLowPct}%`;
+            emBar.style.width = `${emHighPct - emLowPct}%`;
+
+            // 3. 현재가 마커 및 Wall 라인 위치 동적 이동
+            document.getElementById('marker-current').style.left = `${curPct}%`;
+            document.getElementById('marker-put-line').style.left = `${putPct}%`;
+            document.getElementById('marker-call-line').style.left = `${callPct}%`;
+        }
+
+        // VWAP 타임프레임 전환
         const vwapOffsets = {
-            '1m': { offset: -2.1, sigma: 4.5, path: "M 10 65 Q 80 75, 140 55 T 220 60 T 290 45" },
-            '5m': { offset: -6.4, sigma: 8.0, path: "M 10 68 Q 70 50, 120 70 T 210 52 T 290 35" },
-            '15m': { offset: -11.2, sigma: 12.5, path: "M 10 70 Q 65 45, 110 75 T 200 50 T 290 28" },
-            '30m': { offset: -14.8, sigma: 15.0, path: "M 10 72 Q 60 42, 105 78 T 200 48 T 290 24" },
-            '1H': { offset: -16.7, sigma: 18.2, path: "M 10 70 Q 60 40, 100 80 T 200 50 T 290 20" }
+            '1m': { offset: -2.1, path: "M 10 65 Q 80 75, 140 55 T 220 60 T 290 45" },
+            '5m': { offset: -6.4, path: "M 10 68 Q 70 50, 120 70 T 210 52 T 290 35" },
+            '15m': { offset: -11.2, path: "M 10 70 Q 65 45, 110 75 T 200 50 T 290 28" },
+            '30m': { offset: -14.8, path: "M 10 72 Q 60 42, 105 78 T 200 48 T 290 24" },
+            '1H': { offset: -16.7, path: "M 10 70 Q 60 40, 100 80 T 200 50 T 290 20" }
         };
 
         function changeVwapTimeframe(tf) {
-            // 버튼 활성화 스타일 전환
             document.querySelectorAll('#vwap-tf-group .vwap-tf-btn').forEach(btn => {
                 if (btn.getAttribute('data-tf') === tf) {
                     btn.className = "vwap-tf-btn px-2 py-0.5 rounded text-[9px] bg-blue-600 text-white font-bold";
@@ -495,17 +569,13 @@
                 }
             });
 
-            // 헤더 텍스트 및 계산된 VWAP 값 갱신
             document.getElementById('vwap-title-tf').innerText = tf;
             const config = vwapOffsets[tf] || vwapOffsets['1H'];
-            const calculatedVwap = (currentSpxPrice + config.offset).toFixed(2);
-            document.getElementById('vwap-val-display').innerText = `VWAP ${calculatedVwap}`;
-
-            // SVG 차트 경로 업데이트
+            document.getElementById('vwap-val-display').innerText = `VWAP ${(currentSpxPrice + config.offset).toFixed(2)}`;
             document.getElementById('vwap-line').setAttribute('d', config.path);
         }
 
-        // 3. CVD 타임프레임 동적 변경 함수
+        // CVD 타임프레임 전환
         const cvdConfigs = {
             '1m': { bars: '120개 1m', vol: '최근 봉 420 · 구간 합계 45.2K', buy: 54, buyK: '24.4K', sellK: '20.8K', text: 'Balanced flow — 54% buy vs 46% sell.' },
             '5m': { bars: '24개 5m', vol: '최근 봉 1.1K · 구간 합계 32.6K', buy: 72, buyK: '23.5K', sellK: '9.1K', text: 'Solid buying pressure — 72% buy volume.' },
@@ -533,23 +603,24 @@
             document.getElementById('cvd-summary-box').innerText = cfg.text;
         }
 
-        // 4. 백엔드 실시간 마켓 데이터 호출
+        // 백엔드 API 연동
         async function fetchMarketData() {
             try {
                 const res = await fetch('https://0-dte-seven.vercel.app/api/market-data');
                 const data = await res.json();
 
                 if (data.status === "success") {
+                    let putW = 7635.5, callW = 7651.5;
+
                     if (data.spx) {
                         currentSpxPrice = Number(data.spx.price);
                         document.getElementById('spx-price').innerText = data.spx.price;
                         document.getElementById('spx-change').innerText = `${data.spx.change >= 0 ? '+' : ''}${data.spx.change} (${data.spx.change_pct >= 0 ? '+' : ''}${data.spx.change_pct}%)`;
-                        
-                        // 활성화된 타임프레임 기준으로 VWAP 수치 재계산
+
                         const activeBtn = document.querySelector('#vwap-tf-group .bg-blue-600');
                         const activeTf = activeBtn ? activeBtn.getAttribute('data-tf') : '1H';
                         const cfg = vwapOffsets[activeTf] || vwapOffsets['1H'];
-                        document.getElementById('vwap-val-display').innerText = `VWAP ${(currentSpxPrice + cfg.offset).toFixed(2)}`;
+                        document.getElementById('vwap-val-display').innerText = `VWAP ${(currentSpxPrice + config.offset).toFixed(2)}`;
                     }
 
                     if (data.es) {
@@ -576,7 +647,12 @@
                         document.getElementById('gex-put-wall').innerText = data.gex.put_wall;
                         document.getElementById('gex-flip').innerText = data.gex.gamma_flip;
                         document.getElementById('gex-call-wall').innerText = data.gex.call_wall;
+                        putW = Number(data.gex.put_wall);
+                        callW = Number(data.gex.call_wall);
                     }
+
+                    // 💡 EM Range 게이지 바 실시간 수치 및 위치 재계산
+                    updateEmGauge(currentSpxPrice, 36.9, putW, callW);
 
                     if (data.market_state) {
                         const badge = document.getElementById('es-status-badge');
