@@ -1,3 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SPX 0DTE DEFENDER</title>
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* CDN 차단 시에도 스타일이 절대 깨지지 않도록 하는 방어 CSS */
+        body { 
+            background-color: #080d1a !important; 
+            color: #f3f4f6 !important; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+            padding: 8px;
+        }
+        .card { 
+            background-color: #0f172a !important; 
+            border: 1px solid #1e293b !important; 
+            border-radius: 6px !important; 
+        }
+        /* SVG 아이콘이 화면 전체로 폭주하지 않도록 기본 크기 제약 */
+        svg {
+            box-sizing: border-box;
+        }
+        .icon-sm {
+            width: 14px !important;
+            height: 14px !important;
+            min-width: 14px !important;
+            max-width: 14px !important;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
+
+    <!-- ================= 1. 상단 타이틀 & 헤더 ================= -->
+    <div class="flex justify-between items-center px-1 mb-2">
+        <div class="flex items-center space-x-2">
+            <span class="text-blue-500 font-bold text-sm md:text-base flex items-center">
+                <svg class="icon-sm mr-1 inline text-blue-500" style="width:16px;height:16px;min-width:16px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                </svg>
+                SPX 0DTE DEFENDER
+            </span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v12.0</span>
+            <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Source: Connecting...</span>
+        </div>
+        <div class="flex items-center space-x-2 text-[10px] text-slate-400">
+            <span id="market-status-pill" class="flex items-center">
+                <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1 animate-pulse"></span> Market Active
+            </span>
+            <span class="text-slate-500 font-mono" id="current-clock">ET</span>
+        </div>
+    </div>
+
     <!-- ================= 2. 뉴스 리스크 & 속보 ================= -->
     <div class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-slate-800">
         <div class="flex items-center space-x-2 mb-2">
@@ -8,13 +66,15 @@
         </div>
         <div class="flex justify-between items-center mb-1 text-[10px] text-slate-400">
             <div class="flex items-center space-x-1 font-semibold">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <!-- 번개 아이콘 크기 고정 (14px) -->
+                <svg class="icon-sm text-slate-400" style="width:14px;height:14px;min-width:14px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
                 <span>LATEST HIGH-IMPACT NEWS</span>
             </div>
             <div class="text-[9px] text-slate-500">Google News · <span id="news-sync-time">Latest item 09/20 08:34:00 ET</span></div>
         </div>
 
-        <!-- 기본 노출 뉴스 2개 (실제 언론사 링크 연결) -->
         <div class="flex justify-between items-start text-xs border-t border-slate-800/80 pt-1.5 mb-1">
             <a href="https://finance.yahoo.com/topic/fed/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline text-[11px] md:text-xs truncate pr-2">
                 'This could be something more substantial': Wall Street braces for more Fed rate hikes <span class="text-slate-500">- Yahoo Finance</span>
@@ -28,7 +88,6 @@
             <span class="text-[10px] text-slate-500 whitespace-nowrap">3h ago</span>
         </div>
 
-        <!-- 펼쳐지는 추가 뉴스 4개 (실제 언론사 링크 연결) -->
         <div id="more-news-panel" class="hidden space-y-1.5 border-t border-slate-800/60 pt-1.5 mb-1.5">
             <div class="flex justify-between items-start text-xs">
                 <a href="https://www.bloomberg.com/markets" target="_blank" rel="noopener noreferrer" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
@@ -59,7 +118,1154 @@
         <div class="text-center border-t border-slate-800/60 pt-1">
             <button onclick="toggleMoreNews()" id="more-news-btn" class="text-[10px] text-slate-400 hover:text-slate-200 font-semibold tracking-wider flex items-center justify-center mx-auto space-x-1">
                 <span id="more-news-btn-text">MORE NEWS · 4</span>
-                <svg id="more-news-arrow" class="w-3 h-3 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                <svg id="more-news-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                </svg>
             </button>
         </div>
     </div>
+
+    <!-- ================= 3. 메인 시세 그리드 (4열) ================= -->
+    <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">SPX</span>
+                <span id="spx-source" class="text-[7px] md:text-[9px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate max-w-[65px] md:max-w-none">Live</span>
+            </div>
+            <div id="spx-price" class="text-sm sm:text-lg md:text-xl font-bold text-emerald-400 tracking-tight truncate">7650.50</div>
+            <div class="flex justify-between items-end">
+                <div id="spx-change" class="text-[8px] md:text-xs font-semibold text-emerald-400 truncate">+0 (0.00%)</div>
+                <div id="spx-time" class="text-[7px] md:text-[8px] text-slate-500 font-mono">Live</div>
+            </div>
+        </div>
+
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-center">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">VIX</span>
+                <span class="text-[10px] md:text-sm font-bold text-emerald-400">14.81</span>
+            </div>
+            <div class="text-[8px] md:text-[10px] text-rose-400 text-right -mt-0.5">-0.63</div>
+            <div class="border-t border-slate-800 pt-1 flex justify-between items-center">
+                <span class="text-[8px] md:text-[10px] text-slate-400 font-medium">VIX 9D</span>
+                <span class="text-[9px] md:text-xs font-bold text-emerald-400">12.27</span>
+            </div>
+            <div class="flex justify-between items-center text-[7px] md:text-[8px] text-slate-500 mt-0.5 font-mono">
+                <span id="vix-source">CBOE</span>
+                <span id="vix-time">Live</span>
+            </div>
+        </div>
+
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between relative">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">ES</span>
+                <span id="es-status-badge" class="text-[8px] md:text-[9px] px-1 py-0.5 rounded font-bold bg-indigo-950 text-indigo-300 border border-indigo-800/60 leading-none">ACTIVE</span>
+            </div>
+            <div id="es-price" class="text-sm sm:text-lg md:text-xl font-bold text-emerald-400 tracking-tight truncate">7738.25</div>
+            <div class="flex justify-between items-end">
+                <div id="es-change" class="text-[8px] md:text-xs font-semibold text-emerald-400 truncate">+0.34%</div>
+                <div id="es-time" class="text-[7px] md:text-[8px] text-slate-500 font-mono">Live</div>
+            </div>
+        </div>
+
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">MAG7</span>
+                <span id="mag7-source" class="text-[7px] md:text-[8px] text-slate-400 bg-slate-800/80 px-1 rounded truncate">MAGS ETF</span>
+            </div>
+            <div id="mag7-price" class="text-sm sm:text-lg md:text-xl font-bold text-rose-400 tracking-tight truncate">70.51</div>
+            <div class="flex justify-between items-end">
+                <div id="mag7-change" class="text-[8px] md:text-xs font-semibold text-rose-400 truncate">-0.27 (-0.38%)</div>
+                <div id="mag7-time" class="text-[7px] md:text-[8px] text-slate-500 font-mono">Live</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 4. 국채 금리 그리드 ================= -->
+    <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">2Y YIELD</div>
+            <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">4.757%</div>
+            <div class="text-[8px] md:text-[10px] font-semibold text-emerald-400">+1.4 bp</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">Tradeweb · 17:05 ET</div>
+        </div>
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y YIELD</div>
+            <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">5.000%</div>
+            <div class="text-[8px] md:text-[10px] font-semibold text-emerald-400">+0.4 bp</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">Tradeweb · 17:05 ET</div>
+        </div>
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">30Y YIELD</div>
+            <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">5.328%</div>
+            <div class="text-[8px] md:text-[10px] font-semibold text-emerald-400">+0.1 bp</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">Tradeweb · 17:05 ET</div>
+        </div>
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y-2Y SPREAD</div>
+            <div class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">+24 bp</div>
+            <div class="text-[8px] md:text-[10px] font-semibold text-slate-400 truncate">-1.0 bp</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">Normal yield curve</div>
+        </div>
+    </div>
+
+    <!-- ================= 5. VOLUME PROFILE 섹션 ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-center mb-1.5">
+            <h2 class="text-[10px] md:text-xs font-bold text-emerald-400 tracking-wide truncate">VOLUME PROFILE · ES EXTENDED VOLUME → SPX PRICE</h2>
+            <div class="text-[9px] text-slate-400 text-right whitespace-nowrap">
+                <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="vp-source">Charles Schwab API</span><br>
+                <span class="text-slate-500 font-mono text-[8px]" id="vp-timestamp">Live Calculated</span>
+            </div>
+        </div>
+        <div class="text-[9px] text-slate-500 mb-2">5pt SPX bins · 70% value area · ES=F RTH + pre/post volume</div>
+        
+        <div class="grid grid-cols-3 gap-1.5 text-center mb-2">
+            <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
+                <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Value Area Low</div>
+                <div id="val-price" class="text-xs md:text-sm font-bold text-white">7665</div>
+            </div>
+            <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
+                <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Point of Control</div>
+                <div id="poc-price" class="text-xs md:text-sm font-bold text-white">7665</div>
+            </div>
+            <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
+                <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Value Area High</div>
+                <div id="vah-price" class="text-xs md:text-sm font-bold text-white">7670</div>
+            </div>
+        </div>
+        <div class="text-[9px] text-slate-500 leading-relaxed">
+            ES=F 정규장·프리·애프터마켓 거래량을 마지막 SPX-ES 정규장 베이시스로 SPX 가격 구간에 매핑한 동적 계산치입니다.
+        </div>
+    </div>
+
+    <!-- ================= 6. GEX · 감마 노출도 & EM Range ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-[11px] md:text-xs font-bold text-slate-200">⚡ GEX · 감마 노출도</h2>
+            <div class="text-right">
+                <div class="text-[9px] text-slate-400">
+                    <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="gex-source">Charles Schwab API</span>
+                </div>
+                <div class="text-[8px] text-slate-500 font-mono" id="gex-time">Data as of Live</div>
+                <span class="inline-block mt-0.5 text-[9px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.2 rounded font-bold">⚡ Explosive</span>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] md:text-xs font-bold text-slate-300">EXPECTED MOVE (1D)</span>
+            <span id="gex-em" class="text-[10px] md:text-xs font-bold text-blue-400">±36.9pt (0.48%)</span>
+        </div>
+
+        <div class="grid grid-cols-3 gap-1.5 text-center mb-3">
+            <div class="bg-rose-950/20 border border-rose-900/40 p-1.5 rounded">
+                <div class="text-[8px] md:text-[10px] text-rose-400 font-semibold leading-tight">PUT VOL WALL</div>
+                <div id="gex-put-wall" class="text-xs md:text-base font-bold text-rose-300">7635.5</div>
+                <div class="text-[8px] text-slate-400 mt-0.5">SPY 거래량 프록시</div>
+            </div>
+            <div class="bg-purple-950/20 border border-purple-900/40 p-1.5 rounded">
+                <div class="text-[8px] md:text-[10px] text-purple-400 font-semibold leading-tight">GAMMA FLIP (OI)</div>
+                <div id="gex-flip" class="text-xs md:text-base font-bold text-purple-300">7635.5</div>
+                <div class="text-[8px] text-purple-300/80 mt-0.5">전환점</div>
+            </div>
+            <div class="bg-emerald-950/20 border border-emerald-900/40 p-1.5 rounded">
+                <div class="text-[8px] md:text-[10px] text-emerald-400 font-semibold leading-tight">CALL VOL WALL</div>
+                <div id="gex-call-wall" class="text-xs md:text-base font-bold text-emerald-300">7651.5</div>
+                <div class="text-[8px] text-slate-400 mt-0.5">SPY 거래량 프록시</div>
+            </div>
+        </div>
+
+        <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3 mb-2.5">
+            <div class="relative h-6 text-[10px] font-mono select-none">
+                <div id="marker-current" class="absolute -translate-x-1/2 flex flex-col items-center transition-all duration-300" style="left: 50%;">
+                    <span class="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded text-[9px] shadow-sm flex items-center">
+                        현 <span id="marker-current-val" class="ml-0.5">7650.5</span>
+                    </span>
+                    <span class="w-0.5 h-1.5 bg-amber-400"></span>
+                </div>
+            </div>
+
+            <div class="relative h-4 bg-slate-900 rounded-full border border-slate-700/60 overflow-visible my-1 flex items-center">
+                <div id="em-range-bar" class="absolute h-full bg-indigo-600/70 border-x-2 border-indigo-400 rounded-sm shadow-inner transition-all duration-300" style="left: 25%; width: 50%;">
+                    <div class="w-full h-full flex items-center justify-center text-[9px] font-bold text-indigo-100 tracking-wider">
+                        EM RANGE
+                    </div>
+                </div>
+                <div id="marker-put-line" class="absolute top-0 bottom-0 w-0.5 bg-rose-400 z-10" style="left: 35%;"></div>
+                <div id="marker-call-line" class="absolute top-0 bottom-0 w-0.5 bg-emerald-400 z-10" style="left: 65%;"></div>
+            </div>
+
+            <div class="flex justify-between items-center text-[10px] font-mono mt-1 text-slate-400">
+                <div>
+                    <span class="text-[8px] text-slate-500 block">AXIS MIN</span>
+                    <span id="scale-min" class="font-bold text-slate-400">7600</span>
+                </div>
+                <div class="text-center px-2 py-0.5 bg-indigo-950/60 border border-indigo-800/60 rounded">
+                    <span class="text-indigo-300 text-[9px] font-semibold">EM 하단: </span>
+                    <span id="em-low-val" class="text-indigo-200 font-bold text-xs">7613.6</span>
+                    <span class="text-slate-500 mx-1">~</span>
+                    <span class="text-indigo-300 text-[9px] font-semibold">EM 상단: </span>
+                    <span id="em-high-val" class="text-indigo-200 font-bold text-xs">7687.4</span>
+                </div>
+                <div class="text-right">
+                    <span class="text-[8px] text-slate-500 block">AXIS MAX</span>
+                    <span id="scale-max" class="font-bold text-slate-400">7700</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2.5 md:gap-4 text-[9px] text-slate-400 mb-2 pt-0.5">
+            <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span><span>현재가</span></div>
+            <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-rose-400 inline-block"></span><span>P-Put Wall</span></div>
+            <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-purple-400 inline-block"></span><span>GF-Gamma Flip</span></div>
+            <div class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span><span>C-Call Wall</span></div>
+            <div class="flex items-center space-x-1"><span class="w-3 h-1.5 bg-indigo-500 inline-block rounded"></span><span>EM Range</span></div>
+        </div>
+
+        <div class="text-[10px] md:text-xs font-bold text-slate-300 mb-1.5">GAMMA EXPOSURE BY STRIKE</div>
+        <div class="grid grid-cols-2 gap-1.5 text-xs mb-2">
+            <div class="bg-slate-900/80 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center">
+                    <span class="text-emerald-400 text-[10px] font-semibold">Positive Gamma</span>
+                    <span class="text-slate-400 text-[9px]">38 strikes</span>
+                </div>
+                <div class="flex justify-between items-baseline mt-0.5">
+                    <span class="text-sm md:text-base font-bold text-white">7685</span>
+                    <span class="text-emerald-400 font-bold text-xs md:text-sm">+29.9M</span>
+                </div>
+                <div class="text-[8px] md:text-[9px] text-slate-500 mt-1">가장 큰 핀닝 성향</div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center">
+                    <span class="text-rose-400 text-[10px] font-semibold">Negative Gamma</span>
+                    <span class="text-slate-400 text-[9px]">36 strikes</span>
+                </div>
+                <div class="flex justify-between items-baseline mt-0.5">
+                    <span class="text-sm md:text-base font-bold text-white">7585</span>
+                    <span class="text-rose-400 font-bold text-xs md:text-sm">-32.2M</span>
+                </div>
+                <div class="text-[8px] md:text-[9px] text-slate-500 mt-1">가장 큰 변동성 확대 성향</div>
+            </div>
+        </div>
+
+        <div class="text-[9px] text-slate-400 mb-2 leading-relaxed">
+            초록색은 딜러 헷징으로 가격을 붙잡는 경향, 빨간색은 움직임을 키울 수 있는 경향입니다. 가격 위치는 위의 Put Wall·Gamma Flip·Call Wall에서 확인하세요.
+        </div>
+        <div class="bg-amber-950/20 border border-amber-900/40 p-2 rounded text-[10px] md:text-xs text-amber-200/90 font-medium leading-tight">
+            폭발적 구간 – 가격이 Gamma Flip 위. 딜러들이 추세 방향 헷징 → 상방 가속 가능성.
+        </div>
+    </div>
+
+    <!-- ================= 7. VWAP BANDS 섹션 ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-center mb-2.5">
+            <div class="flex space-x-1" id="vwap-tf-group">
+                <button onclick="changeVwapTimeframe('1m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+                <button onclick="changeVwapTimeframe('5m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeVwapTimeframe('15m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+                <button onclick="changeVwapTimeframe('30m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+                <button onclick="changeVwapTimeframe('1H')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+            </div>
+            <div class="text-right">
+                <div class="text-[9px] text-slate-400">
+                    <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300 font-semibold">Source</span> <span id="vwap-source" class="text-slate-300 font-medium">Charles Schwab API</span>
+                </div>
+                <div class="text-[8px] text-slate-500 font-mono" id="vwap-time">Data as of Live</div>
+                <div class="text-[11px] font-bold text-indigo-300 mt-0.5" id="vwap-val-display">VWAP 7633.80</div>
+            </div>
+        </div>
+
+        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none">
+            <svg id="vwap-chart-svg" class="w-full h-48 md:h-56" viewBox="0 0 500 220" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="bandGrad2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.18"/>
+                        <stop offset="100%" stop-color="#4f46e5" stop-opacity="0.06"/>
+                    </linearGradient>
+                    <linearGradient id="bandGrad1" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#6366f1" stop-opacity="0.28"/>
+                        <stop offset="100%" stop-color="#6366f1" stop-opacity="0.12"/>
+                    </linearGradient>
+                </defs>
+
+                <line x1="60" y1="30" x2="480" y2="30" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
+                <line x1="60" y1="75" x2="480" y2="75" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
+                <line x1="60" y1="120" x2="480" y2="120" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
+                <line x1="60" y1="165" x2="480" y2="165" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
+
+                <line x1="80" y1="20" x2="80" y2="170" stroke="#1e293b" stroke-width="1"/>
+                <line x1="200" y1="20" x2="200" y2="170" stroke="#1e293b" stroke-width="1"/>
+                <line x1="320" y1="20" x2="320" y2="170" stroke="#1e293b" stroke-width="1"/>
+                <line x1="440" y1="20" x2="440" y2="170" stroke="#1e293b" stroke-width="1"/>
+
+                <text x="25" y="100" fill="#64748b" font-size="10" transform="rotate(-90 25,100)" text-anchor="middle" font-weight="600">Price (SPX)</text>
+                <text id="y-label-4" x="52" y="34" fill="#64748b" font-size="10" text-anchor="end" font-family="monospace">7655</text>
+                <text id="y-label-3" x="52" y="79" fill="#64748b" font-size="10" text-anchor="end" font-family="monospace">7641</text>
+                <text id="y-label-2" x="52" y="124" fill="#64748b" font-size="10" text-anchor="end" font-family="monospace">7626</text>
+                <text id="y-label-1" x="52" y="169" fill="#64748b" font-size="10" text-anchor="end" font-family="monospace">7612</text>
+
+                <path id="band-area-2" d="M 140 120 Q 200 135, 270 125 T 440 38 L 440 162 Q 340 140, 270 140 T 140 120 Z" fill="url(#bandGrad2)"/>
+                <path id="band-area-1" d="M 140 120 Q 200 130, 270 120 T 440 65 L 440 135 Q 340 130, 270 130 T 140 120 Z" fill="url(#bandGrad1)"/>
+
+                <path id="band-line-2-upper" d="M 140 120 Q 200 135, 270 125 T 440 38" fill="none" stroke="#6366f1" stroke-dasharray="2,3" stroke-width="1.2" opacity="0.6"/>
+                <path id="band-line-2-lower" d="M 140 120 Q 200 135, 270 140 T 440 162" fill="none" stroke="#6366f1" stroke-dasharray="2,3" stroke-width="1.2" opacity="0.6"/>
+
+                <path id="band-line-1-upper" d="M 140 120 Q 200 130, 270 120 T 440 65" fill="none" stroke="#818cf8" stroke-dasharray="3,3" stroke-width="1.5" opacity="0.8"/>
+                <path id="band-line-1-lower" d="M 140 120 Q 200 130, 270 130 T 440 135" fill="none" stroke="#818cf8" stroke-dasharray="3,3" stroke-width="1.5" opacity="0.8"/>
+
+                <path id="vwap-center-line" d="M 140 120 Q 200 132, 270 126 T 450 102" fill="none" stroke="#a5b4fc" stroke-dasharray="3,3" stroke-width="2"/>
+                <text id="vwap-text-marker" x="430" y="92" fill="#818cf8" font-size="10" font-weight="bold" font-family="sans-serif">VWAP</text>
+
+                <path id="spx-price-line" d="M 80 135 L 140 110 L 200 148 L 320 95 L 440 50" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle id="spx-head-point" cx="440" cy="50" r="4.5" fill="#34d399" stroke="#080d1a" stroke-width="2"/>
+
+                <text x="80" y="184" fill="#64748b" font-size="9" text-anchor="middle">09:30</text>
+                <text x="80" y="196" fill="#475569" font-size="8" text-anchor="middle">09/18</text>
+                <text x="200" y="184" fill="#64748b" font-size="9" text-anchor="middle">11:30</text>
+                <text x="320" y="184" fill="#64748b" font-size="9" text-anchor="middle">13:30</text>
+                <text x="440" y="184" fill="#64748b" font-size="9" text-anchor="middle">15:30</text>
+                <text x="260" y="212" fill="#475569" font-size="10" text-anchor="middle" font-weight="600">Time</text>
+            </svg>
+        </div>
+
+        <div class="flex items-center space-x-5 text-[10px] text-slate-400 mt-2 px-1">
+            <div class="flex items-center space-x-1.5">
+                <span class="w-3 h-0.5 bg-indigo-300 inline-block"></span>
+                <span>VWAP</span>
+            </div>
+            <div class="flex items-center space-x-1.5">
+                <span class="w-3 border-b border-indigo-400 border-dashed inline-block"></span>
+                <span>±1σ</span>
+            </div>
+            <div class="flex items-center space-x-1.5">
+                <span class="w-3 border-b border-indigo-400/50 border-dotted inline-block"></span>
+                <span>±2σ</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 8. RSI (14) 섹션 ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-start mb-2">
+            <div class="flex items-center space-x-1.5">
+                <span class="text-sm font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></span>
+            </div>
+            <div class="text-right">
+                <div class="text-[9px] text-slate-400">
+                    <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300 font-semibold">Source</span> <span id="rsi-source">Yahoo Finance</span>
+                </div>
+                <div class="text-[8px] text-slate-500 font-mono" id="rsi-time">Data as of 09/18 16:00:00 ET</div>
+                <div class="flex items-center justify-end space-x-1.5 mt-0.5">
+                    <span class="text-base font-bold text-amber-500 font-mono" id="rsi-value">60.1</span>
+                    <span class="text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold" id="rsi-status">Bullish</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex space-x-1 mb-2" id="rsi-tf-group">
+            <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+            <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+            <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+            <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+            <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+        </div>
+
+        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
+            <svg id="rsi-svg-chart" class="w-full h-28 md:h-32" viewBox="0 0 520 130" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="rsiOverboughtGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#be123c" stop-opacity="0.25"/>
+                        <stop offset="100%" stop-color="#be123c" stop-opacity="0.10"/>
+                    </linearGradient>
+                    <linearGradient id="rsiOversoldGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#047857" stop-opacity="0.10"/>
+                        <stop offset="100%" stop-color="#047857" stop-opacity="0.25"/>
+                    </linearGradient>
+                </defs>
+
+                <rect x="55" y="10" width="435" height="28" fill="url(#rsiOverboughtGrad)"/>
+                <rect x="55" y="78" width="435" height="28" fill="url(#rsiOversoldGrad)"/>
+
+                <line x1="55" y1="38" x2="490" y2="38" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
+                <line x1="55" y1="58" x2="490" y2="58" stroke="#475569" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.6"/>
+                <line x1="55" y1="78" x2="490" y2="78" stroke="#10b981" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
+
+                <text x="68" y="34" fill="#f43f5e" font-size="9" font-weight="bold" font-family="monospace">70</text>
+                <text x="68" y="54" fill="#64748b" font-size="9" font-family="monospace">50</text>
+                <text x="68" y="74" fill="#10b981" font-size="9" font-weight="bold" font-family="monospace">30</text>
+
+                <g id="rsi-grid-lines">
+                    <line x1="85" y1="10" x2="85" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="180" y1="10" x2="180" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="285" y1="10" x2="285" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="390" y1="10" x2="390" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="480" y1="10" x2="480" y2="106" stroke="#1e293b" stroke-width="1"/>
+                </g>
+
+                <path id="rsi-line" d="M 55 58 L 140 56 L 180 78 L 220 54 L 320 52 L 360 56 L 400 58 L 450 56 L 485 50" fill="none" stroke="#818cf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle id="rsi-head-point" cx="485" cy="50" r="4" fill="#a5b4fc" stroke="#080d1a" stroke-width="1.5"/>
+
+                <g id="rsi-time-labels">
+                    <text x="85" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">09:30</text>
+                    <text x="180" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">14:30</text>
+                    <text x="285" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">12:30</text>
+                    <text x="390" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">10:30</text>
+                    <text x="470" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">15:30/16:00</text>
+                </g>
+            </svg>
+        </div>
+
+        <div class="flex justify-between text-[9px] text-slate-500 px-1 font-mono">
+            <span>Overbought ≥ 70</span>
+            <span>Oversold ≤ 30</span>
+        </div>
+    </div>
+
+    <!-- ================= 9. ES 24H VOLUME + CVD 섹션 ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-start mb-2">
+            <div>
+                <div class="text-[11px] md:text-xs font-bold text-slate-200">
+                    📊 ES 24H VOLUME + CVD — <span id="cvd-title-tf">15M</span>
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-[9px] text-slate-400">
+                    <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">Yahoo ES extended</span>
+                </div>
+                <div class="text-[8px] text-slate-500 font-mono" id="cvd-time">Data as of 09/20 21:15:00 ET</div>
+                <div class="mt-1">
+                    <span id="cvd-pressure-badge" class="text-[10px] bg-emerald-950/90 text-emerald-300 border border-emerald-700/80 px-2 py-0.5 rounded font-bold">
+                        ↑ Buying Pressure
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex space-x-1" id="cvd-tf-group">
+                <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="15m">15m</button>
+                <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+                <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
+            </div>
+            <div class="text-[10px] font-mono font-semibold text-amber-300 flex items-center space-x-1">
+                <span class="w-3 h-0.5 bg-amber-400 inline-block"></span>
+                <span>CVD</span>
+            </div>
+        </div>
+        
+        <div class="text-[9px] text-slate-400 mb-2 space-y-0.5 font-sans">
+            <div class="flex justify-between">
+                <span class="text-slate-500">집계 구간</span>
+                <span id="cvd-range-desc" class="font-mono text-slate-300">09/20 18:10:00 ET ~ 09/20 21:15:00 ET (14개 15m 봉)</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-slate-500">데이터</span>
+                <span class="text-slate-400">ES 최근 24시간 · Yahoo Finance · ES=F price history · ES 24h extended-ses...</span>
+            </div>
+        </div>
+
+        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-2">
+            <svg id="cvd-svg-chart" class="w-full h-44 md:h-52" viewBox="0 0 520 200" preserveAspectRatio="none">
+                <line x1="60" y1="25" x2="490" y2="25" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
+                <line x1="60" y1="85" x2="490" y2="85" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
+                <line x1="60" y1="145" x2="490" y2="145" stroke="#1e293b" stroke-width="1"/>
+
+                <text x="20" y="85" fill="#64748b" font-size="9" transform="rotate(-90 20,85)" text-anchor="middle" font-weight="600">Volume</text>
+                <text id="cvd-y-3" x="52" y="28" fill="#64748b" font-size="9" text-anchor="end" font-family="monospace">5.2K</text>
+                <text id="cvd-y-2" x="52" y="88" fill="#64748b" font-size="9" text-anchor="end" font-family="monospace">2.6K</text>
+                <text id="cvd-y-1" x="52" y="148" fill="#64748b" font-size="9" text-anchor="end" font-family="monospace">0</text>
+
+                <g id="cvd-grid-x"></g>
+                <g id="cvd-volume-bars"></g>
+                <path id="cvd-curve" d="" fill="none" stroke="#facc15" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <g id="cvd-time-labels"></g>
+
+                <text x="260" y="188" fill="#475569" font-size="9.5" text-anchor="middle" font-weight="600">Time</text>
+            </svg>
+        </div>
+
+        <div class="flex justify-between items-center text-[9px] text-slate-400 mb-1 font-mono">
+            <span>마지막 봉 <span id="cvd-last-bar-time" class="text-slate-300">21:15:00 ET</span></span>
+            <span id="cvd-vol-sum" class="text-slate-300">최근 봉 1.1K · 구간 합계 30.6K</span>
+        </div>
+
+        <div class="flex justify-between text-xs font-bold mb-1">
+            <span class="text-emerald-400" id="cvd-buy-pct">▲ Buy 94% (28.7K)</span>
+            <span class="text-rose-400" id="cvd-sell-pct">▼ Sell 6% (1.9K)</span>
+        </div>
+        
+        <div class="w-full bg-rose-950/80 h-2 rounded-full overflow-hidden flex mb-2 border border-slate-800">
+            <div id="cvd-bar-fill" class="bg-emerald-500 h-full transition-all duration-300" style="width: 94%;"></div>
+            <div class="bg-rose-500 h-full flex-1"></div>
+        </div>
+
+        <div id="cvd-summary-box" class="bg-slate-900 border border-slate-800 p-2.5 rounded text-[11px] text-slate-300 mb-2 font-mono">
+            Strong buying pressure — 94% of session volume in bullish bars.
+        </div>
+
+        <div class="card p-2 mb-1.5 bg-slate-900/80">
+            <div class="flex justify-between items-center mb-0.5">
+                <span class="text-[10px] font-bold text-slate-400">WEIGHTED FLOW SIGNAL</span>
+                <span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-900 px-1 py-0.2 rounded font-bold">↗ 종합 상승</span>
+            </div>
+            <div class="text-[11px] font-semibold text-slate-200 mb-1">
+                현재가가 Gamma Flip 위 – Selling Pressure 가중치 50%↓
+            </div>
+            <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-1">
+                <span>CVD·RSI·VWAP·GEX·검증된 옵션 체결</span>
+                <span>rule-based</span>
+            </div>
+        </div>
+
+        <div class="card p-2 bg-slate-900/80 mb-2">
+            <div class="flex justify-between items-center mb-0.5">
+                <span class="text-[10px] font-bold text-slate-400">ORDER BOOK IMBALANCE</span>
+                <span class="text-[8px] bg-slate-800 text-slate-400 px-1 py-0.2 rounded">L2 unavailable</span>
+            </div>
+            <div class="text-[10px] text-slate-300 leading-tight">
+                현재 데이터 소스가 SPX의 Bid/Ask 잔량을 제공하지 않아 지정가 매수벽은 계산하지 않습니다.
+            </div>
+        </div>
+
+        <div class="text-[8px] md:text-[9px] text-slate-500 leading-tight">
+            참고: SPX 현물에는 단일 거래소의 공식 체결 거래량이 없으므로, ES 선물 거래량을 가장 가까운 SPX 거래량 프록시로 사용합니다. CVD는 봉 기반 추정치입니다.
+        </div>
+    </div>
+
+    <!-- ================= 10. SPX 방향분석 섹션 ================= -->
+    <div class="card p-2 md:p-3 mb-3">
+        <div class="flex justify-between items-center mb-1.5">
+            <div class="flex items-center space-x-1.5 text-[11px] md:text-xs font-bold text-emerald-400">
+                <span>📈 SPX 방향분석 · 상승 우세</span>
+            </div>
+            <div class="text-right">
+                <span class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> Multi-TF Engine</span>
+                <div class="text-[8px] text-slate-500 font-mono" id="direction-time">Data as of Live</div>
+                <div class="text-xs font-bold text-emerald-400 mt-0.5">종합 점수 +5.2</div>
+            </div>
+        </div>
+        <div class="text-[10px] md:text-xs text-slate-300 mb-2">
+            큰 방향과 장중 흐름이 상승 쪽으로 기울었습니다. 75%의 시간봉이 상승 또는 상승 편향을 보입니다.
+        </div>
+        
+        <div class="w-full bg-slate-900 h-2 rounded-md relative overflow-hidden border border-slate-800 mb-2">
+            <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-rose-600 via-slate-700 to-emerald-500 w-full opacity-70"></div>
+            <div class="absolute right-[25%] top-0 bottom-0 w-2 bg-emerald-400 rounded shadow"></div>
+        </div>
+        <div class="flex justify-between text-[8px] md:text-[10px] text-slate-500 mb-2">
+            <span>BEARISH</span>
+            <span>NEUTRAL</span>
+            <span>BULLISH</span>
+        </div>
+
+        <div class="grid grid-cols-4 gap-1 md:gap-2 text-center mb-2">
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[9px] font-bold text-emerald-400">1H</span>
+                    <span class="text-[8px] text-slate-500">큰 방향</span>
+                </div>
+                <div class="text-[10px] font-bold text-emerald-400 my-0.5">상승 우세</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800/80 pt-0.5">
+                    <span>이동평균 배열</span>
+                    <span class="text-emerald-400 font-bold">+6</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[9px] font-bold text-emerald-400">15m</span>
+                    <span class="text-[8px] text-slate-500">장중 구조</span>
+                </div>
+                <div class="text-[10px] font-bold text-emerald-400 my-0.5">상승 우세</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800/80 pt-0.5">
+                    <span>이동평균 배열</span>
+                    <span class="text-emerald-400 font-bold">+6</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[9px] font-bold text-emerald-400">5m</span>
+                    <span class="text-[8px] text-slate-500">진입 확인</span>
+                </div>
+                <div class="text-[10px] font-bold text-emerald-400 my-0.5">상승 우세</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800/80 pt-0.5">
+                    <span>이동평균 배열</span>
+                    <span class="text-emerald-400 font-bold">+5</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[9px] font-bold text-slate-300">1m</span>
+                    <span class="text-[8px] text-slate-500">미세 타이밍</span>
+                </div>
+                <div class="text-[10px] font-bold text-slate-300 my-0.5">중립</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800/80 pt-0.5">
+                    <span>이동평균 배열</span>
+                    <span class="text-slate-400 font-bold">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end text-[9px] text-slate-500 mb-2">시간봉 일치도 75%</div>
+
+        <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
+            <span class="flex items-center space-x-1">
+                <svg id="evidence-arrow" class="icon-sm text-slate-400 transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                <span class="font-semibold text-slate-300">세부 근거 보기 · 1H</span>
+            </span>
+            <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
+        </div>
+
+        <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-1.5">
+            <div class="grid grid-cols-2 gap-1.5 bg-slate-950/60 p-2 rounded border border-slate-800">
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400">EMA 배열 상태</span>
+                    <span class="text-emerald-400 font-bold">완전 정배열 (Bullish)</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400">EMA 9 / 21 이격도</span>
+                    <span class="text-emerald-400 font-mono">+12.4pt (확장 중)</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400">MACD 히스토그램 (1H)</span>
+                    <span class="text-emerald-400 font-mono">+4.82 (양수 유지)</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400">VWAP 대비 이격도</span>
+                    <span class="text-emerald-400 font-mono">+16.7pt (상방 안착)</span>
+                </div>
+            </div>
+            
+            <div class="bg-slate-900/90 p-2 rounded border border-slate-800/70 text-slate-300 leading-relaxed font-sans">
+                <div class="font-semibold text-emerald-400 mb-0.5">💡 1H 프레임 정밀 진단:</div>
+                현재 가격이 1H VWAP 및 모든 주요 지수이동평균선(9, 21, 50 EMA) 상단에 강하게 지지받고 있습니다. 고점과 저점을 연속 갱신하는 전형적인 추세 지속형 구조이며, 숏 포지션 진입 시 스퀴즈 위험이 높은 구간입니다.
+            </div>
+        </div>
+
+        <div class="text-[8px] md:text-[9px] text-slate-500 mt-2 leading-tight">
+            1H는 큰 방향, 15m·5m은 장중 확인, 1m은 진입 타이밍 참고입니다. 모든 신호는 OHLCV 기반 참고용이며 옵션 체결 방향이나 L2 주문창 신호는 아닙니다.
+        </div>
+    </div>
+
+    <!-- ================= 차트 인터랙션 & 데이터 동적 바인딩 ================= -->
+    <script>
+        let currentSpxPrice = 7650.50;
+
+        function updateClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false });
+            document.getElementById('current-clock').innerText = timeStr + ' ET';
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function toggleMoreNews() {
+            const panel = document.getElementById('more-news-panel');
+            const btnText = document.getElementById('more-news-btn-text');
+            const arrow = document.getElementById('more-news-arrow');
+
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                btnText.innerText = 'COLLAPSE NEWS';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                panel.classList.add('hidden');
+                btnText.innerText = 'MORE NEWS · 4';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function toggleDetailEvidence() {
+            const panel = document.getElementById('detail-evidence-panel');
+            const arrow = document.getElementById('evidence-arrow');
+            const toggleText = document.getElementById('evidence-toggle-text');
+
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                arrow.style.transform = 'rotate(180deg)';
+                toggleText.innerText = '클릭하여 접기';
+            } else {
+                panel.classList.add('hidden');
+                arrow.style.transform = 'rotate(0deg)';
+                toggleText.innerText = '클릭하여 펼치기';
+            }
+        }
+
+        function updateEmGauge(spx, emPt, putWall, callWall) {
+            const emHalf = emPt || 36.9;
+            const emLow = spx - emHalf;
+            const emHigh = spx + emHalf;
+
+            const axisMin = Math.floor((emLow - 15) / 10) * 10;
+            const axisMax = Math.ceil((emHigh + 15) / 10) * 10;
+            const totalRange = axisMax - axisMin;
+
+            const getPct = (val) => Math.max(2, Math.min(98, ((val - axisMin) / totalRange) * 100));
+
+            const curPct = getPct(spx);
+            const emLowPct = getPct(emLow);
+            const emHighPct = getPct(emHigh);
+            const putPct = getPct(putWall || (spx - 15));
+            const callPct = getPct(callWall || (spx + 1));
+
+            document.getElementById('scale-min').innerText = axisMin;
+            document.getElementById('scale-max').innerText = axisMax;
+            document.getElementById('em-low-val').innerText = emLow.toFixed(1);
+            document.getElementById('em-high-val').innerText = emHigh.toFixed(1);
+            document.getElementById('marker-current-val').innerText = spx.toFixed(1);
+
+            const emBar = document.getElementById('em-range-bar');
+            emBar.style.left = `${emLowPct}%`;
+            emBar.style.width = `${emHighPct - emLowPct}%`;
+
+            document.getElementById('marker-current').style.left = `${curPct}%`;
+            document.getElementById('marker-put-line').style.left = `${putPct}%`;
+            document.getElementById('marker-call-line').style.left = `${callPct}%`;
+        }
+
+        const vwapConfigs = {
+            '1m': {
+                y: [7645, 7648, 7651, 7654],
+                spxLine: "M 80 120 L 140 100 L 200 130 L 320 80 L 440 60",
+                headPoint: [440, 60],
+                center: "M 140 105 Q 200 115, 270 108 T 450 90",
+                vwapTextY: 82,
+                band1Upper: "M 140 105 Q 200 110, 270 100 T 440 75",
+                band1Lower: "M 140 105 Q 200 115, 270 115 T 440 105",
+                band2Upper: "M 140 105 Q 200 115, 270 95 T 440 60",
+                band2Lower: "M 140 105 Q 200 120, 270 125 T 440 120",
+                area1: "M 140 105 Q 200 110, 270 100 T 440 75 L 440 105 Q 340 115, 270 115 T 140 105 Z",
+                area2: "M 140 105 Q 200 115, 270 95 T 440 60 L 440 120 Q 340 125, 270 125 T 140 105 Z",
+                offset: -2.1
+            },
+            '5m': {
+                y: [7630, 7640, 7650, 7660],
+                spxLine: "M 80 125 L 140 105 L 200 140 L 320 85 L 440 55",
+                headPoint: [440, 55],
+                center: "M 140 110 Q 200 125, 270 118 T 450 96",
+                vwapTextY: 88,
+                band1Upper: "M 140 110 Q 200 120, 270 110 T 440 70",
+                band1Lower: "M 140 110 Q 200 125, 270 122 T 440 120",
+                band2Upper: "M 140 110 Q 200 125, 270 105 T 440 50",
+                band2Lower: "M 140 110 Q 200 130, 270 132 T 440 142",
+                area1: "M 140 110 Q 200 120, 270 110 T 440 70 L 440 120 Q 340 122, 270 122 T 140 110 Z",
+                area2: "M 140 110 Q 200 125, 270 105 T 440 50 L 440 142 Q 340 132, 270 132 T 140 110 Z",
+                offset: -6.4
+            },
+            '15m': {
+                y: [7620, 7635, 7650, 7665],
+                spxLine: "M 80 130 L 140 108 L 200 145 L 320 90 L 440 52",
+                headPoint: [440, 52],
+                center: "M 140 115 Q 200 128, 270 122 T 450 100",
+                vwapTextY: 90,
+                band1Upper: "M 140 115 Q 200 124, 270 115 T 440 68",
+                band1Lower: "M 140 115 Q 200 128, 270 126 T 440 128",
+                band2Upper: "M 140 115 Q 200 130, 270 115 T 440 44",
+                band2Lower: "M 140 115 Q 200 132, 270 136 T 440 152",
+                area1: "M 140 115 Q 200 124, 270 115 T 440 68 L 440 128 Q 340 126, 270 126 T 140 115 Z",
+                area2: "M 140 115 Q 200 130, 270 115 T 440 44 L 440 152 Q 340 136, 270 136 T 140 115 Z",
+                offset: -11.2
+            },
+            '30m': {
+                y: [7615, 7630, 7645, 7660],
+                spxLine: "M 80 132 L 140 109 L 200 146 L 320 92 L 440 51",
+                headPoint: [440, 51],
+                center: "M 140 118 Q 200 130, 270 124 T 450 101",
+                vwapTextY: 91,
+                band1Upper: "M 140 118 Q 200 126, 270 118 T 440 66",
+                band1Lower: "M 140 118 Q 200 129, 270 128 T 440 132",
+                band2Upper: "M 140 118 Q 200 132, 270 120 T 440 40",
+                band2Lower: "M 140 118 Q 200 134, 270 138 T 440 158",
+                area1: "M 140 118 Q 200 126, 270 118 T 440 66 L 440 132 Q 340 128, 270 128 T 140 118 Z",
+                area2: "M 140 118 Q 200 132, 270 120 T 440 40 L 440 158 Q 340 138, 270 138 T 140 118 Z",
+                offset: -14.8
+            },
+            '1H': {
+                y: [7612, 7626, 7641, 7655],
+                spxLine: "M 80 135 L 140 110 L 200 148 L 320 95 L 440 50",
+                headPoint: [440, 50],
+                center: "M 140 120 Q 200 132, 270 126 T 450 102",
+                vwapTextY: 92,
+                band1Upper: "M 140 120 Q 200 130, 270 120 T 440 65",
+                band1Lower: "M 140 120 Q 200 130, 270 130 T 440 135",
+                band2Upper: "M 140 120 Q 200 135, 270 125 T 440 38",
+                band2Lower: "M 140 120 Q 200 135, 270 140 T 440 162",
+                area1: "M 140 120 Q 200 130, 270 120 T 440 65 L 440 135 Q 340 130, 270 130 T 140 120 Z",
+                area2: "M 140 120 Q 200 135, 270 125 T 440 38 L 440 162 Q 340 140, 270 140 T 140 120 Z",
+                offset: -16.7
+            }
+        };
+
+        function changeVwapTimeframe(tf) {
+            document.querySelectorAll('#vwap-tf-group .vwap-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+
+            const cfg = vwapConfigs[tf] || vwapConfigs['1H'];
+            document.getElementById('y-label-1').textContent = cfg.y[0];
+            document.getElementById('y-label-2').textContent = cfg.y[1];
+            document.getElementById('y-label-3').textContent = cfg.y[2];
+            document.getElementById('y-label-4').textContent = cfg.y[3];
+
+            document.getElementById('spx-price-line').setAttribute('d', cfg.spxLine);
+            document.getElementById('spx-head-point').setAttribute('cx', cfg.headPoint[0]);
+            document.getElementById('spx-head-point').setAttribute('cy', cfg.headPoint[1]);
+            
+            document.getElementById('vwap-center-line').setAttribute('d', cfg.center);
+            document.getElementById('vwap-text-marker').setAttribute('y', cfg.vwapTextY);
+
+            document.getElementById('band-line-1-upper').setAttribute('d', cfg.band1Upper);
+            document.getElementById('band-line-1-lower').setAttribute('d', cfg.band1Lower);
+            document.getElementById('band-line-2-upper').setAttribute('d', cfg.band2Upper);
+            document.getElementById('band-line-2-lower').setAttribute('d', cfg.band2Lower);
+            document.getElementById('band-area-1').setAttribute('d', cfg.area1);
+            document.getElementById('band-area-2').setAttribute('d', cfg.area2);
+
+            const calculatedVwap = (currentSpxPrice + cfg.offset).toFixed(2);
+            document.getElementById('vwap-val-display').innerText = `VWAP ${calculatedVwap}`;
+        }
+
+        const rsiConfigs = {
+            '1m': {
+                value: 52.4,
+                status: 'Neutral',
+                statusClass: 'text-[9px] bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 58 L 120 62 L 180 50 L 240 68 L 300 54 L 360 60 L 420 52 L 485 56',
+                headPoint: [485, 56],
+                timeTicks: [
+                    { x: 85, time: '21:00' }, { x: 180, time: '21:04' }, { x: 285, time: '21:08' }, 
+                    { x: 390, time: '21:12' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '5m': {
+                value: 58.7,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 64 L 120 58 L 180 68 L 240 50 L 300 46 L 360 52 L 420 48 L 485 51',
+                headPoint: [485, 51],
+                timeTicks: [
+                    { x: 85, time: '20:15' }, { x: 180, time: '20:30' }, { x: 285, time: '20:45' }, 
+                    { x: 390, time: '21:00' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '15m': {
+                value: 64.2,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 60 L 120 54 L 180 72 L 240 48 L 300 44 L 360 48 L 420 46 L 485 45',
+                headPoint: [485, 45],
+                timeTicks: [
+                    { x: 85, time: '18:15' }, { x: 180, time: '19:00' }, { x: 285, time: '19:45' }, 
+                    { x: 390, time: '20:30' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '30m': {
+                value: 62.8,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 56 L 130 52 L 190 74 L 250 50 L 320 48 L 380 50 L 440 48 L 485 47',
+                headPoint: [485, 47],
+                timeTicks: [
+                    { x: 85, time: '16:00' }, { x: 180, time: '17:30' }, { x: 285, time: '19:00' }, 
+                    { x: 390, time: '20:30' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '1H': {
+                value: 60.1,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 58 L 140 56 L 180 78 L 220 54 L 320 52 L 360 56 L 400 58 L 450 56 L 485 50',
+                headPoint: [485, 50],
+                timeTicks: [
+                    { x: 85, time: '09:30' }, { x: 180, time: '14:30' }, { x: 285, time: '12:30' }, 
+                    { x: 390, time: '10:30' }, { x: 470, time: '15:30/16:00' }
+                ]
+            }
+        };
+
+        function changeRsiTimeframe(tf) {
+            document.querySelectorAll('#rsi-tf-group .rsi-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+
+            const cfg = rsiConfigs[tf] || rsiConfigs['1H'];
+            document.getElementById('rsi-title-tf').innerText = tf;
+            document.getElementById('rsi-value').innerText = cfg.value.toFixed(1);
+            
+            const statusBadge = document.getElementById('rsi-status');
+            statusBadge.innerText = cfg.status;
+            statusBadge.className = cfg.statusClass;
+
+            document.getElementById('rsi-line').setAttribute('d', cfg.line);
+            document.getElementById('rsi-head-point').setAttribute('cx', cfg.headPoint[0]);
+            document.getElementById('rsi-head-point').setAttribute('cy', cfg.headPoint[1]);
+
+            const gridContainer = document.getElementById('rsi-grid-lines');
+            gridContainer.innerHTML = cfg.timeTicks.map(t => 
+                `<line x1="${t.x}" y1="10" x2="${t.x}" y2="106" stroke="#1e293b" stroke-width="1"/>`
+            ).join('');
+
+            const labelsContainer = document.getElementById('rsi-time-labels');
+            labelsContainer.innerHTML = cfg.timeTicks.map(t => 
+                `<text x="${t.x}" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">${t.time}</text>`
+            ).join('');
+        }
+
+        const cvdConfigs = {
+            '1m': { 
+                y: ['1.2K', '600', '0'],
+                barsRange: '09/20 21:00:00 ET ~ 09/20 21:15:00 ET (15개 1m 봉)', 
+                vol: '최근 봉 420 · 구간 합계 12.8K', 
+                buy: 58, buyK: '7.4K', sellK: '5.4K', 
+                text: 'Moderate buying pressure — 58% of session volume in bullish bars.',
+                pressure: '↑ Moderate Buying',
+                timeTicks: [
+                    { x: 85, time: '21:00' }, { x: 160, time: '21:03' }, { x: 245, time: '21:06' }, 
+                    { x: 335, time: '21:09' }, { x: 425, time: '21:12' }, { x: 455, time: '21:15' }
+                ],
+                curve: 'M 75 105 L 120 95 L 170 90 L 210 94 L 255 85 L 305 82 L 340 76 L 390 70 L 425 65 L 460 68',
+                bars: [
+                    [75, 115, 22, 30, true], [105, 110, 22, 35, true], [135, 125, 24, 20, false],
+                    [165, 105, 22, 40, true], [195, 120, 22, 25, false], [225, 115, 22, 30, true],
+                    [255, 100, 22, 45, true], [285, 95, 22, 50, false], [315, 105, 24, 40, true],
+                    [345, 90, 22, 55, true], [375, 120, 22, 25, false], [405, 85, 24, 60, true],
+                    [435, 122, 22, 23, false]
+                ]
+            },
+            '5m': { 
+                y: ['2.4K', '1.2K', '0'],
+                barsRange: '09/20 20:00:00 ET ~ 09/20 21:15:00 ET (15개 5m 봉)', 
+                vol: '최근 봉 850 · 구간 합계 18.2K', 
+                buy: 76, buyK: '13.8K', sellK: '4.4K', 
+                text: 'Strong buying pressure — 76% of session volume in bullish bars.',
+                pressure: '↑ Buying Pressure',
+                timeTicks: [
+                    { x: 85, time: '20:00' }, { x: 160, time: '20:15' }, { x: 245, time: '20:30' }, 
+                    { x: 335, time: '20:45' }, { x: 425, time: '21:00' }, { x: 455, time: '21:15' }
+                ],
+                curve: 'M 75 95 L 120 90 L 170 82 L 210 88 L 255 75 L 305 72 L 340 60 L 390 62 L 425 50 L 460 56',
+                bars: [
+                    [75, 105, 22, 40, true], [105, 95, 22, 50, true], [135, 85, 24, 60, true],
+                    [165, 110, 22, 35, false], [195, 120, 22, 25, true], [225, 90, 22, 55, true],
+                    [255, 80, 22, 65, true], [285, 115, 22, 30, false], [315, 65, 24, 80, true],
+                    [345, 75, 22, 70, true], [375, 90, 22, 55, true], [405, 55, 24, 90, true],
+                    [435, 120, 22, 25, false]
+                ]
+            },
+            '15m': { 
+                y: ['5.2K', '2.6K', '0'],
+                barsRange: '09/20 18:10:00 ET ~ 09/20 21:15:00 ET (14개 15m 봉)', 
+                vol: '최근 봉 1.1K · 구간 합계 30.6K', 
+                buy: 94, buyK: '28.7K', sellK: '1.9K', 
+                text: 'Strong buying pressure — 94% of session volume in bullish bars.',
+                pressure: '↑ Buying Pressure',
+                timeTicks: [
+                    { x: 85, time: '18:10' }, { x: 160, time: '18:45' }, { x: 245, time: '19:30' }, 
+                    { x: 335, time: '20:15' }, { x: 425, time: '21:00' }, { x: 455, time: '21:15' }
+                ],
+                curve: 'M 75 82 L 120 72 L 170 65 L 210 70 L 255 72 L 305 76 L 340 62 L 390 65 L 425 45 L 460 52',
+                bars: [
+                    [75, 105, 22, 40, true], [105, 90, 22, 55, true], [135, 70, 24, 75, true],
+                    [165, 100, 22, 45, true], [195, 125, 22, 20, false], [225, 120, 22, 25, true],
+                    [255, 115, 22, 30, true], [285, 95, 22, 50, true], [315, 65, 24, 80, true],
+                    [345, 80, 22, 65, true], [375, 110, 22, 35, true], [405, 35, 24, 110, true],
+                    [435, 115, 22, 30, false]
+                ]
+            },
+            '30m': { 
+                y: ['8.0K', '4.0K', '0'],
+                barsRange: '09/20 15:00:00 ET ~ 09/20 21:15:00 ET (12개 30m 봉)', 
+                vol: '최근 봉 2.4K · 구간 합계 46.2K', 
+                buy: 89, buyK: '41.1K', sellK: '5.1K', 
+                text: 'Strong buying pressure — 89% of session volume in bullish bars.',
+                pressure: '↑ Buying Pressure',
+                timeTicks: [
+                    { x: 85, time: '15:00' }, { x: 160, time: '16:30' }, { x: 245, time: '18:00' }, 
+                    { x: 335, time: '19:30' }, { x: 425, time: '21:00' }, { x: 455, time: '21:15' }
+                ],
+                curve: 'M 75 88 L 120 78 L 170 68 L 210 72 L 255 65 L 305 68 L 340 55 L 390 58 L 425 42 L 460 48',
+                bars: [
+                    [75, 85, 24, 60, true], [105, 75, 24, 70, true], [135, 90, 24, 55, false],
+                    [165, 60, 24, 85, true], [195, 110, 24, 35, true], [225, 95, 24, 50, true],
+                    [255, 65, 24, 80, true], [285, 55, 24, 90, true], [315, 50, 24, 95, true],
+                    [345, 70, 24, 75, true], [375, 45, 24, 100, true], [405, 40, 24, 105, true],
+                    [435, 105, 24, 40, false]
+                ]
+            },
+            '1H': { 
+                y: ['24.0K', '12.0K', '0'],
+                barsRange: '09/19 21:15:00 ET ~ 09/20 21:15:00 ET (24개 1H 봉)', 
+                vol: '최근 봉 13.3K · 구간 합계 1.28M', 
+                buy: 61, buyK: '781.1K', sellK: '503.3K', 
+                text: 'Moderate buying pressure — 61% buy vs 39% sell volume.',
+                pressure: '↑ Moderate Buying',
+                timeTicks: [
+                    { x: 85, time: '09/19' }, { x: 160, time: '04:00' }, { x: 245, time: '10:00' }, 
+                    { x: 335, time: '14:00' }, { x: 425, time: '18:00' }, { x: 455, time: '21:15' }
+                ],
+                curve: 'M 75 92 L 120 84 L 170 76 L 210 78 L 255 72 L 305 70 L 340 65 L 390 62 L 425 58 L 460 50',
+                bars: [
+                    [75, 65, 24, 80, true], [105, 50, 24, 95, true], [135, 40, 24, 105, true],
+                    [165, 75, 24, 70, false], [195, 80, 24, 65, false], [225, 45, 24, 100, true],
+                    [255, 35, 24, 110, true], [285, 70, 24, 75, false], [315, 60, 24, 85, true],
+                    [345, 55, 24, 90, true], [375, 50, 24, 95, true], [405, 30, 24, 115, true],
+                    [435, 90, 24, 55, false]
+                ]
+            }
+        };
+
+        function changeCvdTimeframe(tf) {
+            document.querySelectorAll('#cvd-tf-group .cvd-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+
+            const cfg = cvdConfigs[tf] || cvdConfigs['15m'];
+            document.getElementById('cvd-title-tf').innerText = tf.toUpperCase();
+            document.getElementById('cvd-range-desc').innerText = cfg.barsRange;
+            document.getElementById('cvd-vol-sum').innerText = cfg.vol;
+            document.getElementById('cvd-buy-pct').innerText = `▲ Buy ${cfg.buy}% (${cfg.buyK})`;
+            document.getElementById('cvd-sell-pct').innerText = `▼ Sell ${100 - cfg.buy}% (${cfg.sellK})`;
+            document.getElementById('cvd-bar-fill').style.width = `${cfg.buy}%`;
+            document.getElementById('cvd-summary-box').innerText = cfg.text;
+            document.getElementById('cvd-pressure-badge').innerText = cfg.pressure;
+
+            document.getElementById('cvd-y-1').textContent = cfg.y[2];
+            document.getElementById('cvd-y-2').textContent = cfg.y[1];
+            document.getElementById('cvd-y-3').textContent = cfg.y[0];
+            document.getElementById('cvd-curve').setAttribute('d', cfg.curve);
+
+            const gridXContainer = document.getElementById('cvd-grid-x');
+            gridXContainer.innerHTML = cfg.timeTicks.map(t => 
+                `<line x1="${t.x}" y1="20" x2="${t.x}" y2="150" stroke="#1e293b" stroke-dasharray="2,2" stroke-width="1"/>`
+            ).join('');
+
+            const timeLabelsContainer = document.getElementById('cvd-time-labels');
+            timeLabelsContainer.innerHTML = cfg.timeTicks.map(t => 
+                `<text x="${t.x}" y="162" fill="#64748b" font-size="8.5" text-anchor="middle">${t.time}</text>`
+            ).join('');
+
+            const barsContainer = document.getElementById('cvd-volume-bars');
+            barsContainer.innerHTML = cfg.bars.map(([x, y, w, h, isBullish]) => {
+                const fill = isBullish ? "#065f46" : "#881337";
+                const stroke = isBullish ? "#10b981" : "#f43f5e";
+                return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" fill-opacity="0.85" stroke="${stroke}" stroke-width="1.1"/>`;
+            }).join('');
+        }
+
+        changeCvdTimeframe('15m');
+        changeRsiTimeframe('1H');
+
+        async function fetchMarketData() {
+            try {
+                const res = await fetch('https://0-dte-seven.vercel.app/api/market-data');
+                const data = await res.json();
+
+                if (data.status === "success") {
+                    const globalTime = data.timestamp || "Live";
+
+                    document.getElementById('global-source-badge').innerText = `Source: ${data.source}`;
+
+                    if (data.spx) {
+                        currentSpxPrice = Number(data.spx.price);
+                        document.getElementById('spx-price').innerText = data.spx.price;
+                        document.getElementById('spx-change').innerText = `${data.spx.change >= 0 ? '+' : ''}${data.spx.change} (${data.spx.change_pct >= 0 ? '+' : ''}${data.spx.change_pct}%)`;
+                        document.getElementById('spx-source').innerText = data.spx.source || data.source;
+                        document.getElementById('spx-time').innerText = data.spx.updated_at || globalTime;
+
+                        const activeBtn = document.querySelector('#vwap-tf-group .bg-indigo-600');
+                        const activeTf = activeBtn ? activeBtn.getAttribute('data-tf') : '1H';
+                        const cfg = vwapConfigs[activeTf] || vwapConfigs['1H'];
+                        document.getElementById('vwap-val-display').innerText = `VWAP ${(currentSpxPrice + cfg.offset).toFixed(2)}`;
+                    }
+
+                    if (data.vix) {
+                        document.getElementById('vix-source').innerText = data.vix.source || "CBOE";
+                        document.getElementById('vix-time').innerText = data.vix.updated_at || globalTime;
+                    }
+
+                    if (data.es) {
+                        document.getElementById('es-price').innerText = data.es.price;
+                        document.getElementById('es-change').innerText = `${data.es.change_pct >= 0 ? '+' : ''}${data.es.change_pct}%`;
+                        document.getElementById('es-time').innerText = data.es.updated_at || globalTime;
+                    }
+
+                    if (data.mag7) {
+                        document.getElementById('mag7-price').innerText = data.mag7.price;
+                        document.getElementById('mag7-change').innerText = `${data.mag7.change_pct >= 0 ? '+' : ''}${data.mag7.change_pct}%`;
+                        document.getElementById('mag7-source').innerText = data.mag7.source || "MAGS ETF";
+                        document.getElementById('mag7-time').innerText = data.mag7.updated_at || globalTime;
+                    }
+
+                    if (data.volume_profile) {
+                        document.getElementById('val-price').innerText = data.volume_profile.val;
+                        document.getElementById('poc-price').innerText = data.volume_profile.poc;
+                        document.getElementById('vah-price').innerText = data.volume_profile.vah;
+                        document.getElementById('vp-source').innerText = data.volume_profile.source || data.source;
+                        document.getElementById('vp-timestamp').innerText = data.volume_profile.updated_at || globalTime;
+                    }
+
+                    let putW = 7635.5, callW = 7651.5;
+                    if (data.gex) {
+                        document.getElementById('gex-em').innerText = data.gex.expected_move;
+                        document.getElementById('gex-put-wall').innerText = data.gex.put_wall;
+                        document.getElementById('gex-flip').innerText = data.gex.gamma_flip;
+                        document.getElementById('gex-call-wall').innerText = data.gex.call_wall;
+                        putW = Number(data.gex.put_wall);
+                        callW = Number(data.gex.call_wall);
+                        document.getElementById('gex-source').innerText = data.gex.source || data.source;
+                        document.getElementById('gex-time').innerText = `Data as of ${data.gex.updated_at || globalTime}`;
+                    }
+                    updateEmGauge(currentSpxPrice, 36.9, putW, callW);
+
+                    const vwapSourceElem = document.getElementById('vwap-source');
+                    const vwapTimeElem = document.getElementById('vwap-time');
+                    if (vwapSourceElem) {
+                        vwapSourceElem.innerText = (data.vwap && data.vwap.source) ? data.vwap.source : data.source;
+                    }
+                    if (vwapTimeElem) {
+                        const vwapTimeStr = (data.vwap && data.vwap.updated_at) ? data.vwap.updated_at : globalTime;
+                        vwapTimeElem.innerText = `Data as of ${vwapTimeStr}`;
+                    }
+
+                    if (data.rsi) {
+                        document.getElementById('rsi-source').innerText = data.rsi.source || data.source;
+                        document.getElementById('rsi-time').innerText = `Data as of ${data.rsi.updated_at || globalTime}`;
+                    }
+
+                    if (data.cvd) {
+                        document.getElementById('cvd-source').innerText = data.cvd.source || "Yahoo ES extended";
+                        document.getElementById('cvd-time').innerText = `Data as of ${data.cvd.updated_at || globalTime}`;
+                        document.getElementById('cvd-last-bar-time').innerText = (data.cvd.updated_at || globalTime).split(' ')[1] + " ET";
+                    }
+
+                    if (data.direction) {
+                        document.getElementById('direction-time').innerText = `Data as of ${data.direction.updated_at || globalTime}`;
+                    }
+
+                    if (data.market_state) {
+                        const badge = document.getElementById('es-status-badge');
+                        badge.innerText = data.market_state;
+                    }
+                }
+            } catch (err) {
+                console.error("데이터 갱신 실패:", err);
+            }
+        }
+
+        fetchMarketData();
+        setInterval(fetchMarketData, 3000);
+    </script>
+</body>
+</html>
