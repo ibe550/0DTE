@@ -389,30 +389,78 @@
         </div>
     </div>
 
-    <!-- ================= 8. RSI (14) — 1H 섹션 ================= -->
+    <!-- ================= 8. [전면 복원됨] 원본 완벽 재현 RSI (14) — 1H 섹션 ================= -->
     <div class="card p-2 md:p-3 mb-2">
-        <div class="flex justify-between items-center mb-2">
-            <div class="text-[11px] md:text-xs font-bold text-slate-200">📊 RSI (14) — 1H</div>
+        <div class="flex justify-between items-start mb-2">
+            <div class="flex items-center space-x-1.5">
+                <span class="text-sm font-bold text-slate-200">📊 RSI (14) — 1H</span>
+            </div>
             <div class="text-right">
-                <span class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="rsi-source">Yahoo Finance</span></span>
-                <div class="text-[8px] text-slate-500 font-mono" id="rsi-time">Data as of Live</div>
+                <div class="text-[9px] text-slate-400">
+                    <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300 font-semibold">Source</span> <span id="rsi-source">Yahoo Finance</span>
+                </div>
+                <div class="text-[8px] text-slate-500 font-mono" id="rsi-time">Data as of 09/18 16:00:00 ET</div>
                 <div class="flex items-center justify-end space-x-1.5 mt-0.5">
-                    <span class="text-xs md:text-sm font-bold text-amber-400" id="rsi-value">60.1</span>
-                    <span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-800 px-1.5 py-0.2 rounded font-bold" id="rsi-status">Bullish</span>
+                    <span class="text-base font-bold text-amber-500 font-mono" id="rsi-value">60.1</span>
+                    <span class="text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold" id="rsi-status">Bullish</span>
                 </div>
             </div>
         </div>
-        <div class="bg-slate-950 h-24 md:h-28 rounded border border-slate-800 relative flex items-center justify-center mb-2">
-            <div class="absolute inset-0 flex flex-col justify-between p-1.5 pointer-events-none">
-                <div class="border-b border-rose-900/30 text-[8px] text-rose-400/60 pl-1">70 Overbought</div>
-                <div class="border-b border-slate-800/40 text-[8px] text-slate-600 pl-1">50</div>
-                <div class="border-b border-emerald-900/30 text-[8px] text-emerald-400/60 pl-1">30 Oversold</div>
-            </div>
-            <svg class="absolute inset-0 w-full h-full p-2" preserveAspectRatio="none" viewBox="0 0 300 80">
-                <path d="M 10 40 Q 80 50, 150 42 T 290 35" fill="none" stroke="#a78bfa" stroke-width="2"/>
+
+        <!-- 🚀 [정밀 재현] 70 이상 빨간 밴드, 30 이하 초록 밴드, 점선, 보라 실선, 종점 닷, X축 시간 틱 -->
+        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
+            <svg id="rsi-svg-chart" class="w-full h-28 md:h-32" viewBox="0 0 520 130" preserveAspectRatio="none">
+                <defs>
+                    <!-- 과매수 상단 붉은색 반투명 밴드 -->
+                    <linearGradient id="rsiOverboughtGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#be123c" stop-opacity="0.25"/>
+                        <stop offset="100%" stop-color="#be123c" stop-opacity="0.10"/>
+                    </linearGradient>
+                    <!-- 과매도 하단 초록색 반투명 밴드 -->
+                    <linearGradient id="rsiOversoldGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#047857" stop-opacity="0.10"/>
+                        <stop offset="100%" stop-color="#047857" stop-opacity="0.25"/>
+                    </linearGradient>
+                </defs>
+
+                <!-- 1. 과매수(70~100) / 과매도(0~30) 영역 쉐이딩 밴드 -->
+                <rect x="55" y="10" width="435" height="28" fill="url(#rsiOverboughtGrad)"/>
+                <rect x="55" y="78" width="435" height="28" fill="url(#rsiOversoldGrad)"/>
+
+                <!-- 2. 가로 점선 그리드 (70, 50, 30) -->
+                <line x1="55" y1="38" x2="490" y2="38" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
+                <line x1="55" y1="58" x2="490" y2="58" stroke="#475569" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.6"/>
+                <line x1="55" y1="78" x2="490" y2="78" stroke="#10b981" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
+
+                <!-- 3. Y축 기준선 텍스트 (70, 50, 30) -->
+                <text x="68" y="34" fill="#f43f5e" font-size="9" font-weight="bold" font-family="monospace">70</text>
+                <text x="68" y="54" fill="#64748b" font-size="9" font-family="monospace">50</text>
+                <text x="68" y="74" fill="#10b981" font-size="9" font-weight="bold" font-family="monospace">30</text>
+
+                <!-- 4. 세로 가이드 점선 (시간 틱 위치) -->
+                <line x1="85" y1="10" x2="85" y2="106" stroke="#1e293b" stroke-width="1"/>
+                <line x1="180" y1="10" x2="180" y2="106" stroke="#1e293b" stroke-width="1"/>
+                <line x1="285" y1="10" x2="285" y2="106" stroke="#1e293b" stroke-width="1"/>
+                <line x1="390" y1="10" x2="390" y2="106" stroke="#1e293b" stroke-width="1"/>
+                <line x1="480" y1="10" x2="480" y2="106" stroke="#1e293b" stroke-width="1"/>
+
+                <!-- 5. 실제 RSI (14) 보라색 실선 궤적 (사진의 딥 하락 후 60.1 반등 완벽 일치) -->
+                <path id="rsi-line" d="M 55 58 L 140 56 L 180 78 L 220 54 L 320 52 L 360 56 L 400 58 L 450 56 L 485 50" fill="none" stroke="#818cf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+                <!-- 6. RSI 종점 포커스 포인트 (보라색 원형 닷) -->
+                <circle id="rsi-head-point" cx="485" cy="50" r="4" fill="#a5b4fc" stroke="#080d1a" stroke-width="1.5"/>
+
+                <!-- 7. X축 시간 라벨 (09:30, 14:30, 12:30, 10:30, 15:30/16:00) -->
+                <text x="85" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">09:30</text>
+                <text x="180" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">14:30</text>
+                <text x="285" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">12:30</text>
+                <text x="390" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">10:30</text>
+                <text x="470" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">15:30/16:00</text>
             </svg>
         </div>
-        <div class="flex justify-between text-[9px] text-slate-500">
+
+        <!-- 하단 양 끝단 과매수/과매도 기준 안내 -->
+        <div class="flex justify-between text-[9px] text-slate-500 px-1 font-mono">
             <span>Overbought ≥ 70</span>
             <span>Oversold ≤ 30</span>
         </div>
@@ -532,7 +580,7 @@
         </div>
     </div>
 
-    <!-- ================= 10. SPX 방향분석 섹션 (펼쳐보기 인터랙션 완벽 탑재) ================= -->
+    <!-- ================= 10. SPX 방향분석 섹션 ================= -->
     <div class="card p-2 md:p-3 mb-3">
         <div class="flex justify-between items-center mb-1.5">
             <div class="flex items-center space-x-1.5 text-[11px] md:text-xs font-bold text-emerald-400">
@@ -606,7 +654,6 @@
         </div>
         <div class="flex justify-end text-[9px] text-slate-500 mb-2">시간봉 일치도 75%</div>
 
-        <!-- 🚀 [완전 구현] 클릭 시 토글되는 세부 근거 바 & 아코디언 패널 -->
         <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
             <span class="flex items-center space-x-1">
                 <svg id="evidence-arrow" class="w-3 h-3 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
@@ -615,7 +662,6 @@
             <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
 
-        <!-- 펼쳐지는 상세 정보 영역 (기본 숨김: hidden) -->
         <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-1.5">
             <div class="grid grid-cols-2 gap-1.5 bg-slate-950/60 p-2 rounded border border-slate-800">
                 <div class="flex justify-between items-center">
@@ -659,7 +705,6 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // 🎯 세부 근거 보기 펼치기/접기 함수
         function toggleDetailEvidence() {
             const panel = document.getElementById('detail-evidence-panel');
             const arrow = document.getElementById('evidence-arrow');
@@ -1033,17 +1078,20 @@
                         vwapTimeElem.innerText = `Data as of ${vwapTimeStr}`;
                     }
 
+                    // RSI 실시간 소스 및 시간 바인딩
                     if (data.rsi) {
                         document.getElementById('rsi-source').innerText = data.rsi.source || data.source;
                         document.getElementById('rsi-time').innerText = `Data as of ${data.rsi.updated_at || globalTime}`;
                     }
 
+                    // CVD
                     if (data.cvd) {
                         document.getElementById('cvd-source').innerText = data.cvd.source || "Yahoo ES extended";
                         document.getElementById('cvd-time').innerText = `Data as of ${data.cvd.updated_at || globalTime}`;
                         document.getElementById('cvd-last-bar-time').innerText = (data.cvd.updated_at || globalTime).split(' ')[1] + " ET";
                     }
 
+                    // 방향분석
                     if (data.direction) {
                         document.getElementById('direction-time').innerText = `Data as of ${data.direction.updated_at || globalTime}`;
                     }
