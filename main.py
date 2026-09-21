@@ -68,7 +68,8 @@ def fetch_yahoo_chart(symbol, interval="5m", range_str="1d"):
 def fetch_yahoo_quote(symbol):
     chart = fetch_yahoo_chart(symbol, interval="1m", range_str="1d")
     meta = chart.get("meta", {})
-    price = meta.get("regularMarketPrice") or meta.get("postMarketPrice")
+    # 💡 핵심 수정: 프리마켓(preMarketPrice) 데이터를 최우선으로 반영하여 실시간 변동 캐치
+    price = meta.get("preMarketPrice") or meta.get("regularMarketPrice") or meta.get("postMarketPrice")
     prev = meta.get("chartPreviousClose") or meta.get("previousClose") or price
     return (float(price), float(prev)) if price else (None, None)
 
@@ -204,7 +205,7 @@ def get_market_data():
     es_data = f_es_chart.result()
     quote_data = es_data.get("indicators", {}).get("quote", [{}])[0]
     meta_es = es_data.get("meta", {})
-    es_p = meta_es.get("regularMarketPrice") or spx_p + 1.5
+    es_p = meta_es.get("preMarketPrice") or meta_es.get("regularMarketPrice") or meta_es.get("postMarketPrice") or (spx_p + 1.5)
     es_prev = meta_es.get("chartPreviousClose") or es_p
     es_chg = round(es_p - es_prev, 2)
     es_pct = round((es_chg / es_prev) * 100, 2) if es_prev else 0.0
