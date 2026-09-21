@@ -155,12 +155,12 @@
         </div>
     </div>
 
-    <!-- 5. VOLUME PROFILE (순수 SPX 현물 가격 기준) -->
+    <!-- 5. VOLUME PROFILE -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-1.5">
             <h2 class="text-[10px] md:text-xs font-bold text-emerald-400 tracking-wide truncate">VOLUME PROFILE · SPX DIRECT VOLUME</h2>
             <div class="text-[9px] text-slate-400 text-right whitespace-nowrap">
-                <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="vp-source">SPX Direct</span><br>
+                <span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="vp-source">SPX Direct</span><br>
                 <span class="text-slate-500 font-mono text-[8px]" id="vp-timestamp">Live Calculated</span>
             </div>
         </div>
@@ -187,7 +187,7 @@
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-[11px] md:text-xs font-bold text-slate-200">⚡ GEX · 실시간 옵션 체인 감마 레벨</h2>
             <div class="text-right">
-                <span class="text-[9px] bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span class="text-[9px] text-slate-400" id="gex-source">Yahoo SPY Options</span>
+                <span class="text-[9px] bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span class="text-[9px] text-slate-400" id="gex-source">Live Options Model</span>
             </div>
         </div>
 
@@ -240,7 +240,7 @@
         </div>
     </div>
 
-    <!-- 7. VWAP BANDS (타임프레임 버튼 포함 복원) -->
+    <!-- 7. VWAP BANDS (타임프레임 버튼 연동) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2.5">
             <div class="flex space-x-1" id="vwap-tf-group">
@@ -271,7 +271,7 @@
         </div>
     </div>
 
-    <!-- 8. RSI (14) (타임프레임 버튼 포함 복원) -->
+    <!-- 8. RSI (14) (타임프레임 버튼 연동) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
             <div class="text-xs font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></div>
@@ -305,10 +305,10 @@
         </div>
     </div>
 
-    <!-- 9. CVD (타임프레임 버튼 포함 복원) -->
+    <!-- 9. CVD (타임프레임 버튼 연동) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
-            <div class="text-xs font-bold text-slate-200">📊 REAL VOLUME + CVD — <span id="cvd-title-tf">15M</span></div>
+            <div class="text-xs font-bold text-slate-200">📊 REAL VOLUME + CVD — <span id="cvd-title-tf">15m</span></div>
             <div class="text-right text-[9px] text-slate-400">
                 <span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">SPY Extended</span>
             </div>
@@ -338,7 +338,7 @@
         </div>
     </div>
 
-    <!-- 10. SPX 방향분석 -->
+    <!-- 10. SPX 방향분석 (아코디언 복원) -->
     <div class="card p-2 md:p-3 mb-3">
         <div class="flex justify-between items-center mb-1">
             <div class="flex items-center space-x-1.5 text-xs font-bold text-emerald-400">
@@ -418,7 +418,6 @@
 
         <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-2">
             <div class="text-[9px] font-bold text-slate-400 tracking-wider">방향성 근거</div>
-            
             <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
                 <div class="flex items-center space-x-1 font-bold text-emerald-400">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
@@ -426,7 +425,6 @@
                 </div>
                 <div class="text-slate-300 pl-3">가격이 VWAP 위 (<span id="ev-vwap-diff">16.70pt</span>)</div>
             </div>
-
             <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
                 <div class="flex items-center space-x-1 font-bold text-emerald-400">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
@@ -434,7 +432,6 @@
                 </div>
                 <div class="text-slate-300 pl-3">최근 고점과 저점이 함께 높아지는 상승 구조</div>
             </div>
-
             <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
                 <div class="flex items-center space-x-1 font-bold text-emerald-400">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
@@ -442,7 +439,6 @@
                 </div>
                 <div class="text-slate-300 pl-3">RSI <span id="ev-rsi-val">60</span> – 상승 모멘텀</div>
             </div>
-
             <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
                 <div class="flex items-center space-x-1 font-bold text-emerald-400">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
@@ -450,48 +446,15 @@
                 </div>
                 <div class="text-slate-300 pl-3">최근 3개 봉 기준 상승 (<span id="ev-momentum">11.45pt</span>)</div>
             </div>
-
-            <div class="text-[9px] font-bold text-slate-400 tracking-wider pt-1">차트 패턴 (OHLCV 프록시)</div>
-
-            <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
-                <div class="flex justify-between items-center font-bold text-slate-200">
-                    <span class="flex items-center space-x-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span><span>이동평균 배열</span></span>
-                    <span class="text-emerald-400">감지</span>
-                </div>
-                <div class="text-slate-400 pl-3" id="ev-ema-desc">가격이 SMA5, 10, 20 위에 있고 단기선이 정배열입니다.</div>
-            </div>
-
-            <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
-                <div class="flex justify-between items-center font-bold text-slate-200">
-                    <span class="flex items-center space-x-1"><span class="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span><span>3파동 구조</span></span>
-                    <span class="text-slate-400">없음</span>
-                </div>
-                <div class="text-slate-400 pl-3">최근 3개 가격 구간에서 1파·조정 2파·추세 3파 순서가 뚜렷하지 않습니다.</div>
-            </div>
-
-            <div class="bg-slate-950 p-2 rounded border border-rose-900/40 space-y-1">
-                <div class="flex justify-between items-center font-bold text-rose-300">
-                    <span class="flex items-center space-x-1"><span class="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block"></span><span>쌍봉·쌍바닥</span></span>
-                    <span class="text-rose-400">관찰</span>
-                </div>
-                <div class="text-slate-300 pl-3">비슷한 고점 두 개가 형성되어 쌍봉 가능성 관찰 중 – 넥라인 기준선 모니터링 필요.</div>
-            </div>
-
-            <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
-                <div class="flex justify-between items-center font-bold text-slate-200">
-                    <span class="flex items-center space-x-1"><span class="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span><span>레인지 돌파</span></span>
-                    <span class="text-slate-400">없음</span>
-                </div>
-                <div class="text-slate-400 pl-3">현재 종가는 이전 8봉 레인지 내부에 있습니다.</div>
-            </div>
-        </div>
-
-        <div class="text-[8px] text-slate-500 mt-2 leading-tight">
-            1H는 큰 방향, 15m·5m은 장중 확인, 1m은 진입 타이밍 참고입니다. 모든 신호는 OHLCV 기반 참고용이며 옵션 체결 방향이나 L2 주문창 신호는 아닙니다.
         </div>
     </div>
 
+    <!-- 스크립트 (타임프레임 연동 및 동적 렌더링 로직) -->
     <script>
+        let currentVwapTf = '1H';
+        let currentRsiTf = '1H';
+        let currentCvdTf = '15m';
+
         function updateClock() {
             const now = new Date();
             document.getElementById('current-clock').innerText = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }) + ' ET';
@@ -530,6 +493,7 @@
         }
 
         function changeVwapTimeframe(tf) {
+            currentVwapTf = tf;
             document.querySelectorAll('#vwap-tf-group .vwap-tf-btn').forEach(btn => {
                 if (btn.getAttribute('data-tf') === tf) {
                     btn.className = "vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
@@ -537,9 +501,11 @@
                     btn.className = "vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
                 }
             });
+            fetchRealMarketData();
         }
 
         function changeRsiTimeframe(tf) {
+            currentRsiTf = tf;
             document.querySelectorAll('#rsi-tf-group .rsi-tf-btn').forEach(btn => {
                 if (btn.getAttribute('data-tf') === tf) {
                     btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
@@ -548,9 +514,11 @@
                 }
             });
             document.getElementById('rsi-title-tf').innerText = tf;
+            fetchRealMarketData();
         }
 
         function changeCvdTimeframe(tf) {
+            currentCvdTf = tf;
             document.querySelectorAll('#cvd-tf-group .cvd-tf-btn').forEach(btn => {
                 if (btn.getAttribute('data-tf') === tf) {
                     btn.className = "cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow";
@@ -559,6 +527,7 @@
                 }
             });
             document.getElementById('cvd-title-tf').innerText = tf.toUpperCase();
+            fetchRealMarketData();
         }
 
         function generatePath(arr, minVal, maxVal, width, height) {
@@ -573,7 +542,8 @@
 
         async function fetchRealMarketData() {
             try {
-                const res = await fetch('https://0-dte-seven.vercel.app/api/market-data');
+                const url = `https://0-dte-seven.vercel.app/api/market-data?vwap_tf=${currentVwapTf}&rsi_tf=${currentRsiTf}&cvd_tf=${currentCvdTf}`;
+                const res = await fetch(url);
                 const data = await res.json();
                 if (data.status !== "success") return;
 
@@ -698,7 +668,6 @@
                     document.getElementById('ev-vwap-diff').innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)}pt`;
                     document.getElementById('ev-rsi-val').innerText = data.rsi ? data.rsi.val : '60';
                     document.getElementById('ev-momentum').innerText = `${Math.abs(diff * 0.7).toFixed(2)}pt`;
-                    document.getElementById('ev-ema-desc').innerText = `가격이 주요 EMA 위에 있고 단기선이 정배열입니다. (현재가 ${data.spx.price})`;
                 }
 
             } catch (err) {
