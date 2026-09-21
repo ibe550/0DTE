@@ -68,7 +68,6 @@ def fetch_yahoo_chart(symbol, interval="5m", range_str="1d"):
 def fetch_yahoo_quote(symbol):
     chart = fetch_yahoo_chart(symbol, interval="1m", range_str="1d")
     meta = chart.get("meta", {})
-    # 💡 핵심 수정: 프리마켓(preMarketPrice) 데이터를 최우선으로 반영하여 실시간 변동 캐치
     price = meta.get("preMarketPrice") or meta.get("regularMarketPrice") or meta.get("postMarketPrice")
     prev = meta.get("chartPreviousClose") or meta.get("previousClose") or price
     return (float(price), float(prev)) if price else (None, None)
@@ -220,13 +219,30 @@ def get_market_data():
     if abs(basis) > 20:
         basis = -2.0
 
+    # 🎯 [정밀 수정] 캔들의 High ~ Low 가격 범위를 5pt 틴(Bin)들에 걸쳐 비례 분배하는 정확한 볼륨 프로파일 알고리즘
     vp_bins = {}
     tot_vol = 0
     for h, l, c, v in zip(highs, lows, closes, volumes):
-        if v <= 0: continue
-        spx_bin = int(round((((h + l + c) / 3.0) + basis) / 5.0) * 5)
-        vp_bins[spx_bin] = vp_bins.get(spx_bin, 0.0) + v
-        tot_vol += v
+        if v is None or v <= 0 or h is None or l is None:
+            continue
+        
+        spx_h = h + basis
+        spx_l = l + basis
+        if spx_h < spx_l:
+            spx_h, spx_l = spx_l, spx_h
+            
+        min_bin = int(round(spx_l / 5.0) * 5)
+        max_bin = int(round(spx_h / 5.0) * 5)
+        
+        if min_bin == max_bin:
+            bins = [min_bin]
+        else:
+            bins = list(range(min_bin, max_bin + 5, 5))
+            
+        vol_per_bin = v / len(bins)
+        for b in bins:
+            vp_bins[b] = vp_bins.get(b, 0.0) + vol_per_bin
+            tot_vol += vol_per_bin
 
     if vp_bins:
         sorted_bins = sorted(vp_bins.keys())
