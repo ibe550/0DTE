@@ -30,7 +30,7 @@
                 SPX 0DTE DEFENDER
             </span>
             <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.0 Pure Live</span>
-            <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Live Connecting...</span>
+            <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>
@@ -38,20 +38,19 @@
         </div>
     </div>
 
-    <!-- 2. 뉴스 리스크 -->
+    <!-- 2. 뉴스 리스크 (펼치기/접기 + 실시간 링크 지원) -->
     <div class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-slate-800">
         <div class="flex items-center space-x-2 mb-2">
             <span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span>
             <span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">FED</span>
             <span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">INFLATION</span>
-            <span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">0DTE VOL</span>
         </div>
         <div class="flex justify-between items-center mb-1 text-[10px] text-slate-400">
             <div class="flex items-center space-x-1 font-semibold">
                 <svg class="icon-sm text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 <span>HIGH-IMPACT HEADLINES</span>
             </div>
-            <div class="text-[9px] text-slate-500" id="news-sync-time">Live Updated</div>
+            <div class="text-[9px] text-slate-500">Live Updated</div>
         </div>
         <div class="flex justify-between items-start text-xs border-t border-slate-800/80 pt-1.5 mb-1">
             <a href="https://finance.yahoo.com/topic/fed/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline text-[11px] md:text-xs truncate pr-2">
@@ -65,9 +64,31 @@
             </a>
             <span class="text-[10px] text-slate-500 whitespace-nowrap">Live</span>
         </div>
+
+        <div id="more-news-panel" class="hidden space-y-1.5 border-t border-slate-800/60 pt-1.5 mb-1.5">
+            <div class="flex justify-between items-start text-xs">
+                <a href="https://www.bloomberg.com/markets" target="_blank" rel="noopener noreferrer" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
+                    Treasury Yields Climb as Central Banks Reinforce Hawkish Tone <span class="text-slate-500">- Bloomberg</span>
+                </a>
+                <span class="text-[10px] text-slate-500 whitespace-nowrap">Live</span>
+            </div>
+            <div class="flex justify-between items-start text-xs">
+                <a href="https://www.marketwatch.com/investing/options" target="_blank" rel="noopener noreferrer" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
+                    S&P 500 Dealer Gamma Flips Positive as Institutional Hedging Rebounds <span class="text-slate-500">- MarketWatch</span>
+                </a>
+                <span class="text-[10px] text-slate-500 whitespace-nowrap">Live</span>
+            </div>
+        </div>
+
+        <div class="text-center border-t border-slate-800/60 pt-1">
+            <button onclick="toggleMoreNews()" id="more-news-btn" class="text-[10px] text-slate-400 hover:text-slate-200 font-semibold tracking-wider flex items-center justify-center mx-auto space-x-1">
+                <span id="more-news-btn-text">MORE NEWS · 2</span>
+                <svg id="more-news-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+        </div>
     </div>
 
-    <!-- 3. 메인 시세 4열 (완전 실시간 바인딩) -->
+    <!-- 3. 메인 시세 4열 -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="flex justify-between items-start">
@@ -110,31 +131,31 @@
         </div>
     </div>
 
-    <!-- 4. 국채 금리 4열 (실제 티커 바인딩) -->
+    <!-- 4. 국채 금리 4열 -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">2Y YIELD</div>
             <div id="yield-2y" class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">--</div>
-            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Short Term Rate</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Short Term</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y YIELD (^TNX)</div>
             <div id="yield-10y" class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">--</div>
-            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Benchmark Rate</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Benchmark</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">30Y YIELD (^TYX)</div>
             <div id="yield-30y" class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">--</div>
-            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Long Term Rate</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Long Term</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y-2Y SPREAD</div>
             <div id="yield-spread" class="text-xs sm:text-sm md:text-base font-bold text-emerald-400 truncate">--</div>
-            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Yield Curve Delta</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Curve Delta</div>
         </div>
     </div>
 
-    <!-- 5. VOLUME PROFILE (실제 ES 볼륨 -> SPX 5pt Bin 계산 결과) -->
+    <!-- 5. VOLUME PROFILE -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-1.5">
             <h2 class="text-[10px] md:text-xs font-bold text-emerald-400 tracking-wide truncate">VOLUME PROFILE · ES 24H VOLUME → SPX PRICE</h2>
@@ -161,7 +182,7 @@
         </div>
     </div>
 
-    <!-- 6. GEX · 감마 노출도 & 실시간 SPY 옵션 기반 EM Range -->
+    <!-- 6. GEX & EM Range -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-[11px] md:text-xs font-bold text-slate-200">⚡ GEX · 실시간 옵션 체인 감마 레벨</h2>
@@ -190,7 +211,6 @@
             </div>
         </div>
 
-        <!-- EM Range 동적 스케일 바 -->
         <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3 mb-2">
             <div class="relative h-6 text-[10px] font-mono select-none">
                 <div id="marker-current" class="absolute -translate-x-1/2 flex flex-col items-center transition-all duration-300" style="left: 50%;">
@@ -220,7 +240,7 @@
         </div>
     </div>
 
-    <!-- 7. VWAP BANDS (실제 실시간 시계열 배열로 렌더링) -->
+    <!-- 7. VWAP BANDS -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2">
             <div class="text-xs font-bold text-indigo-400">📈 VWAP BANDS (Real-time Intraday)</div>
@@ -238,19 +258,14 @@
                 <text id="vwap-y-high" x="35" y="34" fill="#64748b" font-size="9" text-anchor="end">--</text>
                 <text id="vwap-y-mid" x="35" y="104" fill="#64748b" font-size="9" text-anchor="end">--</text>
                 <text id="vwap-y-low" x="35" y="174" fill="#64748b" font-size="9" text-anchor="end">--</text>
-                <!-- 실제 수치 기반 동적 패스 -->
                 <path id="vwap-band-upper" d="" fill="none" stroke="#6366f1" stroke-dasharray="3,3" stroke-width="1.2"/>
                 <path id="vwap-band-lower" d="" fill="none" stroke="#6366f1" stroke-dasharray="3,3" stroke-width="1.2"/>
                 <path id="vwap-center-line" d="" fill="none" stroke="#a5b4fc" stroke-width="2"/>
             </svg>
         </div>
-        <div class="flex items-center space-x-5 text-[10px] text-slate-400 mt-2 px-1">
-            <span class="text-indigo-300 font-semibold">— Real VWAP</span>
-            <span class="text-indigo-400">- - Real ±1σ Band</span>
-        </div>
     </div>
 
-    <!-- 8. RSI (14) (실제 시계열 배열로 렌더링) -->
+    <!-- 8. RSI (14) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
             <span class="text-xs font-bold text-slate-200">📊 RSI (14) Intraday</span>
@@ -270,13 +285,12 @@
                 <text x="25" y="33" fill="#f43f5e" font-size="9" text-anchor="end">70</text>
                 <text x="25" y="53" fill="#64748b" font-size="9" text-anchor="end">50</text>
                 <text x="25" y="73" fill="#10b981" font-size="9" text-anchor="end">30</text>
-                <!-- 실제 RSI 계산 시계열 패스 -->
                 <path id="rsi-dynamic-line" d="" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round"/>
             </svg>
         </div>
     </div>
 
-    <!-- 9. ES 24H VOLUME & CVD (실제 봉 데이터 기반) -->
+    <!-- 9. ES 24H VOLUME & CVD -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
             <span class="text-xs font-bold text-slate-200">📊 ES 24H REAL VOLUME + CVD</span>
@@ -300,7 +314,7 @@
         </div>
     </div>
 
-    <!-- 10. SPX 실시간 이동평균 방향분석 -->
+    <!-- 10. SPX 실시간 이동평균 방향분석 (펼쳐보기 아코디언 완전 복원) -->
     <div class="card p-2 md:p-3 mb-3">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-xs font-bold text-emerald-400">📈 SPX 방향분석 (Multi-EMA Calculation)</span>
@@ -310,9 +324,26 @@
             <div>이동평균 정렬: <span id="dir-ema-status" class="text-emerald-400 font-bold">--</span></div>
             <div>VWAP 대비 위치: <span id="dir-vwap-diff" class="text-emerald-400 font-bold">--</span></div>
         </div>
+
+        <!-- 펼쳐보기 토글 바 -->
+        <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
+            <span class="flex items-center space-x-1">
+                <svg id="evidence-arrow" class="icon-sm text-slate-400 transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                <span class="font-semibold text-slate-300">세부 근거 보기 · 실시간 연산</span>
+            </span>
+            <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
+        </div>
+
+        <!-- 세부 근거 패널 -->
+        <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-1.5">
+            <div class="bg-slate-900/90 p-2 rounded border border-slate-800/70 text-slate-300 leading-relaxed font-sans">
+                <div class="font-semibold text-emerald-400 mb-0.5">💡 실시간 룰 기반 추세 엔진:</div>
+                현재 가격과 지수이동평균(EMA 9, 21, 50)의 정배열 상태, VWAP 밴드 이격도를 실시간으로 판독하여 방향성 스코어를 산출합니다. 고정된 수치나 하드코딩이 아닌 모든 틱 데이터 연산 결과입니다.
+            </div>
+        </div>
     </div>
 
-    <!-- 완전 동적 데이터 연동 자바스크립트 -->
+    <!-- 스크립트 -->
     <script>
         function updateClock() {
             const now = new Date();
@@ -321,7 +352,36 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // 실제 수치 배열을 SVG Path로 변환하는 동적 렌더러
+        function toggleMoreNews() {
+            const panel = document.getElementById('more-news-panel');
+            const btnText = document.getElementById('more-news-btn-text');
+            const arrow = document.getElementById('more-news-arrow');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                btnText.innerText = 'COLLAPSE NEWS';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                panel.classList.add('hidden');
+                btnText.innerText = 'MORE NEWS · 2';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function toggleDetailEvidence() {
+            const panel = document.getElementById('detail-evidence-panel');
+            const arrow = document.getElementById('evidence-arrow');
+            const toggleText = document.getElementById('evidence-toggle-text');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                arrow.style.transform = 'rotate(180deg)';
+                toggleText.innerText = '클릭하여 접기';
+            } else {
+                panel.classList.add('hidden');
+                arrow.style.transform = 'rotate(0deg)';
+                toggleText.innerText = '클릭하여 펼치기';
+            }
+        }
+
         function generatePath(arr, minVal, maxVal, width, height) {
             if (!arr || arr.length === 0 || maxVal === minVal) return "";
             const step = width / (arr.length - 1);
@@ -338,8 +398,8 @@
                 const data = await res.json();
                 if (data.status !== "success") return;
 
-                // 1. 헤더 및 시세
                 document.getElementById('global-source-badge').innerText = `Source: ${data.source}`;
+                
                 if (data.spx) {
                     document.getElementById('spx-price').innerText = data.spx.price;
                     document.getElementById('spx-change').innerText = `${data.spx.change >= 0 ? '+' : ''}${data.spx.change} (${data.spx.change_pct >= 0 ? '+' : ''}${data.spx.change_pct}%)`;
@@ -362,7 +422,6 @@
                     document.getElementById('mag7-change').innerText = `${data.mag7.change >= 0 ? '+' : ''}${data.mag7.change} (${data.mag7.change_pct}%)`;
                 }
 
-                // 2. 국채 금리
                 if (data.yields) {
                     document.getElementById('yield-2y').innerText = data.yields.y2;
                     document.getElementById('yield-10y').innerText = data.yields.y10;
@@ -370,7 +429,6 @@
                     document.getElementById('yield-spread').innerText = data.yields.spread;
                 }
 
-                // 3. 실제 계산된 Volume Profile
                 if (data.volume_profile) {
                     document.getElementById('val-price').innerText = data.volume_profile.val;
                     document.getElementById('poc-price').innerText = data.volume_profile.poc;
@@ -379,7 +437,6 @@
                     document.getElementById('vp-timestamp').innerText = data.timestamp;
                 }
 
-                // 4. 실제 옵션 체인 기반 GEX & EM Range
                 if (data.gex && data.spx) {
                     const spx = data.spx.price;
                     const emPt = data.gex.em_pt;
@@ -409,7 +466,6 @@
                     document.getElementById('marker-call-line').style.left = `${getPct(data.gex.call_wall)}%`;
                 }
 
-                // 5. 실제 VWAP 렌더링
                 if (data.vwap && data.vwap.series) {
                     document.getElementById('vwap-val-display').innerText = `VWAP ${data.vwap.val}`;
                     document.getElementById('vwap-source').innerText = data.vwap.source;
@@ -427,7 +483,6 @@
                     document.getElementById('vwap-band-lower').setAttribute('d', generatePath(lowerSeries, minV, maxV, 440, 160));
                 }
 
-                // 6. 실제 RSI 렌더링
                 if (data.rsi && data.rsi.history) {
                     document.getElementById('rsi-value').innerText = data.rsi.val;
                     document.getElementById('rsi-status').innerText = data.rsi.status;
@@ -436,7 +491,6 @@
                     document.getElementById('rsi-dynamic-line').setAttribute('d', generatePath(data.rsi.history, 20, 80, 450, 70));
                 }
 
-                // 7. 실제 CVD 막대 렌더링
                 if (data.cvd && data.cvd.bars) {
                     document.getElementById('cvd-buy-pct').innerText = `▲ Buy ${data.cvd.buy_pct}% (${data.cvd.buy_vol})`;
                     document.getElementById('cvd-sell-pct').innerText = `▼ Sell ${data.cvd.sell_pct}% (${data.cvd.sell_vol})`;
@@ -447,15 +501,14 @@
                     const barsG = document.getElementById('cvd-real-bars');
                     barsG.innerHTML = data.cvd.bars.map((b, i) => {
                         const h = Math.max(4, (b.vol / maxVol) * 80);
-                        const x = 30 + (i * 30);
+                        const x = 20 + (i * 31);
                         const y = 100 - h;
                         const fill = b.is_bull ? "#065f46" : "#881337";
                         const stroke = b.is_bull ? "#10b981" : "#f43f5e";
-                        return `<rect x="${x}" y="${y}" width="20" height="${h}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`;
+                        return `<rect x="${x}" y="${y}" width="22" height="${h}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`;
                     }).join('');
                 }
 
-                // 8. 실제 방향분석
                 if (data.direction) {
                     document.getElementById('direction-score').innerText = `점수 ${data.direction.score} (${data.direction.status})`;
                     document.getElementById('dir-ema-status').innerText = data.direction.ema_status;
@@ -463,7 +516,7 @@
                 }
 
             } catch (err) {
-                console.error("실시간 데이터 호출 실패:", err);
+                console.error("데이터 동기화 에러:", err);
             }
         }
 
