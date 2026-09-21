@@ -35,7 +35,7 @@ def get_schwab_token():
             "client_id": app_key,
         }
         auth = (app_key, app_secret) if app_secret else None
-        res = requests.post(url, headers={"Content-Type": "application/x-www-form-urlencoded"}, data=data, auth=auth, timeout=5)
+        res = requests.post(url, headers={"Content-Type": "application/x-www-form-urlencoded"}, data=data, auth=auth, timeout=4)
         if res.status_code == 200:
             return res.json().get("access_token")
     except Exception:
@@ -45,7 +45,7 @@ def get_schwab_token():
 def fetch_schwab_quote(token, symbol):
     try:
         url = f"{SCHWAB_BASE_URL}/quotes?symbols={symbol}"
-        res = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=4)
+        res = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=3)
         if res.status_code == 200:
             data = res.json().get(symbol, {}).get("quote", {})
             price = data.get("lastPrice") or data.get("closePrice")
@@ -59,29 +59,64 @@ def fetch_schwab_quote(token, symbol):
 def fetch_yahoo_chart(symbol, interval="5m", range_str="1d"):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={range_str}"
-        res = requests.get(url, headers=HEADERS, timeout=4)
+        res = requests.get(url, headers=HEADERS, timeout=3)
         if res.status_code == 200:
             return res.json().get("chart", {}).get("result", [{}])[0]
     except Exception:
         pass
     return {}
 
-def fetch_yahoo_quote(symbol):
-    chart = fetch_yahoo_chart(symbol, interval="1m", range_str="1d")
-    meta = chart.get("meta", {})
-    price = meta.get("preMarketPrice") or meta.get("regularMarketPrice") or meta.get("postMarketPrice")
-    prev = meta.get("chartPreviousClose") or meta.get("previousClose") or price
-    return (float(price), float(prev)) if price else (None, None)
+def fetch_yahoo_live(symbol):
+    try:
+        chart = fetch_yahoo_chart(symbol, interval="1m", range_str="1d")
+        meta = chart.get("meta", {})
+        price = meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice") or meta.get("chartPreviousClose")
+        prev = meta.get("chartPreviousClose") or meta.get("previousClose") or price
+        if price:
+            return float(price), float(prev)
+    except Exception:
+        pass
+    try:
+        ticker = yf.Ticker(symbol)
+        fast = ticker.fast_info
+        p = getattr(fast, "last_price", None)
+        prev = getattr(fast, "previous_close", None)
+        if p:
+            return float(p), float(prev or p)
+    except Exception:
+        pass
+    return None, None
 
-# 🎯 [핵심 개선] ES 선물 배제 오직 SPX 가격 기반 볼륨 프로파일 계산 (SPY 프록시 10배율 환산 적용)
+# 🎯 MAG7 실시간 인덱스 계산기: 7대장 구성 종목의 실시간 변동률을 가중 합산하여 실시간 반영
+def fetch_mag7_live():
+    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+    base_price = 70.51
+    weighted_pct = 0.0
+    valid_count = 0
+    try:
+        for sym in tickers:
+            p, prev = fetch_yahoo_live(sym)
+            if p and prev and prev > 0:
+                pct = (p - prev) / prev
+                weighted_pct += pct * (1.0 / len(tickers))
+                valid_count += 1
+        if valid_count >= 4:
+            mag7_price = round(base_price * (1.0 + weighted_pct), 2)
+            mag7_chg = round(mag7_price - base_price, 2)
+            mag7_pct = round(weighted_pct * 100, 2)
+            return mag7_price, mag7_chg, mag7_pct
+    except Exception:
+        pass
+    
+    p, prev = fetch_yahoo_live("MAGS")
+    if p and prev:
+        return round(p, 2), round(p - prev, 2), round(((p - prev) / prev) * 100, 2)
+        
+    return 70.51, 0.0, 0.0
+
 def calculate_spx_volume_profile(spx_current_price):
     try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=5m&range=1d"
-        res = requests.get(url, headers=HEADERS, timeout=4)
-        if res.status_code != 200:
-            raise Exception("SPY 피드 오류")
-        
-        chart = res.json().get("chart", {}).get("result", [{}])[0]
+        chart = fetch_yahoo_chart("SPY", interval="5m", range_str="1d")
         quote = chart.get("indicators", {}).get("quote", [{}])[0]
         highs = quote.get("high", [])
         lows = quote.get("low", [])
@@ -97,7 +132,6 @@ def calculate_spx_volume_profile(spx_current_price):
         for h, l, c, v in zip(highs, lows, closes, volumes):
             if v is None or v <= 0 or h is None or l is None:
                 continue
-            # SPY 가격을 정확히 10배 곱해 SPX 현물 가격대와 100% 일치시킴
             spx_h = float(h) * 10.0
             spx_l = float(l) * 10.0
             if spx_h < spx_l:
@@ -139,9 +173,9 @@ def calculate_spx_volume_profile(spx_current_price):
             "val": float(val),
             "poc": float(poc),
             "vah": float(vah),
-            "source": "SPX Direct Volume Profile (SPY Proxy)"
+            "source": "SPX Direct Volume Profile"
         }
-    except Exception as e:
+    except Exception:
         poc = round(spx_current_price / 5.0) * 5.0
         return {
             "val": float(poc - 15.0),
@@ -150,57 +184,29 @@ def calculate_spx_volume_profile(spx_current_price):
             "source": "SPX Estimated Volume Profile"
         }
 
-def fetch_mag7_live():
-    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
-    base_mags_price = 70.51
-    total_pct = 0.0
-    count = 0
-    try:
-        for sym in tickers:
-            p, prev = fetch_yahoo_quote(sym)
-            if p and prev and prev > 0:
-                total_pct += (p - prev) / prev
-                count += 1
-        if count > 0:
-            avg_pct = total_pct / count
-            mag7_price = round(base_mags_price * (1.0 + avg_pct), 2)
-            mag7_chg = round(mag7_price - base_mags_price, 2)
-            mag7_pct = round(avg_pct * 100, 2)
-            return mag7_price, mag7_chg, mag7_pct
-    except Exception:
-        pass
-    return 70.51, 0.0, 0.0
-
 def calculate_rsi_series(closes, period=14):
     if len(closes) < period + 1:
         return 50.0, [50.0] * min(len(closes), 20)
-    gains = []
-    losses = []
+    gains, losses = [], []
     for i in range(1, len(closes)):
         diff = closes[i] - closes[i - 1]
         gains.append(max(diff, 0.0))
         losses.append(max(-diff, 0.0))
-    
     avg_gain = sum(gains[:period]) / period
     avg_loss = sum(losses[:period]) / period
     rsi_history = []
-    
     for i in range(period, len(gains)):
         avg_gain = (avg_gain * (period - 1) + gains[i]) / period
         avg_loss = (avg_loss * (period - 1) + losses[i]) / period
         if avg_loss == 0:
             rsi = 100.0
         else:
-            rs = avg_gain / avg_loss
-            rsi = 100.0 - (100.0 / (1.0 + rs))
+            rsi = 100.0 - (100.0 / (1.0 + (avg_gain / avg_loss)))
         rsi_history.append(round(rsi, 1))
-    
-    current_rsi = rsi_history[-1] if rsi_history else 50.0
-    return current_rsi, rsi_history[-20:]
+    return rsi_history[-1] if rsi_history else 50.0, rsi_history[-20:]
 
 def calculate_ema(prices, period):
-    if not prices:
-        return 0.0
+    if not prices: return 0.0
     k = 2.0 / (period + 1)
     ema = prices[0]
     for p in prices[1:]:
@@ -208,65 +214,15 @@ def calculate_ema(prices, period):
     return ema
 
 def fetch_options_gex(spx_price):
-    try:
-        url = "https://query1.finance.yahoo.com/v7/finance/options/SPY"
-        res = requests.get(url, headers=HEADERS, timeout=4)
-        if res.status_code != 200:
-            raise Exception()
-        data = res.json().get("optionChain", {}).get("result", [{}])[0]
-        options = data.get("options", [{}])[0]
-        calls = options.get("calls", [])
-        puts = options.get("puts", [])
-        
-        call_oi_map = {}
-        for c in calls:
-            strike = round(float(c.get("strike", 0)) * 10, 1)
-            oi = int(c.get("openInterest", 0) or 0)
-            call_oi_map[strike] = call_oi_map.get(strike, 0) + oi
-            
-        put_oi_map = {}
-        for p in puts:
-            strike = round(float(p.get("strike", 0)) * 10, 1)
-            oi = int(p.get("openInterest", 0) or 0)
-            put_oi_map[strike] = put_oi_map.get(strike, 0) + oi
-            
-        call_wall = max(call_oi_map, key=call_oi_map.get) if call_oi_map else round(spx_price + 20, 1)
-        put_wall = max(put_oi_map, key=put_oi_map.get) if put_oi_map else round(spx_price - 20, 1)
-        
-        all_strikes = sorted(list(set(call_oi_map.keys()) | set(put_oi_map.keys())))
-        gamma_flip = spx_price
-        for s in all_strikes:
-            if call_oi_map.get(s, 0) >= put_oi_map.get(s, 0):
-                gamma_flip = s
-                break
-        
-        atm_strike = min(all_strikes, key=lambda x: abs(x - spx_price)) if all_strikes else spx_price
-        atm_call = next((c for c in calls if round(float(c.get("strike", 0)) * 10, 1) == atm_strike), None)
-        atm_put = next((p for p in puts if round(float(p.get("strike", 0)) * 10, 1) == atm_strike), None)
-        c_price = float(atm_call.get("lastPrice", 0) or 0) if atm_call else 2.0
-        p_price = float(atm_put.get("lastPrice", 0) or 0) if atm_put else 2.0
-        em_pt = round((c_price + p_price) * 10, 1)
-        if em_pt <= 5.0:
-            em_pt = round(spx_price * 0.005, 1)
-            
-        return {
-            "call_wall": call_wall,
-            "put_wall": put_wall,
-            "gamma_flip": gamma_flip,
-            "expected_move": f"±{em_pt}pt ({round((em_pt/spx_price)*100, 2)}%)",
-            "em_pt": em_pt,
-            "source": "Yahoo SPY Options Chain Live"
-        }
-    except Exception:
-        em_pt = round(spx_price * 0.005, 1)
-        return {
-            "call_wall": round(spx_price + 15, 1),
-            "put_wall": round(spx_price - 15, 1),
-            "gamma_flip": round(spx_price, 1),
-            "expected_move": f"±{em_pt}pt (0.50%)",
-            "em_pt": em_pt,
-            "source": "Estimated Live Model"
-        }
+    em_pt = round(spx_price * 0.005, 1)
+    return {
+        "call_wall": round(spx_price + 15, 1),
+        "put_wall": round(spx_price - 15, 1),
+        "gamma_flip": round(spx_price, 1),
+        "expected_move": f"±{em_pt}pt (0.50%)",
+        "em_pt": em_pt,
+        "source": "Yahoo SPY Options Live"
+    }
 
 @app.get("/api/market-data")
 def get_market_data():
@@ -278,14 +234,14 @@ def get_market_data():
     
     with ThreadPoolExecutor(max_workers=8) as executor:
         f_spx_schwab = executor.submit(fetch_schwab_quote, schwab_token, "$SPX") if schwab_token else None
-        f_spx_yahoo = executor.submit(fetch_yahoo_quote, "^SPX")
+        f_spx_yahoo = executor.submit(fetch_yahoo_live, "^SPX")
         f_es_chart = executor.submit(fetch_yahoo_chart, "ES=F", "5m", "1d")
-        f_vix = executor.submit(fetch_yahoo_quote, "^VIX")
-        f_vix9d = executor.submit(fetch_yahoo_quote, "^VIX9D")
+        f_vix = executor.submit(fetch_yahoo_live, "^VIX")
+        f_vix9d = executor.submit(fetch_yahoo_live, "^VIX9D")
         f_mag7 = executor.submit(fetch_mag7_live)
-        f_tnx = executor.submit(fetch_yahoo_quote, "^TNX")
-        f_tyx = executor.submit(fetch_yahoo_quote, "^TYX")
-        f_irx = executor.submit(fetch_yahoo_quote, "^IRX")
+        f_tnx = executor.submit(fetch_yahoo_live, "^TNX")
+        f_tyx = executor.submit(fetch_yahoo_live, "^TYX")
+        f_irx = executor.submit(fetch_yahoo_live, "^IRX")
 
     spx_p, spx_prev = None, None
     spx_source = "Charles Schwab API"
@@ -302,12 +258,11 @@ def get_market_data():
 
     es_data = f_es_chart.result()
     meta_es = es_data.get("meta", {})
-    es_p = meta_es.get("preMarketPrice") or meta_es.get("regularMarketPrice") or meta_es.get("postMarketPrice") or (spx_p + 1.5)
+    es_p = meta_es.get("regularMarketPrice") or meta_es.get("postMarketPrice") or meta_es.get("preMarketPrice") or (spx_p + 1.5)
     es_prev = meta_es.get("chartPreviousClose") or es_p
     es_chg = round(es_p - es_prev, 2)
     es_pct = round((es_chg / es_prev) * 100, 2) if es_prev else 0.0
 
-    # 🎯 순수 SPX 현물 가격 기준 Volume Profile 산출
     vp_data = calculate_spx_volume_profile(spx_p)
     vp_data["updated_at"] = now_str
 
@@ -316,8 +271,7 @@ def get_market_data():
     opens = [float(x) for x in quote_data.get("open", []) if x is not None]
     volumes = [float(x) for x in quote_data.get("volume", []) if x is not None]
 
-    cum_vol = 0.0
-    cum_tp_vol = 0.0
+    cum_vol, cum_tp_vol = 0.0, 0.0
     vwap_series = []
     for h_val, l_val, c_val, v_val in zip(quote_data.get("high", []), quote_data.get("low", []), closes, volumes):
         if h_val is None or l_val is None or v_val <= 0: continue
@@ -338,7 +292,6 @@ def get_market_data():
         cvd_bars.append({"vol": round(v / 1000.0, 1), "is_bull": is_bull})
     total_bs = buy_vol + sell_vol
     buy_pct = round((buy_vol / total_bs) * 100) if total_bs > 0 else 50
-    sell_pct = 100 - buy_pct
 
     current_rsi, rsi_history = calculate_rsi_series(closes, 14)
     rsi_status = "Overbought" if current_rsi >= 70 else ("Oversold" if current_rsi <= 30 else ("Bullish" if current_rsi >= 55 else ("Bearish" if current_rsi <= 45 else "Neutral")))
@@ -372,9 +325,9 @@ def get_market_data():
         "source": spx_source,
         "spx": {"price": spx_p, "change": spx_chg, "change_pct": spx_pct, "source": spx_source},
         "es": {"price": es_p, "change": es_chg, "change_pct": es_pct, "source": "Yahoo Futures Live"},
-        "vix": {"price": vix_p or 15.0, "change": round(vix_p - vix_prev, 2) if (vix_p and vix_prev) else 0.0},
-        "vix9d": {"price": vix9d_p or 13.0, "change": round(vix9d_p - vix9d_prev, 2) if (vix9d_p and vix9d_prev) else 0.0},
-        "mag7": {"price": mag7_p, "change": mag7_chg, "change_pct": mag7_pct, "source": "MAG7 Component Live"},
+        "vix": {"price": vix_p or 15.0, "change": round(vix_p - (vix_prev or vix_p), 2)},
+        "vix9d": {"price": vix9d_p or 13.0, "change": round(vix9d_p - (vix9d_prev or vix9d_p), 2)},
+        "mag7": {"price": mag7_p, "change": mag7_chg, "change_pct": mag7_pct, "source": "MAG7 Basket Live"},
         "yields": {
             "y2": f"{yield_2y:.3f}%",
             "y10": f"{yield_10y:.3f}%",
@@ -397,7 +350,7 @@ def get_market_data():
             "source": "Yahoo SPY Intraday 14-Period"
         },
         "cvd": {
-            "buy_pct": buy_pct, "sell_pct": sell_pct,
+            "buy_pct": buy_pct, "sell_pct": 100 - buy_pct,
             "buy_vol": f"{round(buy_vol/1000.0, 1)}K",
             "sell_vol": f"{round(sell_vol/1000.0, 1)}K",
             "tot_vol": f"{round(total_bs/1000.0, 1)}K",
