@@ -389,11 +389,11 @@
         </div>
     </div>
 
-    <!-- ================= 8. [전면 복원됨] 원본 완벽 재현 RSI (14) — 1H 섹션 ================= -->
+    <!-- ================= 8. [시간대 선택 기능 탑재] RSI (14) 섹션 ================= -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
             <div class="flex items-center space-x-1.5">
-                <span class="text-sm font-bold text-slate-200">📊 RSI (14) — 1H</span>
+                <span class="text-sm font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></span>
             </div>
             <div class="text-right">
                 <div class="text-[9px] text-slate-400">
@@ -407,23 +407,29 @@
             </div>
         </div>
 
-        <!-- 🚀 [정밀 재현] 70 이상 빨간 밴드, 30 이하 초록 밴드, 점선, 보라 실선, 종점 닷, X축 시간 틱 -->
+        <!-- 🚀 RSI 타임프레임 선택 버튼 그룹 -->
+        <div class="flex space-x-1 mb-2" id="rsi-tf-group">
+            <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+            <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+            <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+            <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+            <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+        </div>
+
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
             <svg id="rsi-svg-chart" class="w-full h-28 md:h-32" viewBox="0 0 520 130" preserveAspectRatio="none">
                 <defs>
-                    <!-- 과매수 상단 붉은색 반투명 밴드 -->
                     <linearGradient id="rsiOverboughtGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stop-color="#be123c" stop-opacity="0.25"/>
                         <stop offset="100%" stop-color="#be123c" stop-opacity="0.10"/>
                     </linearGradient>
-                    <!-- 과매도 하단 초록색 반투명 밴드 -->
                     <linearGradient id="rsiOversoldGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stop-color="#047857" stop-opacity="0.10"/>
                         <stop offset="100%" stop-color="#047857" stop-opacity="0.25"/>
                     </linearGradient>
                 </defs>
 
-                <!-- 1. 과매수(70~100) / 과매도(0~30) 영역 쉐이딩 밴드 -->
+                <!-- 1. 과매수/과매도 음영 밴드 -->
                 <rect x="55" y="10" width="435" height="28" fill="url(#rsiOverboughtGrad)"/>
                 <rect x="55" y="78" width="435" height="28" fill="url(#rsiOversoldGrad)"/>
 
@@ -432,34 +438,37 @@
                 <line x1="55" y1="58" x2="490" y2="58" stroke="#475569" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.6"/>
                 <line x1="55" y1="78" x2="490" y2="78" stroke="#10b981" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
 
-                <!-- 3. Y축 기준선 텍스트 (70, 50, 30) -->
+                <!-- 3. Y축 기준선 눈금 -->
                 <text x="68" y="34" fill="#f43f5e" font-size="9" font-weight="bold" font-family="monospace">70</text>
                 <text x="68" y="54" fill="#64748b" font-size="9" font-family="monospace">50</text>
                 <text x="68" y="74" fill="#10b981" font-size="9" font-weight="bold" font-family="monospace">30</text>
 
-                <!-- 4. 세로 가이드 점선 (시간 틱 위치) -->
-                <line x1="85" y1="10" x2="85" y2="106" stroke="#1e293b" stroke-width="1"/>
-                <line x1="180" y1="10" x2="180" y2="106" stroke="#1e293b" stroke-width="1"/>
-                <line x1="285" y1="10" x2="285" y2="106" stroke="#1e293b" stroke-width="1"/>
-                <line x1="390" y1="10" x2="390" y2="106" stroke="#1e293b" stroke-width="1"/>
-                <line x1="480" y1="10" x2="480" y2="106" stroke="#1e293b" stroke-width="1"/>
+                <!-- 4. 세로 가이드 라인 컨테이너 -->
+                <g id="rsi-grid-lines">
+                    <line x1="85" y1="10" x2="85" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="180" y1="10" x2="180" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="285" y1="10" x2="285" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="390" y1="10" x2="390" y2="106" stroke="#1e293b" stroke-width="1"/>
+                    <line x1="480" y1="10" x2="480" y2="106" stroke="#1e293b" stroke-width="1"/>
+                </g>
 
-                <!-- 5. 실제 RSI (14) 보라색 실선 궤적 (사진의 딥 하락 후 60.1 반등 완벽 일치) -->
+                <!-- 5. 동적 RSI 곡선 궤적 -->
                 <path id="rsi-line" d="M 55 58 L 140 56 L 180 78 L 220 54 L 320 52 L 360 56 L 400 58 L 450 56 L 485 50" fill="none" stroke="#818cf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
 
-                <!-- 6. RSI 종점 포커스 포인트 (보라색 원형 닷) -->
+                <!-- 6. RSI 종점 포커스 포인트 -->
                 <circle id="rsi-head-point" cx="485" cy="50" r="4" fill="#a5b4fc" stroke="#080d1a" stroke-width="1.5"/>
 
-                <!-- 7. X축 시간 라벨 (09:30, 14:30, 12:30, 10:30, 15:30/16:00) -->
-                <text x="85" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">09:30</text>
-                <text x="180" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">14:30</text>
-                <text x="285" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">12:30</text>
-                <text x="390" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">10:30</text>
-                <text x="470" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">15:30/16:00</text>
+                <!-- 7. 동적 X축 시간 라벨 컨테이너 -->
+                <g id="rsi-time-labels">
+                    <text x="85" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">09:30</text>
+                    <text x="180" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">14:30</text>
+                    <text x="285" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">12:30</text>
+                    <text x="390" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">10:30</text>
+                    <text x="470" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">15:30/16:00</text>
+                </g>
             </svg>
         </div>
 
-        <!-- 하단 양 끝단 과매수/과매도 기준 안내 -->
         <div class="flex justify-between text-[9px] text-slate-500 px-1 font-mono">
             <span>Overbought ≥ 70</span>
             <span>Oversold ≤ 30</span>
@@ -859,6 +868,100 @@
             document.getElementById('vwap-val-display').innerText = `VWAP ${calculatedVwap}`;
         }
 
+        // 🎯 [신규] RSI 타임프레임별 정밀 궤적 및 상태 데이터
+        const rsiConfigs = {
+            '1m': {
+                value: 52.4,
+                status: 'Neutral',
+                statusClass: 'text-[9px] bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 58 L 120 62 L 180 50 L 240 68 L 300 54 L 360 60 L 420 52 L 485 56',
+                headPoint: [485, 56],
+                timeTicks: [
+                    { x: 85, time: '21:00' }, { x: 180, time: '21:04' }, { x: 285, time: '21:08' }, 
+                    { x: 390, time: '21:12' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '5m': {
+                value: 58.7,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 64 L 120 58 L 180 68 L 240 50 L 300 46 L 360 52 L 420 48 L 485 51',
+                headPoint: [485, 51],
+                timeTicks: [
+                    { x: 85, time: '20:15' }, { x: 180, time: '20:30' }, { x: 285, time: '20:45' }, 
+                    { x: 390, time: '21:00' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '15m': {
+                value: 64.2,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 60 L 120 54 L 180 72 L 240 48 L 300 44 L 360 48 L 420 46 L 485 45',
+                headPoint: [485, 45],
+                timeTicks: [
+                    { x: 85, time: '18:15' }, { x: 180, time: '19:00' }, { x: 285, time: '19:45' }, 
+                    { x: 390, time: '20:30' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '30m': {
+                value: 62.8,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 56 L 130 52 L 190 74 L 250 50 L 320 48 L 380 50 L 440 48 L 485 47',
+                headPoint: [485, 47],
+                timeTicks: [
+                    { x: 85, time: '16:00' }, { x: 180, time: '17:30' }, { x: 285, time: '19:00' }, 
+                    { x: 390, time: '20:30' }, { x: 470, time: '21:15' }
+                ]
+            },
+            '1H': {
+                value: 60.1,
+                status: 'Bullish',
+                statusClass: 'text-[9px] bg-amber-950/80 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded font-bold',
+                line: 'M 55 58 L 140 56 L 180 78 L 220 54 L 320 52 L 360 56 L 400 58 L 450 56 L 485 50',
+                headPoint: [485, 50],
+                timeTicks: [
+                    { x: 85, time: '09:30' }, { x: 180, time: '14:30' }, { x: 285, time: '12:30' }, 
+                    { x: 390, time: '10:30' }, { x: 470, time: '15:30/16:00' }
+                ]
+            }
+        };
+
+        function changeRsiTimeframe(tf) {
+            document.querySelectorAll('#rsi-tf-group .rsi-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+
+            const cfg = rsiConfigs[tf] || rsiConfigs['1H'];
+            document.getElementById('rsi-title-tf').innerText = tf;
+            document.getElementById('rsi-value').innerText = cfg.value.toFixed(1);
+            
+            const statusBadge = document.getElementById('rsi-status');
+            statusBadge.innerText = cfg.status;
+            statusBadge.className = cfg.statusClass;
+
+            // RSI 곡선 및 종점 원형 닷 이동
+            document.getElementById('rsi-line').setAttribute('d', cfg.line);
+            document.getElementById('rsi-head-point').setAttribute('cx', cfg.headPoint[0]);
+            document.getElementById('rsi-head-point').setAttribute('cy', cfg.headPoint[1]);
+
+            // 세로 점선 안내선 업데이트
+            const gridContainer = document.getElementById('rsi-grid-lines');
+            gridContainer.innerHTML = cfg.timeTicks.map(t => 
+                `<line x1="${t.x}" y1="10" x2="${t.x}" y2="106" stroke="#1e293b" stroke-width="1"/>`
+            ).join('');
+
+            // X축 시간 라벨 업데이트
+            const labelsContainer = document.getElementById('rsi-time-labels');
+            labelsContainer.innerHTML = cfg.timeTicks.map(t => 
+                `<text x="${t.x}" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">${t.time}</text>`
+            ).join('');
+        }
+
         const cvdConfigs = {
             '1m': { 
                 y: ['1.2K', '600', '0'],
@@ -1005,6 +1108,7 @@
         }
 
         changeCvdTimeframe('15m');
+        changeRsiTimeframe('1H');
 
         async function fetchMarketData() {
             try {
@@ -1078,20 +1182,18 @@
                         vwapTimeElem.innerText = `Data as of ${vwapTimeStr}`;
                     }
 
-                    // RSI 실시간 소스 및 시간 바인딩
+                    // RSI 소스 및 타임스탬프 실시간 동기화
                     if (data.rsi) {
                         document.getElementById('rsi-source').innerText = data.rsi.source || data.source;
                         document.getElementById('rsi-time').innerText = `Data as of ${data.rsi.updated_at || globalTime}`;
                     }
 
-                    // CVD
                     if (data.cvd) {
                         document.getElementById('cvd-source').innerText = data.cvd.source || "Yahoo ES extended";
                         document.getElementById('cvd-time').innerText = `Data as of ${data.cvd.updated_at || globalTime}`;
                         document.getElementById('cvd-last-bar-time').innerText = (data.cvd.updated_at || globalTime).split(' ')[1] + " ET";
                     }
 
-                    // 방향분석
                     if (data.direction) {
                         document.getElementById('direction-time').innerText = `Data as of ${data.direction.updated_at || globalTime}`;
                     }
