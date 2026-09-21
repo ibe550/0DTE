@@ -5,8 +5,6 @@ import requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
-import pandas as pd
-import numpy as np
 
 app = FastAPI()
 handler = app
@@ -98,92 +96,101 @@ def fetch_yahoo_live(symbol: str):
             fast = ticker.fast_info
             price = getattr(fast, "last_price", None)
             prev_close = getattr(fast, "previous_close", None)
-
-            if price is None or prev_close is None:
-                hist = ticker.history(period="2d")
-                if len(hist) >= 2:
-                    prev_close = float(hist["Close"].iloc[0])
-                    price = float(hist["Close"].iloc[-1])
         except Exception:
             pass
 
     return price, prev_close
 
 
-# 🎯 [실제 계산 알고리즘] ES=F 24시간 분봉 볼륨을 SPX 베이시스로 매핑 후 5pt 단위 70% Value Area 도출
-def calculate_volume_profile(spx_price, es_price):
+# 🎯 [핵심] ES 24시간 거래량 직접 수집 및 SPX 5pt Bin 매핑 (Pure Python 초고속 엔진)
+def calculate_real_volume_profile(spx_price, es_price):
     try:
-        ticker = yf.Ticker("ES=F")
-        # 최근 1일 5분봉 히스토리 (24시간 확장장 거래량 포함)
-        df = ticker.history(period="1d", interval="5m")
-        if df.empty or len(df) < 10:
-            df = ticker.history(period="2d", interval="15m")
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        # ES=F 24시간 5분봉 전체 캔들 직접 요청
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/ES=F?interval=5m&range=1d"
+        res = requests.get(url, headers=headers, timeout=4)
+        
+        if res.status_code != 200:
+            raise Exception(f"ES 차트 피드 응답 오류 ({res.status_code})")
+        
+        chart_result = res.json().get("chart", {}).get("result", [{}])[0]
+        quote = chart_result.get("indicators", {}).get("quote", [{}])[0]
+        
+        highs = quote.get("high", [])
+        lows = quote.get("low", [])
+        closes = quote.get("close", [])
+        volumes = quote.get("volume", [])
+        
+        if not highs or not volumes:
+            raise Exception("ES 캔들 데이터 없음")
 
-        if df.empty or "Volume" not in df.columns or df["Volume"].sum() == 0:
-            raise Exception("ES 거래량 데이터 부족")
-
-        # 1. SPX - ES 베이시스 산출
+        # 1. SPX - ES 베이시스 스프레드 계산
         basis = spx_price - es_price
 
-        # 2. 각 봉의 평균가((High + Low + Close)/3)에 Basis를 더해 SPX 가격 좌표로 전환
-        typical_price = (df["High"] + df["Low"] + df["Close"]) / 3.0 + basis
-        volumes = df["Volume"]
+        # 2. 5pt 단위 SPX Bins 딕셔너리에 거래량 누적
+        profile_bins = {}
+        total_volume = 0
 
-        # 3. 5pt 단위 Bin으로 라운딩 (5pt SPX bins)
-        binned_prices = (np.round(typical_price / 5.0) * 5.0).astype(int)
+        for h, l, c, v in zip(highs, lows, closes, volumes):
+            if h is None or l is None or c is None or v is None or v == 0:
+                continue
+            
+            # 각 캔들의 평균 가격에 Basis를 더해 SPX 가격으로 치환
+            typical_spx = ((h + l + c) / 3.0) + basis
+            
+            # 5pt 단위 Bin으로 라운딩 (예: 7652.4 -> 7650, 7653.8 -> 7655)
+            bin_price = int(round(typical_spx / 5.0) * 5)
+            
+            profile_bins[bin_price] = profile_bins.get(bin_price, 0) + v
+            total_volume += v
 
-        # 4. 가격대별 거래량 누적 집계
-        vp = pd.DataFrame({"Price": binned_prices, "Volume": volumes}).groupby("Price").sum()
-        vp = vp.sort_index()
+        if not profile_bins or total_volume == 0:
+            raise Exception("유효 거래량 누적치 없음")
 
-        if vp.empty:
-            raise Exception("Volume Profile 집계 실패")
+        # 3. POC (Point of Control): 가장 많은 거래량이 터진 5pt 가격
+        sorted_prices = sorted(profile_bins.keys())
+        poc = max(profile_bins, key=profile_bins.get)
 
-        # 5. POC (최대 거래량 터진 가격)
-        poc = float(vp["Volume"].idxmax())
+        # 4. 70% Value Area 산출
+        target_volume = total_volume * 0.70
+        accumulated = profile_bins[poc]
 
-        # 6. 70% Value Area 계산
-        total_vol = vp["Volume"].sum()
-        target_vol = total_vol * 0.70
-
-        # POC를 중심으로 위/아래로 확장하며 70% 거래량 포함 구간 탐색
-        poc_idx = vp.index.get_loc(poc)
+        poc_idx = sorted_prices.index(poc)
         low_idx = poc_idx
         high_idx = poc_idx
-        accumulated_vol = vp.iloc[poc_idx]["Volume"]
 
-        while accumulated_vol < target_vol and (low_idx > 0 or high_idx < len(vp) - 1):
-            next_above_vol = vp.iloc[high_idx + 1]["Volume"] if high_idx + len(vp) - 1 > 0 and high_idx + 1 < len(vp) else 0
-            next_below_vol = vp.iloc[low_idx - 1]["Volume"] if low_idx > 0 else 0
+        while accumulated < target_volume and (low_idx > 0 or high_idx < len(sorted_prices) - 1):
+            next_above_vol = profile_bins[sorted_prices[high_idx + 1]] if high_idx + 1 < len(sorted_prices) else 0
+            next_below_vol = profile_bins[sorted_prices[low_idx - 1]] if low_idx > 0 else 0
 
-            if next_above_vol >= next_below_vol and high_idx < len(vp) - 1:
+            if next_above_vol >= next_below_vol and high_idx + 1 < len(sorted_prices):
                 high_idx += 1
-                accumulated_vol += next_above_vol
+                accumulated += next_above_vol
             elif low_idx > 0:
                 low_idx -= 1
-                accumulated_vol += next_below_vol
+                accumulated += next_below_vol
             else:
                 break
 
-        val = float(vp.index[low_idx])
-        vah = float(vp.index[high_idx])
+        val = sorted_prices[low_idx]
+        vah = sorted_prices[high_idx]
 
         return {
-            "val": round(val, 2),
-            "poc": round(poc, 2),
-            "vah": round(vah, 2),
-            "source": "ES Calculated (5pt Bins)"
+            "val": float(val),
+            "poc": float(poc),
+            "vah": float(vah),
+            "source": "ES Live 24H (5pt Bins)"
         }
 
     except Exception as e:
-        print(f"[VP Calculation Fallback] {e}")
-        # 오류 시 기본 라운딩된 5pt 기준치 반환
+        print(f"[Volume Profile 계산 폴백] {e}")
+        # 오류 시 현재가 기준 최근접 5pt 기준치 적용
         base_5pt = round(spx_price / 5.0) * 5.0
         return {
-            "val": round(base_5pt - 10.0, 2),
-            "poc": round(base_5pt, 2),
-            "vah": round(base_5pt + 10.0, 2),
-            "source": "ES Calculated"
+            "val": float(base_5pt - 10.0),
+            "poc": float(base_5pt),
+            "vah": float(base_5pt + 10.0),
+            "source": "ES Estimated"
         }
 
 
@@ -224,8 +231,8 @@ def fetch_from_schwab():
     mags_change = mags_price - mags_prev
     mags_change_pct = (mags_change / mags_prev) * 100 if mags_prev else 0.0
 
-    # 🎯 실제 ES 거래량을 이용한 SPX 매핑 볼륨 프로파일 계산
-    vp_data = calculate_volume_profile(spx_price, es_price)
+    # 🚀 실제 ES 24H 거래량 데이터 기반 SPX 매핑 볼륨 프로파일 계산
+    vp_data = calculate_real_volume_profile(spx_price, es_price)
     vp_data["updated_at"] = now_str
 
     return {
@@ -321,8 +328,8 @@ def fetch_from_yahoo():
     mags_change = mags_price - mags_prev
     mags_change_pct = (mags_change / mags_prev) * 100 if mags_prev else 0.0
 
-    # 🎯 실제 ES 거래량을 이용한 SPX 매핑 볼륨 프로파일 계산
-    vp_data = calculate_volume_profile(spx_price, es_price)
+    # 🚀 실제 ES 24H 거래량 데이터 기반 SPX 매핑 볼륨 프로파일 계산
+    vp_data = calculate_real_volume_profile(spx_price, es_price)
     vp_data["updated_at"] = now_str
 
     return {
