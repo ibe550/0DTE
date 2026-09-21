@@ -121,7 +121,7 @@ def fetch_options_gex(spx_price):
         
         call_oi_map = {}
         for c in calls:
-            strike = round(float(c.get("strike", 0)) * 10, 1) # SPY -> SPX 환산
+            strike = round(float(c.get("strike", 0)) * 10, 1)
             oi = int(c.get("openInterest", 0) or 0)
             call_oi_map[strike] = call_oi_map.get(strike, 0) + oi
             
@@ -134,7 +134,6 @@ def fetch_options_gex(spx_price):
         call_wall = max(call_oi_map, key=call_oi_map.get) if call_oi_map else round(spx_price + 20, 1)
         put_wall = max(put_oi_map, key=put_oi_map.get) if put_oi_map else round(spx_price - 20, 1)
         
-        # Gamma Flip 근사: Net OI가 0을 교차하는 행사가 탐색
         all_strikes = sorted(list(set(call_oi_map.keys()) | set(put_oi_map.keys())))
         gamma_flip = spx_price
         for s in all_strikes:
@@ -142,8 +141,7 @@ def fetch_options_gex(spx_price):
                 gamma_flip = s
                 break
         
-        # Expected Move: ATM 근처의 Call + Put 프리미엄 합산 (Straddle Price)
-        atm_strike = min(all_strikes, key=lambda x: abs(x - spx_price))
+        atm_strike = min(all_strikes, key=lambda x: abs(x - spx_price)) if all_strikes else spx_price
         atm_call = next((c for c in calls if round(float(c.get("strike", 0)) * 10, 1) == atm_strike), None)
         atm_put = next((p for p in puts if round(float(p.get("strike", 0)) * 10, 1) == atm_strike), None)
         c_price = float(atm_call.get("lastPrice", 0) or 0) if atm_call else 2.0
@@ -179,7 +177,6 @@ def get_market_data():
     
     schwab_token = get_schwab_token()
     
-    # 1. 멀티스레드 병렬 실시간 데이터 수집
     with ThreadPoolExecutor(max_workers=8) as executor:
         f_spx_schwab = executor.submit(fetch_schwab_quote, schwab_token, "$SPX") if schwab_token else None
         f_spx_yahoo = executor.submit(fetch_yahoo_quote, "^SPX")
@@ -187,12 +184,10 @@ def get_market_data():
         f_vix = executor.submit(fetch_yahoo_quote, "^VIX")
         f_vix9d = executor.submit(fetch_yahoo_quote, "^VIX9D")
         f_mag7 = executor.submit(fetch_yahoo_quote, "MAGS")
-        f_tnx = executor.submit(fetch_yahoo_quote, "^TNX") # 10Y
-        f_tyx = executor.submit(fetch_yahoo_quote, "^TYX") # 30Y
-        f_fvx = executor.submit(fetch_yahoo_quote, "^FVX") # 5Y
-        f_irx = executor.submit(fetch_yahoo_quote, "^IRX") # 3M / 2Y Proxy
+        f_tnx = executor.submit(fetch_yahoo_quote, "^TNX")
+        f_tyx = executor.submit(fetch_yahoo_quote, "^TYX")
+        f_irx = executor.submit(fetch_yahoo_quote, "^IRX")
 
-    # SPX 수집
     spx_p, spx_prev = None, None
     spx_source = "Charles Schwab API"
     if f_spx_schwab:
@@ -206,7 +201,6 @@ def get_market_data():
     spx_chg = round(spx_p - spx_prev, 2)
     spx_pct = round((spx_chg / spx_prev) * 100, 2) if spx_prev else 0.0
 
-    # ES 차트 파싱 (볼륨 프로파일, VWAP, CVD, RSI의 핵심 소스)
     es_data = f_es_chart.result()
     quote_data = es_data.get("indicators", {}).get("quote", [{}])[0]
     meta_es = es_data.get("meta", {})
@@ -221,12 +215,10 @@ def get_market_data():
     closes = [float(x) for x in quote_data.get("close", []) if x is not None]
     volumes = [float(x) for x in quote_data.get("volume", []) if x is not None]
 
-    # 정규장 베이시스
     basis = round(spx_p - es_prev, 2)
     if abs(basis) > 20:
         basis = -2.0
 
-    # 2. 실제 Volume Profile 계산 (5pt SPX Bins & 70% Value Area)
     vp_bins = {}
     tot_vol = 0
     for h, l, c, v in zip(highs, lows, closes, volumes):
@@ -258,7 +250,6 @@ def get_market_data():
         val = poc - 15.0
         vah = poc + 15.0
 
-    # 3. 실제 VWAP 계산 (시계열 데이터 도출)
     cum_vol = 0.0
     cum_tp_vol = 0.0
     vwap_series = []
@@ -270,35 +261,26 @@ def get_market_data():
         vwap_series.append(round(cum_tp_vol / cum_vol, 2))
     
     current_vwap = vwap_series[-1] if vwap_series else round(spx_p - 1.5, 2)
-    # 표준편차 계산
     sigma = 12.5
     if len(vwap_series) > 10:
         recent_diffs = [closes[i] + basis - vwap_series[i] for i in range(len(vwap_series))]
         variance = sum(d ** 2 for d in recent_diffs) / len(recent_diffs)
         sigma = round(variance ** 0.5, 2)
 
-    # 4. 실제 CVD (누적 델타 볼륨) 계산
     buy_vol, sell_vol = 0.0, 0.0
     cvd_bars = []
     for o, c, v in zip(opens[-15:], closes[-15:], volumes[-15:]):
         is_bull = (c >= o)
-        if is_bull:
-            buy_vol += v
-        else:
-            sell_vol += v
-        cvd_bars.append({
-            "vol": round(v / 1000.0, 1),
-            "is_bull": is_bull
-        })
+        if is_bull: buy_vol += v
+        else: sell_vol += v
+        cvd_bars.append({"vol": round(v / 1000.0, 1), "is_bull": is_bull})
     total_bs = buy_vol + sell_vol
     buy_pct = round((buy_vol / total_bs) * 100) if total_bs > 0 else 50
     sell_pct = 100 - buy_pct
 
-    # 5. 실제 RSI (14) 계산
     current_rsi, rsi_history = calculate_rsi_series(closes, 14)
     rsi_status = "Overbought" if current_rsi >= 70 else ("Oversold" if current_rsi <= 30 else ("Bullish" if current_rsi >= 55 else ("Bearish" if current_rsi <= 45 else "Neutral")))
 
-    # 6. 실제 국채 금리 및 VIX
     vix_p, vix_prev = f_vix.result()
     vix9d_p, vix9d_prev = f_vix9d.result()
     tnx_p, tnx_prev = f_tnx.result()
@@ -310,10 +292,8 @@ def get_market_data():
     yield_2y = round(irx_p / 10.0, 3) if irx_p else 4.150
     spread_bp = int(round((yield_10y - yield_2y) * 100))
 
-    # 7. 실제 실시간 옵션 체인 기반 GEX 계산
     gex_data = fetch_options_gex(spx_p)
 
-    # 8. 이동평균 기반 SPX 방향분석
     ema9 = calculate_ema(closes, 9)
     ema21 = calculate_ema(closes, 21)
     ema50 = calculate_ema(closes, 50)
@@ -344,7 +324,7 @@ def get_market_data():
         },
         "volume_profile": {
             "val": val, "poc": poc, "vah": vah,
-            "source": "ES 24H Volume Profile Engine (Real-time)"
+            "source": f"ES 24H Volume Profile via {spx_source}"
         },
         "vwap": {
             "val": current_vwap,
@@ -360,8 +340,7 @@ def get_market_data():
             "source": "Yahoo ES Intraday 14-Period"
         },
         "cvd": {
-            "buy_pct": buy_pct,
-            "sell_pct": sell_pct,
+            "buy_pct": buy_pct, "sell_pct": sell_pct,
             "buy_vol": f"{round(buy_vol/1000.0, 1)}K",
             "sell_vol": f"{round(sell_vol/1000.0, 1)}K",
             "tot_vol": f"{round(total_bs/1000.0, 1)}K",
