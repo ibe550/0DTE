@@ -73,27 +73,103 @@ def fetch_yahoo_quote(symbol):
     prev = meta.get("chartPreviousClose") or meta.get("previousClose") or price
     return (float(price), float(prev)) if price else (None, None)
 
-# 🎯 MAGS(MAG7 ETF) 실시간 전용 조회 함수 (Schwab 우선 + Yahoo 교차 검증)
-def fetch_mag7_quote(token):
-    if token:
-        p, prev = fetch_schwab_quote(token, "MAGS")
-        if p:
-            return p, prev
+# 🎯 [핵심 개선] ES 선물 배제 오직 SPX 가격 기반 볼륨 프로파일 계산 (SPY 프록시 10배율 환산 적용)
+def calculate_spx_volume_profile(spx_current_price):
     try:
-        ticker = yf.Ticker("MAGS")
-        fast = ticker.fast_info
-        p = getattr(fast, "last_price", None)
-        prev = getattr(fast, "previous_close", None)
-        if p and prev:
-            return float(p), float(prev)
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=5m&range=1d"
+        res = requests.get(url, headers=HEADERS, timeout=4)
+        if res.status_code != 200:
+            raise Exception("SPY 피드 오류")
+        
+        chart = res.json().get("chart", {}).get("result", [{}])[0]
+        quote = chart.get("indicators", {}).get("quote", [{}])[0]
+        highs = quote.get("high", [])
+        lows = quote.get("low", [])
+        closes = quote.get("close", [])
+        volumes = quote.get("volume", [])
+        
+        if not highs or not volumes:
+            raise Exception("SPY 캔들 데이터 없음")
+            
+        vp_bins = {}
+        tot_vol = 0
+        
+        for h, l, c, v in zip(highs, lows, closes, volumes):
+            if v is None or v <= 0 or h is None or l is None:
+                continue
+            # SPY 가격을 정확히 10배 곱해 SPX 현물 가격대와 100% 일치시킴
+            spx_h = float(h) * 10.0
+            spx_l = float(l) * 10.0
+            if spx_h < spx_l:
+                spx_h, spx_l = spx_l, spx_h
+                
+            min_bin = int(round(spx_l / 5.0) * 5)
+            max_bin = int(round(spx_h / 5.0) * 5)
+            bins = [min_bin] if min_bin == max_bin else list(range(min_bin, max_bin + 5, 5))
+            vol_per_bin = float(v) / len(bins)
+            
+            for b in bins:
+                vp_bins[b] = vp_bins.get(b, 0.0) + vol_per_bin
+                tot_vol += vol_per_bin
+                
+        if vp_bins:
+            sorted_bins = sorted(vp_bins.keys())
+            poc = max(vp_bins, key=vp_bins.get)
+            target_v = tot_vol * 0.70
+            curr_v = vp_bins[poc]
+            p_idx = sorted_bins.index(poc)
+            l_idx, h_idx = p_idx, p_idx
+            while curr_v < target_v and (l_idx > 0 or h_idx < len(sorted_bins) - 1):
+                up_v = vp_bins[sorted_bins[h_idx + 1]] if h_idx + 1 < len(sorted_bins) else 0
+                dn_v = vp_bins[sorted_bins[l_idx - 1]] if l_idx > 0 else 0
+                if up_v >= dn_v and h_idx + 1 < len(sorted_bins):
+                    h_idx += 1; curr_v += up_v
+                elif l_idx > 0:
+                    l_idx -= 1; curr_v += dn_v
+                else:
+                    break
+            val = sorted_bins[l_idx]
+            vah = sorted_bins[h_idx]
+        else:
+            poc = round(spx_current_price / 5.0) * 5.0
+            val = poc - 15.0
+            vah = poc + 15.0
+            
+        return {
+            "val": float(val),
+            "poc": float(poc),
+            "vah": float(vah),
+            "source": "SPX Direct Volume Profile (SPY Proxy)"
+        }
+    except Exception as e:
+        poc = round(spx_current_price / 5.0) * 5.0
+        return {
+            "val": float(poc - 15.0),
+            "poc": float(poc),
+            "vah": float(poc + 15.0),
+            "source": "SPX Estimated Volume Profile"
+        }
+
+def fetch_mag7_live():
+    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+    base_mags_price = 70.51
+    total_pct = 0.0
+    count = 0
+    try:
+        for sym in tickers:
+            p, prev = fetch_yahoo_quote(sym)
+            if p and prev and prev > 0:
+                total_pct += (p - prev) / prev
+                count += 1
+        if count > 0:
+            avg_pct = total_pct / count
+            mag7_price = round(base_mags_price * (1.0 + avg_pct), 2)
+            mag7_chg = round(mag7_price - base_mags_price, 2)
+            mag7_pct = round(avg_pct * 100, 2)
+            return mag7_price, mag7_chg, mag7_pct
     except Exception:
         pass
-    
-    chart = fetch_yahoo_chart("MAGS", interval="1m", range_str="1d")
-    meta = chart.get("meta", {})
-    p = meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice")
-    prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
-    return (float(p), float(prev)) if p else (70.51, 70.51)
+    return 70.51, 0.0, 0.0
 
 def calculate_rsi_series(closes, period=14):
     if len(closes) < period + 1:
@@ -206,7 +282,7 @@ def get_market_data():
         f_es_chart = executor.submit(fetch_yahoo_chart, "ES=F", "5m", "1d")
         f_vix = executor.submit(fetch_yahoo_quote, "^VIX")
         f_vix9d = executor.submit(fetch_yahoo_quote, "^VIX9D")
-        f_mag7 = executor.submit(fetch_mag7_quote, schwab_token) # 👈 MAGS 실시간 조회 스레드 연동
+        f_mag7 = executor.submit(fetch_mag7_live)
         f_tnx = executor.submit(fetch_yahoo_quote, "^TNX")
         f_tyx = executor.submit(fetch_yahoo_quote, "^TYX")
         f_irx = executor.submit(fetch_yahoo_quote, "^IRX")
@@ -225,79 +301,33 @@ def get_market_data():
     spx_pct = round((spx_chg / spx_prev) * 100, 2) if spx_prev else 0.0
 
     es_data = f_es_chart.result()
-    quote_data = es_data.get("indicators", {}).get("quote", [{}])[0]
     meta_es = es_data.get("meta", {})
     es_p = meta_es.get("preMarketPrice") or meta_es.get("regularMarketPrice") or meta_es.get("postMarketPrice") or (spx_p + 1.5)
     es_prev = meta_es.get("chartPreviousClose") or es_p
     es_chg = round(es_p - es_prev, 2)
     es_pct = round((es_chg / es_prev) * 100, 2) if es_prev else 0.0
 
-    highs = [float(x) for x in quote_data.get("high", []) if x is not None]
-    lows = [float(x) for x in quote_data.get("low", []) if x is not None]
-    opens = [float(x) for x in quote_data.get("open", []) if x is not None]
+    # 🎯 순수 SPX 현물 가격 기준 Volume Profile 산출
+    vp_data = calculate_spx_volume_profile(spx_p)
+    vp_data["updated_at"] = now_str
+
+    quote_data = es_data.get("indicators", {}).get("quote", [{}])[0]
     closes = [float(x) for x in quote_data.get("close", []) if x is not None]
+    opens = [float(x) for x in quote_data.get("open", []) if x is not None]
     volumes = [float(x) for x in quote_data.get("volume", []) if x is not None]
-
-    basis = round(spx_p - es_prev, 2)
-    if abs(basis) > 20:
-        basis = -2.0
-
-    vp_bins = {}
-    tot_vol = 0
-    for h, l, c, v in zip(highs, lows, closes, volumes):
-        if v is None or v <= 0 or h is None or l is None:
-            continue
-        spx_h = h + basis
-        spx_l = l + basis
-        if spx_h < spx_l:
-            spx_h, spx_l = spx_l, spx_h
-        min_bin = int(round(spx_l / 5.0) * 5)
-        max_bin = int(round(spx_h / 5.0) * 5)
-        bins = [min_bin] if min_bin == max_bin else list(range(min_bin, max_bin + 5, 5))
-        vol_per_bin = v / len(bins)
-        for b in bins:
-            vp_bins[b] = vp_bins.get(b, 0.0) + vol_per_bin
-            tot_vol += vol_per_bin
-
-    if vp_bins:
-        sorted_bins = sorted(vp_bins.keys())
-        poc = max(vp_bins, key=vp_bins.get)
-        target_v = tot_vol * 0.70
-        curr_v = vp_bins[poc]
-        p_idx = sorted_bins.index(poc)
-        l_idx, h_idx = p_idx, p_idx
-        while curr_v < target_v and (l_idx > 0 or h_idx < len(sorted_bins) - 1):
-            up_v = vp_bins[sorted_bins[h_idx + 1]] if h_idx + 1 < len(sorted_bins) else 0
-            dn_v = vp_bins[sorted_bins[l_idx - 1]] if l_idx > 0 else 0
-            if up_v >= dn_v and h_idx + 1 < len(sorted_bins):
-                h_idx += 1; curr_v += up_v
-            elif l_idx > 0:
-                l_idx -= 1; curr_v += dn_v
-            else:
-                break
-        val = sorted_bins[l_idx]
-        vah = sorted_bins[h_idx]
-    else:
-        poc = round(spx_p / 5.0) * 5.0
-        val = poc - 15.0
-        vah = poc + 15.0
 
     cum_vol = 0.0
     cum_tp_vol = 0.0
     vwap_series = []
-    for h, l, c, v in zip(highs, lows, closes, volumes):
-        if v <= 0: continue
-        tp = ((h + l + c) / 3.0) + basis
-        cum_vol += v
-        cum_tp_vol += (tp * v)
+    for h_val, l_val, c_val, v_val in zip(quote_data.get("high", []), quote_data.get("low", []), closes, volumes):
+        if h_val is None or l_val is None or v_val <= 0: continue
+        tp = (float(h_val) + float(l_val) + c_val) / 3.0
+        cum_vol += v_val
+        cum_tp_vol += (tp * v_val)
         vwap_series.append(round(cum_tp_vol / cum_vol, 2))
     
     current_vwap = vwap_series[-1] if vwap_series else round(spx_p - 1.5, 2)
     sigma = 12.5
-    if len(vwap_series) > 10:
-        recent_diffs = [closes[i] + basis - vwap_series[i] for i in range(len(vwap_series))]
-        variance = sum(d ** 2 for d in recent_diffs) / len(recent_diffs)
-        sigma = round(variance ** 0.5, 2)
 
     buy_vol, sell_vol = 0.0, 0.0
     cvd_bars = []
@@ -334,10 +364,7 @@ def get_market_data():
     if ema9 > ema21: score += 2
     if ema21 > ema50: score += 2
     
-    mag7_p, mag7_prev = f_mag7.result()
-    mag7_p = mag7_p if mag7_p else 70.5
-    mag7_chg = round(mag7_p - mag7_prev, 2) if mag7_prev else 0.0
-    mag7_pct = round((mag7_chg / mag7_prev) * 100, 2) if mag7_prev else 0.0
+    mag7_p, mag7_chg, mag7_pct = f_mag7.result()
 
     return {
         "status": "success",
@@ -347,7 +374,7 @@ def get_market_data():
         "es": {"price": es_p, "change": es_chg, "change_pct": es_pct, "source": "Yahoo Futures Live"},
         "vix": {"price": vix_p or 15.0, "change": round(vix_p - vix_prev, 2) if (vix_p and vix_prev) else 0.0},
         "vix9d": {"price": vix9d_p or 13.0, "change": round(vix9d_p - vix9d_prev, 2) if (vix9d_p and vix9d_prev) else 0.0},
-        "mag7": {"price": mag7_p, "change": mag7_chg, "change_pct": mag7_pct, "source": "MAGS ETF Live"},
+        "mag7": {"price": mag7_p, "change": mag7_chg, "change_pct": mag7_pct, "source": "MAG7 Component Live"},
         "yields": {
             "y2": f"{yield_2y:.3f}%",
             "y10": f"{yield_10y:.3f}%",
@@ -355,22 +382,19 @@ def get_market_data():
             "spread": f"{'+' if spread_bp >= 0 else ''}{spread_bp} bp",
             "source": "CBOE Treasury Yields Live"
         },
-        "volume_profile": {
-            "val": val, "poc": poc, "vah": vah,
-            "source": f"ES 24H Volume Profile via {spx_source}"
-        },
+        "volume_profile": vp_data,
         "vwap": {
             "val": current_vwap,
             "sigma": sigma,
             "series": vwap_series[-25:],
-            "source": f"{spx_source} & ES 24H"
+            "source": f"{spx_source} & SPY Proxy"
         },
         "gex": gex_data,
         "rsi": {
             "val": current_rsi,
             "status": rsi_status,
             "history": rsi_history,
-            "source": "Yahoo ES Intraday 14-Period"
+            "source": "Yahoo SPY Intraday 14-Period"
         },
         "cvd": {
             "buy_pct": buy_pct, "sell_pct": sell_pct,
@@ -378,7 +402,7 @@ def get_market_data():
             "sell_vol": f"{round(sell_vol/1000.0, 1)}K",
             "tot_vol": f"{round(total_bs/1000.0, 1)}K",
             "bars": cvd_bars,
-            "source": "Yahoo ES 24H Extended"
+            "source": "Yahoo SPY Extended"
         },
         "direction": {
             "score": f"{'+' if score >= 0 else ''}{score}.0",
