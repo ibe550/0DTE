@@ -21,7 +21,7 @@
 </head>
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
-    <!-- ================= 1. 상단 타이틀 & 헤더 (Replit 스타일) ================= -->
+    <!-- ================= 1. 상단 타이틀 & 헤더 ================= -->
     <div class="flex justify-between items-center px-1 mb-2">
         <div class="flex items-center space-x-2">
             <span class="text-blue-500 font-bold text-sm md:text-base flex items-center">
@@ -54,7 +54,7 @@
         </div>
     </div>
 
-    <!-- ================= 3. 지표 카드 그리드 (폰/PC 모두 4열 강제 유지) ================= -->
+    <!-- ================= 3. 지표 카드 그리드 (폰/PC 모두 4열 유지) ================= -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <!-- SPX -->
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
@@ -87,7 +87,7 @@
             <div id="es-change" class="text-[9px] md:text-xs font-semibold text-emerald-400 truncate">+0.34%</div>
         </div>
 
-        <!-- MAG7 (MAGS ETF 연동) -->
+        <!-- MAG7 -->
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="text-[9px] md:text-[11px] text-slate-400 font-medium">MAG7</div>
             <div id="mag7-price" class="text-sm sm:text-lg md:text-xl font-bold text-rose-400 tracking-tight truncate">70.51</div>
@@ -95,7 +95,7 @@
         </div>
     </div>
 
-    <!-- ================= 4. 국채 금리 그리드 (폰/PC 모두 4열 강제 유지) ================= -->
+    <!-- ================= 4. 국채 금리 그리드 (폰/PC 모두 4열 유지) ================= -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">2Y YIELD</div>
@@ -143,6 +143,9 @@
                 <div id="vah-price" class="text-xs md:text-sm font-bold text-white">7670</div>
             </div>
         </div>
+        <div class="text-[9px] text-slate-500 leading-relaxed">
+            ES=F 정규장·프리·애프터마켓 거래량을 마지막 SPX-ES 정규장 베이시스로 SPX 가격 구간에 매핑한 동적 계산치입니다.
+        </div>
     </div>
 
     <!-- ================= 6. GEX · 감마 노출도 섹션 ================= -->
@@ -177,7 +180,6 @@
             </div>
         </div>
 
-        <!-- 감마 바 -->
         <div class="w-full bg-slate-900 h-2.5 rounded relative overflow-hidden border border-slate-800 mb-2">
             <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-400 z-10"></div>
             <div class="absolute left-1/4 right-1/4 top-0 bottom-0 bg-indigo-600/40 rounded"></div>
@@ -211,19 +213,171 @@
         </div>
     </div>
 
-    <!-- ================= 7. 차트 섹션 ================= -->
+    <!-- ================= 7. 1H 차트 · VWAP BANDS 섹션 ================= -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-center mb-2">
             <div class="text-[11px] md:text-xs font-bold text-blue-400">📈 1H 차트 · VWAP BANDS</div>
             <div class="text-right text-[10px] font-bold text-blue-300">VWAP 7633.80</div>
         </div>
-        <div class="bg-slate-950 h-36 md:h-44 rounded border border-slate-800 relative flex items-center justify-center">
+        <div class="flex space-x-1 mb-2">
+            <button class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">1m</button>
+            <button class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">5m</button>
+            <button class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">15m</button>
+            <button class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">30m</button>
+            <button class="px-2 py-0.5 rounded text-[10px] bg-blue-600 text-white font-bold">1H</button>
+        </div>
+        <div class="bg-slate-950 h-36 md:h-44 rounded border border-slate-800 relative flex items-center justify-center mb-2">
             <svg class="absolute inset-0 w-full h-full p-2" preserveAspectRatio="none" viewBox="0 0 300 100">
                 <path d="M 10 70 Q 60 40, 100 80 T 200 50 T 290 20" fill="none" stroke="#10b981" stroke-width="2"/>
                 <path d="M 10 85 Q 60 65, 100 90 T 200 70 T 290 40" fill="none" stroke="#8b5cf6" stroke-dasharray="3,3" stroke-width="1.5"/>
             </svg>
             <span class="text-[10px] text-slate-500 z-10 font-mono">TradingView Chart Container</span>
         </div>
+        <div class="flex space-x-4 text-[10px] text-slate-400">
+            <span>— VWAP</span>
+            <span>- - ±1σ</span>
+            <span>··· ±2σ</span>
+        </div>
+    </div>
+
+    <!-- ================= 8. RSI (14) — 1H 섹션 (복원) ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-center mb-2">
+            <div class="text-[11px] md:text-xs font-bold text-slate-200">📊 RSI (14) — 1H</div>
+            <div class="text-right">
+                <span class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> Yahoo Finance</span>
+                <div class="flex items-center justify-end space-x-1.5 mt-0.5">
+                    <span class="text-xs md:text-sm font-bold text-amber-400">60.1</span>
+                    <span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-800 px-1.5 py-0.2 rounded font-bold">Bullish</span>
+                </div>
+            </div>
+        </div>
+        <div class="bg-slate-950 h-24 md:h-28 rounded border border-slate-800 relative flex items-center justify-center mb-2">
+            <div class="absolute inset-0 flex flex-col justify-between p-1.5 pointer-events-none">
+                <div class="border-b border-rose-900/30 text-[8px] text-rose-400/60 pl-1">70 Overbought</div>
+                <div class="border-b border-slate-800/40 text-[8px] text-slate-600 pl-1">50</div>
+                <div class="border-b border-emerald-900/30 text-[8px] text-emerald-400/60 pl-1">30 Oversold</div>
+            </div>
+            <svg class="absolute inset-0 w-full h-full p-2" preserveAspectRatio="none" viewBox="0 0 300 80">
+                <path d="M 10 40 Q 80 50, 150 42 T 290 35" fill="none" stroke="#a78bfa" stroke-width="2"/>
+            </svg>
+        </div>
+        <div class="flex justify-between text-[9px] text-slate-500">
+            <span>Overbought ≥ 70</span>
+            <span>Oversold ≤ 30</span>
+        </div>
+    </div>
+
+    <!-- ================= 9. ES 24H VOLUME + CVD 섹션 (복원) ================= -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-center mb-2">
+            <div class="text-[11px] md:text-xs font-bold text-slate-200">📊 ES 24H VOLUME + CVD — 15M</div>
+            <div class="text-right">
+                <span class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> Yahoo ES extended</span>
+                <span class="inline-block mt-0.5 text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.2 rounded font-bold ml-1">↑ Buying Pressure</span>
+            </div>
+        </div>
+        <div class="flex space-x-1 mb-2">
+            <button class="px-2 py-0.5 rounded text-[9px] bg-slate-800 text-slate-300">1m</button>
+            <button class="px-2 py-0.5 rounded text-[9px] bg-slate-800 text-slate-300">5m</button>
+            <button class="px-2 py-0.5 rounded text-[9px] bg-blue-600 text-white font-bold">15m</button>
+            <button class="px-2 py-0.5 rounded text-[9px] bg-slate-800 text-slate-300">30m</button>
+            <button class="px-2 py-0.5 rounded text-[9px] bg-slate-800 text-slate-300">1H</button>
+        </div>
+        
+        <!-- 볼륨 바 & CVD 라인 -->
+        <div class="bg-slate-950 h-28 md:h-32 rounded border border-slate-800 p-2 relative flex items-end justify-between mb-2">
+            <div class="w-2 bg-emerald-600 h-[30%] rounded-t"></div>
+            <div class="w-2 bg-emerald-600 h-[25%] rounded-t"></div>
+            <div class="w-2 bg-emerald-600 h-[20%] rounded-t"></div>
+            <div class="w-2 bg-rose-600 h-[40%] rounded-t"></div>
+            <div class="w-2 bg-rose-600 h-[60%] rounded-t"></div>
+            <div class="w-2 bg-emerald-600 h-[80%] rounded-t"></div>
+            <div class="w-2 bg-rose-600 h-[95%] rounded-t"></div>
+            <div class="w-2 bg-emerald-600 h-[50%] rounded-t"></div>
+            <div class="w-2 bg-emerald-600 h-[40%] rounded-t"></div>
+            <div class="w-2 bg-emerald-600 h-[90%] rounded-t"></div>
+        </div>
+
+        <div class="flex justify-between text-xs font-bold mb-1">
+            <span class="text-emerald-400">▲ Buy 96% (21.0K)</span>
+            <span class="text-rose-400">▼ Sell 4% (788)</span>
+        </div>
+        <div class="w-full bg-rose-950/80 h-2 rounded-full overflow-hidden flex mb-2 border border-slate-800">
+            <div class="bg-emerald-500 h-full" style="width: 96%;"></div>
+            <div class="bg-rose-500 h-full" style="width: 4%;"></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 p-2 rounded text-[10px] text-slate-300 mb-2">
+            Strong buying pressure — 96% of session volume in bullish bars.
+        </div>
+
+        <div class="card p-2 mb-1.5 bg-slate-900/80">
+            <div class="flex justify-between items-center mb-0.5">
+                <span class="text-[10px] font-bold text-slate-400">WEIGHTED FLOW SIGNAL</span>
+                <span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-900 px-1 py-0.2 rounded font-bold">↗ 종합 상승</span>
+            </div>
+            <div class="text-[11px] font-semibold text-slate-200">
+                현재가가 Gamma Flip 위 – Selling Pressure 가중치 50%↓
+            </div>
+        </div>
+
+        <div class="card p-2 bg-slate-900/80 mb-2">
+            <div class="flex justify-between items-center mb-0.5">
+                <span class="text-[10px] font-bold text-slate-400">ORDER BOOK IMBALANCE</span>
+                <span class="text-[8px] bg-slate-800 text-slate-400 px-1 py-0.2 rounded">L2 unavailable</span>
+            </div>
+            <div class="text-[10px] text-slate-300 leading-tight">
+                현재 데이터 소스가 SPX의 Bid/Ask 잔량을 제공하지 않아 지정가 매수벽은 계산하지 않습니다.
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 10. SPX 방향분석 섹션 (복원) ================= -->
+    <div class="card p-2 md:p-3 mb-3">
+        <div class="flex justify-between items-center mb-1.5">
+            <div class="text-[11px] md:text-xs font-bold text-emerald-400">📈 SPX 방향분석 · 상승 우세</div>
+            <div class="text-xs font-bold text-emerald-400">종합 점수 +5.2</div>
+        </div>
+        <div class="text-[10px] md:text-xs text-slate-300 mb-2">
+            큰 방향과 장중 흐름이 상승 쪽으로 기울었습니다. 75%의 시간봉이 상승 또는 상승 편향을 보입니다.
+        </div>
+        
+        <!-- 게이지 바 -->
+        <div class="w-full bg-slate-900 h-2 rounded-md relative overflow-hidden border border-slate-800 mb-2">
+            <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-rose-600 via-slate-700 to-emerald-500 w-full opacity-70"></div>
+            <div class="absolute right-[25%] top-0 bottom-0 w-2 bg-emerald-400 rounded shadow"></div>
+        </div>
+        <div class="flex justify-between text-[8px] md:text-[10px] text-slate-500 mb-2">
+            <span>BEARISH</span>
+            <span>NEUTRAL</span>
+            <span>BULLISH</span>
+        </div>
+
+        <!-- 4개 타임프레임 그리드 -->
+        <div class="grid grid-cols-4 gap-1 md:gap-2 text-center mb-2">
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="text-[9px] font-bold text-emerald-400">1H</div>
+                <div class="text-[10px] font-bold text-emerald-400 my-0.5">상승 우세</div>
+                <div class="text-[8px] text-slate-500">+6</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="text-[9px] font-bold text-emerald-400">15m</div>
+                <div class="text-[10px] font-bold text-emerald-400 my-0.5">상승 우세</div>
+                <div class="text-[8px] text-slate-500">+6</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="text-[9px] font-bold text-emerald-400">5m</div>
+                <div class="text-[10px] font-bold text-emerald-400 my-0.5">상승 우세</div>
+                <div class="text-[8px] text-slate-500">+5</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                <div class="text-[9px] font-bold text-slate-300">1m</div>
+                <div class="text-[10px] font-bold text-slate-300 my-0.5">중립</div>
+                <div class="text-[8px] text-slate-500">0</div>
+            </div>
+        </div>
+        <div class="text-right text-[9px] text-slate-500">시간봉 일치도 75%</div>
     </div>
 
     <!-- ================= 실시간 데이터 연동 스크립트 ================= -->
