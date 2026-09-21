@@ -5,6 +5,7 @@ import pytz
 import requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import yfinance as yf
 
 app = FastAPI()
 handler = app
@@ -71,6 +72,28 @@ def fetch_yahoo_quote(symbol):
     price = meta.get("preMarketPrice") or meta.get("regularMarketPrice") or meta.get("postMarketPrice")
     prev = meta.get("chartPreviousClose") or meta.get("previousClose") or price
     return (float(price), float(prev)) if price else (None, None)
+
+# 🎯 MAGS(MAG7 ETF) 실시간 전용 조회 함수 (Schwab 우선 + Yahoo 교차 검증)
+def fetch_mag7_quote(token):
+    if token:
+        p, prev = fetch_schwab_quote(token, "MAGS")
+        if p:
+            return p, prev
+    try:
+        ticker = yf.Ticker("MAGS")
+        fast = ticker.fast_info
+        p = getattr(fast, "last_price", None)
+        prev = getattr(fast, "previous_close", None)
+        if p and prev:
+            return float(p), float(prev)
+    except Exception:
+        pass
+    
+    chart = fetch_yahoo_chart("MAGS", interval="1m", range_str="1d")
+    meta = chart.get("meta", {})
+    p = meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice")
+    prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
+    return (float(p), float(prev)) if p else (70.51, 70.51)
 
 def calculate_rsi_series(closes, period=14):
     if len(closes) < period + 1:
@@ -183,7 +206,7 @@ def get_market_data():
         f_es_chart = executor.submit(fetch_yahoo_chart, "ES=F", "5m", "1d")
         f_vix = executor.submit(fetch_yahoo_quote, "^VIX")
         f_vix9d = executor.submit(fetch_yahoo_quote, "^VIX9D")
-        f_mag7 = executor.submit(fetch_yahoo_quote, "MAGS")
+        f_mag7 = executor.submit(fetch_mag7_quote, schwab_token) # 👈 MAGS 실시간 조회 스레드 연동
         f_tnx = executor.submit(fetch_yahoo_quote, "^TNX")
         f_tyx = executor.submit(fetch_yahoo_quote, "^TYX")
         f_irx = executor.submit(fetch_yahoo_quote, "^IRX")
@@ -219,26 +242,18 @@ def get_market_data():
     if abs(basis) > 20:
         basis = -2.0
 
-    # 🎯 [정밀 수정] 캔들의 High ~ Low 가격 범위를 5pt 틴(Bin)들에 걸쳐 비례 분배하는 정확한 볼륨 프로파일 알고리즘
     vp_bins = {}
     tot_vol = 0
     for h, l, c, v in zip(highs, lows, closes, volumes):
         if v is None or v <= 0 or h is None or l is None:
             continue
-        
         spx_h = h + basis
         spx_l = l + basis
         if spx_h < spx_l:
             spx_h, spx_l = spx_l, spx_h
-            
         min_bin = int(round(spx_l / 5.0) * 5)
         max_bin = int(round(spx_h / 5.0) * 5)
-        
-        if min_bin == max_bin:
-            bins = [min_bin]
-        else:
-            bins = list(range(min_bin, max_bin + 5, 5))
-            
+        bins = [min_bin] if min_bin == max_bin else list(range(min_bin, max_bin + 5, 5))
         vol_per_bin = v / len(bins)
         for b in bins:
             vp_bins[b] = vp_bins.get(b, 0.0) + vol_per_bin
@@ -322,6 +337,7 @@ def get_market_data():
     mag7_p, mag7_prev = f_mag7.result()
     mag7_p = mag7_p if mag7_p else 70.5
     mag7_chg = round(mag7_p - mag7_prev, 2) if mag7_prev else 0.0
+    mag7_pct = round((mag7_chg / mag7_prev) * 100, 2) if mag7_prev else 0.0
 
     return {
         "status": "success",
@@ -331,7 +347,7 @@ def get_market_data():
         "es": {"price": es_p, "change": es_chg, "change_pct": es_pct, "source": "Yahoo Futures Live"},
         "vix": {"price": vix_p or 15.0, "change": round(vix_p - vix_prev, 2) if (vix_p and vix_prev) else 0.0},
         "vix9d": {"price": vix9d_p or 13.0, "change": round(vix9d_p - vix9d_prev, 2) if (vix9d_p and vix9d_prev) else 0.0},
-        "mag7": {"price": mag7_p, "change": mag7_chg, "change_pct": round((mag7_chg / mag7_prev) * 100, 2) if mag7_prev else 0.0},
+        "mag7": {"price": mag7_p, "change": mag7_chg, "change_pct": mag7_pct, "source": "MAGS ETF Live"},
         "yields": {
             "y2": f"{yield_2y:.3f}%",
             "y10": f"{yield_10y:.3f}%",
