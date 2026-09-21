@@ -27,7 +27,7 @@ def get_schwab_access_token():
     refresh_token = os.environ.get("SCHWAB_REFRESH_TOKEN")
 
     if not app_key or not refresh_token:
-        raise Exception("환경 변수(SCHWAB_APP_KEY 또는 SCHWAB_REFRESH_TOKEN)가 누락되었습니다.")
+        raise Exception("환경 변수 누락")
 
     auth_url = "https://api.schwabapi.com/v1/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -41,7 +41,7 @@ def get_schwab_access_token():
     response = requests.post(auth_url, headers=headers, data=data, auth=auth_tuple, timeout=8)
     if response.status_code == 200:
         return response.json().get("access_token")
-    raise Exception(f"스왑 토큰 갱신 실패 (HTTP {response.status_code}): {response.text}")
+    raise Exception(f"스왑 토큰 갱신 실패 ({response.status_code}): {response.text}")
 
 
 @app.get("/api/callback")
@@ -119,20 +119,19 @@ def fetch_from_schwab():
     res = requests.get(quote_url, headers=headers, timeout=6)
 
     if res.status_code != 200:
-        raise Exception(f"스왑 시세 API 실패 ({res.status_code}): {res.text}")
+        raise Exception(f"스왑 시세 API 에러 ({res.status_code})")
 
     quote_data = res.json()
     spx_quote = quote_data.get("$SPX", {}).get("quote", {})
     spx_price = spx_quote.get("lastPrice") or spx_quote.get("closePrice")
 
     if not spx_price:
-        raise Exception("스왑 응답 내 SPX 가격 정보 누락")
+        raise Exception("스왑 SPX 가격 정보 누락")
 
     spx_prev = spx_quote.get("closePrice", spx_price)
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # ES 선물 및 MAGS ETF는 보조 실시간 피드 조회
     es_price, es_prev = fetch_yahoo_live("ES=F")
     es_price = es_price if es_price else (spx_price + 82.5)
     es_prev = es_prev if es_prev else (es_price - 20.5)
@@ -150,10 +149,6 @@ def fetch_from_schwab():
         "source": "Charles Schwab API",
         "timestamp": now_str,
         "market_state": "ACTIVE",
-        "overview": {
-            "source": "Charles Schwab API",
-            "updated_at": now_str
-        },
         "spx": {
             "price": round(float(spx_price), 2),
             "change": round(float(spx_change), 2),
@@ -230,21 +225,18 @@ def fetch_from_yahoo():
 
     source_name = "Yahoo Finance"
 
-    # SPX
     spx_price, spx_prev = fetch_yahoo_live("^SPX")
     spx_price = spx_price if spx_price else 7650.50
     spx_prev = spx_prev if spx_prev else spx_price
     spx_change = spx_price - spx_prev
     spx_change_pct = (spx_change / spx_prev) * 100 if spx_prev else 0.0
 
-    # ES
     es_price, es_prev = fetch_yahoo_live("ES=F")
     es_price = es_price if es_price else 7738.25
     es_prev = es_prev if es_prev else 7712.50
     es_change = es_price - es_prev
     es_change_pct = (es_change / es_prev) * 100 if es_prev else 0.0
 
-    # MAGS
     mags_price, mags_prev = fetch_yahoo_live("MAGS")
     mags_price = mags_price if mags_price else 70.51
     mags_prev = mags_prev if mags_prev else mags_price
@@ -256,10 +248,6 @@ def fetch_from_yahoo():
         "source": source_name,
         "timestamp": now_str,
         "market_state": "ACTIVE" if is_active else "CLOSED",
-        "overview": {
-            "source": source_name,
-            "updated_at": now_str
-        },
         "spx": {
             "price": round(float(spx_price), 2),
             "change": round(float(spx_change), 2),
@@ -325,7 +313,7 @@ def get_market_data():
     try:
         return fetch_from_schwab()
     except Exception as err:
-        print(f"[Schwab Fallback to Yahoo] 원인: {err}")
+        print(f"[Schwab Fallback to Yahoo] {err}")
         try:
             return fetch_from_yahoo()
         except Exception as fallback_err:
