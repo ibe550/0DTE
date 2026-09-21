@@ -26,7 +26,7 @@ def get_schwab_access_token():
     refresh_token = os.environ.get("SCHWAB_REFRESH_TOKEN")
     
     if not app_key or not refresh_token:
-        raise Exception("Vercel 환경 변수에 SCHWAB_APP_KEY 또는 SCHWAB_REFRESH_TOKEN이 없습니다.")
+        raise Exception("환경 변수(SCHWAB_APP_KEY 또는 SCHWAB_REFRESH_TOKEN)가 설정되지 않았습니다.")
     
     auth_url = "https://api.schwabapi.com/v1/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -40,6 +40,7 @@ def get_schwab_access_token():
     if response.status_code == 200:
         return response.json().get("access_token")
     else:
+        # 토큰 갱신 과정에서 발생한 스왑 서버의 원본 에러를 그대로 전달
         raise Exception(f"스왑 토큰 갱신 실패 (HTTP {response.status_code}): {response.text}")
 
 @app.get("/api/callback")
@@ -77,69 +78,46 @@ def auth_callback(code: str = None):
 @app.get("/api/market-data")
 def get_market_data():
     """
-    [진단 모드] 찰스스왑 API를 호출하고, 만약 실패할 경우 
-    야후로 숨기지 않고 찰스스왑이 뱉어낸 에러를 화면에 직접 보여줍니다.
+    [1단계 진단 모드] 
+    야후 백업으로 숨기지 않고, 찰스스왑 API 통신 결과를 투명하게 진단합니다.
     """
+    diagnostic_log = {}
+    
     try:
+        # 1. 토큰 발급 단계 진단
+        diagnostic_log["step_1_token_request"] = "Attempting to get access token..."
         access_token = get_schwab_access_token()
-        headers = {"Authorization": f"Bearer {access_token}"}
+        diagnostic_log["step_1_token_result"] = "Success"
         
-        # 찰스스왑 마켓 시세 조회 요청
-        quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX,/ES"
+        # 2. 마켓 데이터 요청 단계 진단
+        headers = {"Authorization": f"Bearer {access_token}"}
+        quote_url = f"{SCHWAB_BASE_URL}/quotes?symbols=%24SPX"
+        
+        diagnostic_log["step_2_quote_url"] = quote_url
         res = requests.get(quote_url, headers=headers)
+        
+        diagnostic_log["step_2_http_status"] = res.status_code
+        diagnostic_log["step_2_raw_response"] = res.text[:500] # 응답 앞부분 500자 기록
         
         if res.status_code != 200:
             return {
-                "status": "error_from_schwab",
-                "http_status": res.status_code,
-                "error_detail": res.text,
-                "message": "찰스스왑 API 서버가 에러를 반환했습니다. 위 상세 내용을 확인하세요."
+                "status": "schwab_api_error",
+                "diagnostic_info": diagnostic_log,
+                "message": "찰스스왑 API가 비정상 응답을 반환했습니다."
             }
             
-        quote_data = res.json()
-        spx_quote = quote_data.get("$SPX", {}).get("quote", {})
-        spx_price = spx_quote.get("lastPrice") or spx_quote.get("closePrice", 7650.0)
-        
-        et_tz = pytz.timezone('US/Eastern')
-        now_et = datetime.now(et_tz)
-
+        data = res.json()
         return {
             "status": "success",
-            "source": "Charles Schwab API",
-            "timestamp": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
-            "market_state": "ACTIVE",
-            "spx": {
-                "price": round(float(spx_price), 2),
-                "change": 0.0,
-                "change_pct": 0.0
-            },
-            "es": {
-                "price": round(float(spx_price) + 6.25, 2),
-                "change_pct": 0.0,
-                "abs_change": 0.0
-            },
-            "volume_profile": {
-                "val": round(float(spx_price) - 30, 2), 
-                "poc": round(float(spx_price) - 5, 2), 
-                "vah": round(float(spx_price) + 5, 2),
-                "source": "Charles Schwab API"
-            },
-            "gex": {
-                "expected_move": "±36.9pt (0.48%)",
-                "put_wall": round(float(spx_price) - 15.0, 2),
-                "gamma_flip": round(float(spx_price) - 15.0, 2),
-                "call_wall": round(float(spx_price) + 1.0, 2),
-                "positive_gamma": {"strike": round(float(spx_price) + 35.0, 2), "value": "+29.9M", "strikes_count": 38, "description": "가장 큰 핀닝 성향"},
-                "negative_gamma": {"strike": round(float(spx_price) - 65.0, 2), "value": "-32.2M", "strikes_count": 36, "description": "가장 큰 변동성 확대 성향"},
-                "sentiment": "폭발적 구간"
-            },
-            "vix": {"price": 14.81, "change": -0.63},
-            "mag7": {"price": 70.51, "change_pct": -0.38}
+            "source": "Charles Schwab API (Verified)",
+            "diagnostic_info": diagnostic_log,
+            "raw_data": data
         }
         
     except Exception as e:
         return {
-            "status": "exception_occurred",
-            "error_message": str(e),
-            "message": "찰스스왑 토큰 인증 또는 요청 과정에서 예외가 발생했습니다."
+            "status": "diagnostic_exception",
+            "error_detail": str(e),
+            "diagnostic_info": diagnostic_log,
+            "message": "찰스스왑 연동 과정에서 예외가 발생했습니다. 위 error_detail을 확인하세요."
         }
