@@ -240,12 +240,18 @@
         </div>
     </div>
 
-    <!-- 7. VWAP BANDS -->
+    <!-- 7. VWAP BANDS (타임프레임 버튼 포함 복원) -->
     <div class="card p-2 md:p-3 mb-2">
-        <div class="flex justify-between items-center mb-2">
-            <div class="text-xs font-bold text-indigo-400">📈 VWAP BANDS (Real-time Intraday)</div>
+        <div class="flex justify-between items-center mb-2.5">
+            <div class="flex space-x-1" id="vwap-tf-group">
+                <button onclick="changeVwapTimeframe('1m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+                <button onclick="changeVwapTimeframe('5m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeVwapTimeframe('15m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+                <button onclick="changeVwapTimeframe('30m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+                <button onclick="changeVwapTimeframe('1H')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+            </div>
             <div class="text-right">
-                <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="vwap-source">Live Calculation</span></div>
+                <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="vwap-source">Live Calculation</span></div>
                 <div class="text-[11px] font-bold text-indigo-300 mt-0.5" id="vwap-val-display">VWAP --</div>
             </div>
         </div>
@@ -265,18 +271,27 @@
         </div>
     </div>
 
-    <!-- 8. RSI (14) -->
+    <!-- 8. RSI (14) (타임프레임 버튼 포함 복원) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
-            <span class="text-xs font-bold text-slate-200">📊 RSI (14) Intraday</span>
+            <div class="text-xs font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></div>
             <div class="text-right">
-                <span class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="rsi-source">Live Calculation</span></span>
+                <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="rsi-source">Live Calculation</span></div>
                 <div class="flex items-center justify-end space-x-1.5 mt-0.5">
                     <span class="text-base font-bold text-amber-400 font-mono" id="rsi-value">--</span>
                     <span class="text-[9px] px-1.5 py-0.2 rounded font-bold" id="rsi-status">--</span>
                 </div>
             </div>
         </div>
+
+        <div class="flex space-x-1 mb-2" id="rsi-tf-group">
+            <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+            <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+            <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+            <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+            <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+        </div>
+
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
             <svg id="rsi-svg-chart" class="w-full h-24 md:h-28" viewBox="0 0 500 100" preserveAspectRatio="none">
                 <line x1="30" y1="30" x2="480" y2="30" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
@@ -290,14 +305,23 @@
         </div>
     </div>
 
-    <!-- 9. CVD -->
+    <!-- 9. CVD (타임프레임 버튼 포함 복원) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
-            <span class="text-xs font-bold text-slate-200">📊 SPX REAL VOLUME + CVD</span>
+            <div class="text-xs font-bold text-slate-200">📊 REAL VOLUME + CVD — <span id="cvd-title-tf">15M</span></div>
             <div class="text-right text-[9px] text-slate-400">
-                <span class="bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">SPY Extended</span>
+                <span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">SPY Extended</span>
             </div>
         </div>
+
+        <div class="flex space-x-1 mb-2" id="cvd-tf-group">
+            <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+            <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+            <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="15m">15m</button>
+            <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+            <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
+        </div>
+
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-2">
             <svg id="cvd-bars-svg" class="w-full h-32 md:h-36" viewBox="0 0 500 120" preserveAspectRatio="none">
                 <line x1="20" y1="100" x2="490" y2="100" stroke="#1e293b" stroke-width="1"/>
@@ -503,6 +527,38 @@
                 arrow.style.transform = 'rotate(0deg)';
                 toggleText.innerText = '클릭하여 펼치기';
             }
+        }
+
+        function changeVwapTimeframe(tf) {
+            document.querySelectorAll('#vwap-tf-group .vwap-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+        }
+
+        function changeRsiTimeframe(tf) {
+            document.querySelectorAll('#rsi-tf-group .rsi-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+            document.getElementById('rsi-title-tf').innerText = tf;
+        }
+
+        function changeCvdTimeframe(tf) {
+            document.querySelectorAll('#cvd-tf-group .cvd-tf-btn').forEach(btn => {
+                if (btn.getAttribute('data-tf') === tf) {
+                    btn.className = "cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow";
+                } else {
+                    btn.className = "cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition";
+                }
+            });
+            document.getElementById('cvd-title-tf').innerText = tf.toUpperCase();
         }
 
         function generatePath(arr, minVal, maxVal, width, height) {
