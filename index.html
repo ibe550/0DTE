@@ -39,7 +39,7 @@
         </div>
     </div>
 
-    <!-- ================= 2. 뉴스 리스크 & 속보 ================= -->
+    <!-- ================= 2. 뉴스 리스크 & 속보 (펼치기/접기 완벽 지원) ================= -->
     <div class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-slate-800">
         <div class="flex items-center space-x-2 mb-2">
             <span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span>
@@ -52,8 +52,10 @@
                 <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 <span>LATEST HIGH-IMPACT NEWS</span>
             </div>
-            <div class="text-[9px] text-slate-500">Google News · Latest item 09/20 08:34:00 ET</div>
+            <div class="text-[9px] text-slate-500">Google News · <span id="news-sync-time">Latest item 09/20 08:34:00 ET</span></div>
         </div>
+
+        <!-- 기본 노출 뉴스 2개 -->
         <div class="flex justify-between items-start text-xs border-t border-slate-800/80 pt-1.5 mb-1">
             <a href="#" class="text-blue-400 hover:underline text-[11px] md:text-xs truncate pr-2">
                 'This could be something more substantial': Wall Street braces for more Fed rate hikes <span class="text-slate-500">- Yahoo Finance</span>
@@ -66,8 +68,41 @@
             </a>
             <span class="text-[10px] text-slate-500 whitespace-nowrap">3h ago</span>
         </div>
+
+        <!-- 🚀 [신규 추가] 펼치기 클릭 시 나타나는 추가 뉴스 4개 (기본 숨김: hidden) -->
+        <div id="more-news-panel" class="hidden space-y-1.5 border-t border-slate-800/60 pt-1.5 mb-1.5">
+            <div class="flex justify-between items-start text-xs">
+                <a href="#" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
+                    Treasury Yields Climb as Central Banks Reinforce Hawkish Tone Ahead of CPI <span class="text-slate-500">- Bloomberg</span>
+                </a>
+                <span class="text-[10px] text-slate-500 whitespace-nowrap">4h ago</span>
+            </div>
+            <div class="flex justify-between items-start text-xs">
+                <a href="#" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
+                    0DTE Option Volume Hits Record High Ahead of Monthly OpEx Session <span class="text-slate-500">- Reuters</span>
+                </a>
+                <span class="text-[10px] text-slate-500 whitespace-nowrap">5h ago</span>
+            </div>
+            <div class="flex justify-between items-start text-xs">
+                <a href="#" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
+                    S&P 500 Dealer Gamma Flips Positive as Institutional Hedging Rebounds <span class="text-slate-500">- MarketWatch</span>
+                </a>
+                <span class="text-[10px] text-slate-500 whitespace-nowrap">6h ago</span>
+            </div>
+            <div class="flex justify-between items-start text-xs">
+                <a href="#" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
+                    Crude Oil Volatility Injects Fresh Inflation Concerns into Bond Market <span class="text-slate-500">- CNBC</span>
+                </a>
+                <span class="text-[10px] text-slate-500 whitespace-nowrap">7h ago</span>
+            </div>
+        </div>
+
+        <!-- 펼치기/접기 버튼 -->
         <div class="text-center border-t border-slate-800/60 pt-1">
-            <button class="text-[10px] text-slate-400 hover:text-slate-200 font-semibold tracking-wider">MORE NEWS · 4</button>
+            <button onclick="toggleMoreNews()" id="more-news-btn" class="text-[10px] text-slate-400 hover:text-slate-200 font-semibold tracking-wider flex items-center justify-center mx-auto space-x-1">
+                <span id="more-news-btn-text">MORE NEWS · 4</span>
+                <svg id="more-news-arrow" class="w-3 h-3 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </button>
         </div>
     </div>
 
@@ -389,7 +424,7 @@
         </div>
     </div>
 
-    <!-- ================= 8. [시간대 선택 기능 탑재] RSI (14) 섹션 ================= -->
+    <!-- ================= 8. RSI (14) 섹션 (시간대별 선택 가능) ================= -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2">
             <div class="flex items-center space-x-1.5">
@@ -407,7 +442,6 @@
             </div>
         </div>
 
-        <!-- 🚀 RSI 타임프레임 선택 버튼 그룹 -->
         <div class="flex space-x-1 mb-2" id="rsi-tf-group">
             <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
             <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
@@ -429,21 +463,17 @@
                     </linearGradient>
                 </defs>
 
-                <!-- 1. 과매수/과매도 음영 밴드 -->
                 <rect x="55" y="10" width="435" height="28" fill="url(#rsiOverboughtGrad)"/>
                 <rect x="55" y="78" width="435" height="28" fill="url(#rsiOversoldGrad)"/>
 
-                <!-- 2. 가로 점선 그리드 (70, 50, 30) -->
                 <line x1="55" y1="38" x2="490" y2="38" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
                 <line x1="55" y1="58" x2="490" y2="58" stroke="#475569" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.6"/>
                 <line x1="55" y1="78" x2="490" y2="78" stroke="#10b981" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
 
-                <!-- 3. Y축 기준선 눈금 -->
                 <text x="68" y="34" fill="#f43f5e" font-size="9" font-weight="bold" font-family="monospace">70</text>
                 <text x="68" y="54" fill="#64748b" font-size="9" font-family="monospace">50</text>
                 <text x="68" y="74" fill="#10b981" font-size="9" font-weight="bold" font-family="monospace">30</text>
 
-                <!-- 4. 세로 가이드 라인 컨테이너 -->
                 <g id="rsi-grid-lines">
                     <line x1="85" y1="10" x2="85" y2="106" stroke="#1e293b" stroke-width="1"/>
                     <line x1="180" y1="10" x2="180" y2="106" stroke="#1e293b" stroke-width="1"/>
@@ -452,13 +482,9 @@
                     <line x1="480" y1="10" x2="480" y2="106" stroke="#1e293b" stroke-width="1"/>
                 </g>
 
-                <!-- 5. 동적 RSI 곡선 궤적 -->
                 <path id="rsi-line" d="M 55 58 L 140 56 L 180 78 L 220 54 L 320 52 L 360 56 L 400 58 L 450 56 L 485 50" fill="none" stroke="#818cf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-
-                <!-- 6. RSI 종점 포커스 포인트 -->
                 <circle id="rsi-head-point" cx="485" cy="50" r="4" fill="#a5b4fc" stroke="#080d1a" stroke-width="1.5"/>
 
-                <!-- 7. 동적 X축 시간 라벨 컨테이너 -->
                 <g id="rsi-time-labels">
                     <text x="85" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">09:30</text>
                     <text x="180" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">14:30</text>
@@ -714,6 +740,24 @@
         setInterval(updateClock, 1000);
         updateClock();
 
+        // 🎯 1. 뉴스 펼치기/접기 함수
+        function toggleMoreNews() {
+            const panel = document.getElementById('more-news-panel');
+            const btnText = document.getElementById('more-news-btn-text');
+            const arrow = document.getElementById('more-news-arrow');
+
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                btnText.innerText = 'COLLAPSE NEWS';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                panel.classList.add('hidden');
+                btnText.innerText = 'MORE NEWS · 4';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // 🎯 2. 방향분석 세부근거 펼치기/접기 함수
         function toggleDetailEvidence() {
             const panel = document.getElementById('detail-evidence-panel');
             const arrow = document.getElementById('evidence-arrow');
@@ -868,7 +912,6 @@
             document.getElementById('vwap-val-display').innerText = `VWAP ${calculatedVwap}`;
         }
 
-        // 🎯 [신규] RSI 타임프레임별 정밀 궤적 및 상태 데이터
         const rsiConfigs = {
             '1m': {
                 value: 52.4,
@@ -944,18 +987,15 @@
             statusBadge.innerText = cfg.status;
             statusBadge.className = cfg.statusClass;
 
-            // RSI 곡선 및 종점 원형 닷 이동
             document.getElementById('rsi-line').setAttribute('d', cfg.line);
             document.getElementById('rsi-head-point').setAttribute('cx', cfg.headPoint[0]);
             document.getElementById('rsi-head-point').setAttribute('cy', cfg.headPoint[1]);
 
-            // 세로 점선 안내선 업데이트
             const gridContainer = document.getElementById('rsi-grid-lines');
             gridContainer.innerHTML = cfg.timeTicks.map(t => 
                 `<line x1="${t.x}" y1="10" x2="${t.x}" y2="106" stroke="#1e293b" stroke-width="1"/>`
             ).join('');
 
-            // X축 시간 라벨 업데이트
             const labelsContainer = document.getElementById('rsi-time-labels');
             labelsContainer.innerHTML = cfg.timeTicks.map(t => 
                 `<text x="${t.x}" y="120" fill="#64748b" font-size="8.5" text-anchor="middle">${t.time}</text>`
@@ -1182,7 +1222,6 @@
                         vwapTimeElem.innerText = `Data as of ${vwapTimeStr}`;
                     }
 
-                    // RSI 소스 및 타임스탬프 실시간 동기화
                     if (data.rsi) {
                         document.getElementById('rsi-source').innerText = data.rsi.source || data.source;
                         document.getElementById('rsi-time').innerText = `Data as of ${data.rsi.updated_at || globalTime}`;
