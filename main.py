@@ -1,3 +1,4 @@
+
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)
 
 데이터 우선순위: Charles Schwab -> Yahoo Finance (자동 대체).
@@ -646,8 +647,13 @@ def parse_schwab_chain(data, exp_date):
     return contracts
 
 
-def fetch_schwab_chain(token, start_date):
-    """(contracts, exp_date) 또는 None. 오늘(또는 다음 거래일) 만기부터, 없으면 7일 내 가장 가까운 만기."""
+def fetch_schwab_chain(token, today_date):
+    """(contracts, exp_date) 또는 None.
+    오늘(today_date) 만기(0DTE)가 있으면 그걸 무조건 우선 사용합니다.
+    한 번의 조회로 며칠치를 넉넉히 받아온 뒤, 반환된 만기 목록 안에서
+    '오늘 날짜와 정확히 일치'하는 게 있는지부터 확인 - 정렬 순서나
+    API 의 fromDate/toDate 해석 방식에 기대지 않기 위해서입니다.
+    오늘 만기가 없으면(휴장 다음 첫 거래일 등) 가장 가까운 미래 만기로 대체합니다."""
     if not token:
         return None
 
@@ -660,21 +666,25 @@ def fetch_schwab_chain(token, start_date):
                 "contractType": "ALL",
                 "strikeCount": strike_count,
                 "includeUnderlyingQuote": "false",
-                "fromDate": start_date.isoformat(),
+                "fromDate": today_date.isoformat(),
                 "toDate": to_date.isoformat(),
             },
             timeout=6,
         )
 
-    data = ask(start_date, 60)
+    today_str = today_date.isoformat()
+    # 오늘부터 5일치를 한 번에 받아옵니다. (fromDate==toDate 단일일 조회는
+    # 일부 응답에서 비어 오는 경우가 있어, 오늘 만기를 놓치지 않도록 여유를 둡니다.)
+    data = ask(today_date + timedelta(days=5), 60)
     exps = _chain_exps(data)
     if not exps:
-        data = ask(start_date + timedelta(days=7), 25)
+        data = ask(today_date + timedelta(days=30), 25)
         exps = _chain_exps(data)
     if not exps:
         return None
-    contracts = parse_schwab_chain(data, exps[0])
-    return (contracts, exps[0]) if contracts else None
+    exp = today_str if today_str in exps else exps[0]
+    contracts = parse_schwab_chain(data, exp)
+    return (contracts, exp) if contracts else None
 
 
 def fetch_yahoo_chain(start_date):
@@ -685,10 +695,11 @@ def fetch_yahoo_chain(start_date):
         return None
     try:
         t = yf.Ticker("SPY")
-        cand = [e for e in list(t.options or []) if e >= start_date.isoformat()]
+        today_str = start_date.isoformat()
+        cand = sorted(e for e in list(t.options or []) if e >= today_str)
         if not cand:
             return None
-        exp = cand[0]
+        exp = today_str if today_str in cand else cand[0]
         ch = t.option_chain(exp)
         contracts = []
         for side, df in (("C", ch.calls), ("P", ch.puts)):
