@@ -349,6 +349,8 @@
                 <g id="cvd-real-bars"></g>
                 <path id="cvd-line-path" d="" fill="none" stroke="#eab308" stroke-width="1.5"/>
             </svg>
+            <div id="cvd-x-axis" class="flex justify-between text-[8px] text-slate-500 font-mono px-1 mt-1"><span>--</span></div>
+            <div class="text-center text-[8px] text-slate-500 mt-0.5">Time</div>
         </div>
 
         <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1.5 px-1">
@@ -645,6 +647,7 @@
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
                 $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
                 $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
+                $('cvd-x-axis').innerHTML = '<span>--</span>';
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
                 return;
@@ -674,20 +677,42 @@
             const bars = c.bars || [];
             const maxVol = Math.max(...bars.map((b) => b.vol), 0.1);
             const maxCvd = Math.max(...bars.map((b) => Math.abs(b.cvd_line)), 1.0);
-            setText('cvd-y-max', `${maxVol.toFixed(1)}K`);
-            setText('cvd-y-mid', `${(maxVol / 2).toFixed(1)}K`);
+            const fmtK = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}M` : `${v.toFixed(1)}K`);
+            setText('cvd-y-max', fmtK(maxVol));
+            setText('cvd-y-mid', fmtK(maxVol / 2));
+
+            // 봉 개수에 맞춰 폭을 동적으로 계산합니다 (x=40~480 영역 안에서 균등 배치)
+            const AREA_X0 = 40, AREA_W = 440;
+            const n = Math.max(bars.length, 1);
+            const slot = AREA_W / n;
+            const barW = Math.max(1, Math.min(24, slot * 0.68));
+            const cx = (i) => AREA_X0 + i * slot + slot / 2;
+
             $('cvd-real-bars').innerHTML = bars.map((b, i) => {
-                const h = Math.max(2, (b.vol / maxVol) * 85);
-                const x = 45 + i * 35, y = 110 - h;
+                const h = Math.max(1.5, (b.vol / maxVol) * 85);
+                const x = cx(i) - barW / 2, y = 110 - h;
                 const fill = b.is_bull ? '#065f46' : '#881337';
                 const stroke = b.is_bull ? '#10b981' : '#f43f5e';
-                return `<rect x="${x}" y="${y}" width="24" height="${h}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`;
+                return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="0.7"/>`;
             }).join('');
             $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
-                const x = 45 + i * 35 + 12;
                 const y = 65 - (b.cvd_line / maxCvd) * 40;
-                return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+                return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
+
+            // 시간축 라벨: 최대 6개, 실제 봉 시각(ET) 기준
+            const axis = $('cvd-x-axis');
+            if (!bars.length) { axis.innerHTML = '<span>--</span>'; }
+            else {
+                const tickCount = Math.min(6, bars.length);
+                const step = (bars.length - 1) / Math.max(1, tickCount - 1);
+                const idxs = Array.from({ length: tickCount }, (_, k) => Math.round(k * step));
+                axis.innerHTML = [...new Set(idxs)].map((i) => {
+                    const d = new Date(bars[i].t * 1000);
+                    const label = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
+                    return `<span>${label}</span>`;
+                }).join('');
+            }
         }
 
         // ── 방향 분석 ─────────────────────────────
