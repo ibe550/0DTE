@@ -365,6 +365,24 @@ def et_label(ts):
     return datetime.fromtimestamp(ts, ET).strftime("%m/%d %H:%M ET")
 
 
+def et_label_sec(ts):
+    return datetime.fromtimestamp(ts, ET).strftime("%m/%d %H:%M:%S ET")
+
+
+def et_time_sec(ts):
+    return datetime.fromtimestamp(ts, ET).strftime("%H:%M:%S ET")
+
+
+def fmt_vol(v):
+    """거래량 표시용 포맷 (부호 없음): 1234 -> '1.2K', 1_270_000 -> '1.27M'."""
+    v = float(v)
+    if v >= 1e6:
+        return f"{v / 1e6:.2f}M"
+    if v >= 1e3:
+        return f"{v / 1e3:.1f}K"
+    return f"{v:.0f}"
+
+
 # ─────────────────────────────────────────────────────────────
 # 지표: EMA / RSI
 # ─────────────────────────────────────────────────────────────
@@ -486,11 +504,25 @@ def compute_volume_profile(spy_candles, ratio, source):
     }
 
 
-def compute_cvd(es_candles, tf_label, source):
-    """봉 색(종가>=시가) 기준 매수/매도 거래량 근사치. 실제 체결 CVD 가 아닙니다."""
-    bars = es_candles[-12:]
+TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
+CVD_WINDOW_HOURS = 24    # 목표 조회 구간
+CVD_MAX_BARS = 96        # 화면에 그릴 봉 개수 상한 (촘촘한 타임프레임은 구간이 짧아집니다)
+
+
+def compute_cvd(es_candles, tf_key, source):
+    """봉 색(종가>=시가) 기준 매수/매도 거래량 근사치. 실제 체결 CVD 가 아닙니다.
+    최근 CVD_WINDOW_HOURS 시간을 선택한 타임프레임 봉으로 나눠서 보여주되,
+    봉 개수가 CVD_MAX_BARS 를 넘으면(촘촘한 타임프레임) 최근 CVD_MAX_BARS 개만 표시합니다."""
+    if not es_candles:
+        return None
+    tf_min = TF_MINUTES.get(tf_key, 60)
+    tf_label = TF_LABEL.get(tf_key, tf_key)
+    max_by_window = max(1, int(CVD_WINDOW_HOURS * 60 // tf_min))
+    n = min(max_by_window, CVD_MAX_BARS, len(es_candles))
+    bars = es_candles[-n:]
     if not bars:
         return None
+
     buy = sell = running = 0.0
     out = []
     for c in bars:
@@ -502,41 +534,49 @@ def compute_cvd(es_candles, tf_label, source):
         else:
             sell += v
             running -= v
-        out.append({"vol": round(v / 1000.0, 1), "is_bull": bull, "cvd_line": round(running / 1000.0, 1)})
+        out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": bull, "cvd_line": round(running / 1000.0, 2)})
     total = buy + sell
     if total <= 0:
         return None
     buy_pct = int(round(buy / total * 100))
     sell_pct = 100 - buy_pct
-    n = len(bars)
     if buy_pct >= 65:
         status, tone = "Buying Pressure", "bull"
-        text = f"Strong buying pressure – {buy_pct}% of volume (last {n} bars) in bullish bars."
+        text = f"Strong buying pressure – {buy_pct}% of session volume in bullish bars."
     elif buy_pct >= 55:
         status, tone = "Buying Pressure", "bull"
-        text = f"Moderate buying pressure – {buy_pct}% of volume (last {n} bars) in bullish bars."
+        text = f"Moderate buying pressure – {buy_pct}% of session volume in bullish bars."
     elif buy_pct > 45:
         status, tone = "Balanced", "flat"
-        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% (last {n} bars)."
+        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% of session volume."
     elif buy_pct > 35:
         status, tone = "Selling Pressure", "bear"
-        text = f"Moderate selling pressure – {sell_pct}% of volume (last {n} bars) in bearish bars."
+        text = f"Moderate selling pressure – {sell_pct}% of session volume in bearish bars."
     else:
         status, tone = "Selling Pressure", "bear"
-        text = f"Strong selling pressure – {sell_pct}% of volume (last {n} bars) in bearish bars."
+        text = f"Strong selling pressure – {sell_pct}% of session volume in bearish bars."
+
+    start_ts, end_ts = bars[0]["t"], bars[-1]["t"]
+    covered_hours = (end_ts - start_ts) / 3600.0
+    aggregate_range = f"{et_label_sec(start_ts)} ~ {et_label_sec(end_ts)} ({len(bars)}개 {tf_label} 봉)"
+    data_desc = (
+        f"ES 최근 {covered_hours:.1f}시간 · {source} · ES=F price history · "
+        f"봉 색(종가≥시가) 기준 근사치 · 실제 체결(Buy/Sell) CVD 아님"
+    )
     return {
         "source": source,
-        "data_time": et_label(bars[-1]["t"]),
+        "data_time": et_label_sec(bars[-1]["t"]),
+        "last_bar_time": et_time_sec(bars[-1]["t"]),
         "status": status,
         "tone": tone,
-        "aggregate_range": f"최근 {n}개 {tf_label} 봉",
-        "data_desc": "ES=F 봉 색(종가≥시가) 기준 근사치 · 실제 체결(Buy/Sell) CVD 아님",
+        "aggregate_range": aggregate_range,
+        "data_desc": data_desc,
         "buy_pct": buy_pct,
         "sell_pct": sell_pct,
-        "buy_vol": f"{round(buy / 1000.0, 1)}K",
-        "sell_vol": f"{round(sell / 1000.0, 1)}K",
-        "recent_vol": f"{round(bars[-1]['v'] / 1000.0, 1)}K",
-        "total_vol": f"{round(total / 1000.0, 1)}K",
+        "buy_vol": fmt_vol(buy),
+        "sell_vol": fmt_vol(sell),
+        "recent_vol": fmt_vol(bars[-1]["v"]),
+        "total_vol": fmt_vol(total),
         "bars": out,
         "summary_text": text,
     }
@@ -1010,7 +1050,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
 
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
     vp = guard("volume_profile", compute_volume_profile, spy_5["candles"], ratio_for(spy_5), spy_5["source"]) if spy_5 else None
-    cvd = guard("cvd", compute_cvd, es_c["candles"], TF_LABEL[c_key], es_c["source"]) if es_c else None
+    cvd = guard("cvd", compute_cvd, es_c["candles"], c_key, es_c["source"]) if es_c else None
 
     rsi = None
     rc = spx_c.get(r_key)
