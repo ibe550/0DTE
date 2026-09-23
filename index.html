@@ -230,6 +230,29 @@
             </div>
         </div>
         <div id="gex-regime" class="text-[10px] text-slate-300 bg-slate-950 border border-slate-800/80 rounded px-2 py-1 hidden"></div>
+
+        <div id="gex-strike-toggle" class="hidden border-t border-slate-800 pt-1.5 mt-2 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleGexStrikes()">
+            <span class="flex items-center space-x-1 font-semibold text-slate-300">
+                <svg id="gex-strike-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                <span>행사가별 GEX 보기 (다른 사이트와 대조용)</span>
+            </span>
+            <span id="gex-strike-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
+        </div>
+        <div id="gex-strike-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 overflow-x-auto">
+            <table class="w-full text-[9px] font-mono border-collapse">
+                <thead>
+                    <tr class="text-slate-500 text-left">
+                        <th class="pr-2 py-0.5">Strike</th>
+                        <th class="pr-2 py-0.5 text-right">Call OI</th>
+                        <th class="pr-2 py-0.5 text-right">Put OI</th>
+                        <th class="pr-2 py-0.5 text-right">Call γ</th>
+                        <th class="pr-2 py-0.5 text-right">Put γ</th>
+                        <th class="pr-2 py-0.5 text-right">Net GEX($M)</th>
+                    </tr>
+                </thead>
+                <tbody id="gex-strike-rows"></tbody>
+            </table>
+        </div>
     </div>
 
     <!-- 7. VWAP BANDS -->
@@ -508,6 +531,21 @@
             }
         }
 
+        function toggleGexStrikes() {
+            const panel = $('gex-strike-panel');
+            const arrow = $('gex-strike-arrow');
+            const toggleText = $('gex-strike-toggle-text');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                arrow.style.transform = 'rotate(180deg)';
+                toggleText.innerText = '클릭하여 접기';
+            } else {
+                panel.classList.add('hidden');
+                arrow.style.transform = 'rotate(0deg)';
+                toggleText.innerText = '클릭하여 펼치기';
+            }
+        }
+
         function markActive(groupSel, btnClass, tf, activeCls) {
             document.querySelectorAll(groupSel + ' .' + btnClass).forEach((btn) => {
                 btn.className = btnClass + ' px-2.5 py-1 rounded text-xs ' + (btn.getAttribute('data-tf') === tf
@@ -563,6 +601,9 @@
                 setText('gex-meta', '');
                 ['gex-em', 'gex-put-wall', 'gex-flip', 'gex-call-wall', 'em-low-val', 'em-high-val', 'scale-min', 'scale-max'].forEach((id) => setText(id, NA));
                 setText('marker-current-val', isNum(spx) ? spx.toFixed(1) : NA);
+                $('gex-strike-toggle').classList.add('hidden');
+                $('gex-strike-panel').classList.add('hidden');
+                $('gex-strike-rows').innerHTML = '';
                 return;
             }
 
@@ -578,6 +619,26 @@
             setText('gex-call-wall', isNum(g.call_wall) ? g.call_wall : NA);
             regime.classList.remove('hidden');
             regime.innerText = g.regime_text || '';
+
+            const strikeToggle = $('gex-strike-toggle');
+            if (g.by_strike && g.by_strike.length) {
+                strikeToggle.classList.remove('hidden');
+                $('gex-strike-rows').innerHTML = g.by_strike.map((r) => {
+                    const netCls = r.net_gex_m > 0 ? 'text-emerald-400' : (r.net_gex_m < 0 ? 'text-rose-400' : 'text-slate-400');
+                    return `<tr class="border-t border-slate-800/60">
+                        <td class="pr-2 py-0.5 text-slate-200">${r.strike}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-300">${r.call_oi.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-300">${r.put_oi.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-500">${r.call_gamma ?? NA}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-500">${r.put_gamma ?? NA}</td>
+                        <td class="pr-2 py-0.5 text-right font-bold ${netCls}">${r.net_gex_m}</td>
+                    </tr>`;
+                }).join('');
+            } else {
+                strikeToggle.classList.add('hidden');
+                $('gex-strike-panel').classList.add('hidden');
+                $('gex-strike-rows').innerHTML = '';
+            }
 
             if (!isNum(spx)) return;
             const emLow = isNum(g.em_pt) ? spx - g.em_pt : null;
