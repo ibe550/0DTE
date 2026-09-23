@@ -782,34 +782,57 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source):
     if len(use) < 6:
         return None
 
-    per = {}  # 행사가 -> [콜 GEX(+), 풋 GEX(−)]  (달러 / 1% 이동)
+    per = {}  # 행사가 -> {call_gex(+$), put_gex(-$), call_oi, put_oi, call_gamma, put_gamma}
     for c in use:
         g = c["gamma"] or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
+        e = per.setdefault(c["K"], {"call_gex": 0.0, "put_gex": 0.0, "call_oi": 0.0, "put_oi": 0.0,
+                                     "call_gamma": None, "put_gamma": None, "call_iv": None, "put_iv": None})
+        if c["side"] == "C":
+            e["call_oi"] += c["oi"]
+            e["call_iv"] = c["iv"] if e["call_iv"] is None else e["call_iv"]
+        else:
+            e["put_oi"] += c["oi"]
+            e["put_iv"] = c["iv"] if e["put_iv"] is None else e["put_iv"]
         if not g:
             continue
         dg = g * c["oi"] * 100.0 * S * S * 0.01
-        e = per.setdefault(c["K"], [0.0, 0.0])
         if c["side"] == "C":
-            e[0] += dg
+            e["call_gex"] += dg
+            e["call_gamma"] = g
         else:
-            e[1] -= dg
+            e["put_gex"] -= dg
+            e["put_gamma"] = g
     if not per:
         return None
 
     # 벽(Wall) = 미결제약정(OI)이 가장 큰 행사가. 콜은 현재가 이상, 풋은 현재가 이하에서 찾습니다.
-    oi_c, oi_p = {}, {}
-    for c in use:
-        book = oi_c if c["side"] == "C" else oi_p
-        book[c["K"]] = book.get(c["K"], 0.0) + c["oi"]
-    above = [k for k in oi_c if k >= S] or list(oi_c)
-    below = [k for k in oi_p if k <= S] or list(oi_p)
-    call_wall = max(above, key=oi_c.get) * scale if above else None
-    put_wall = max(below, key=oi_p.get) * scale if below else None
+    above = [k for k, e in per.items() if k >= S and e["call_oi"] > 0] or [k for k, e in per.items() if e["call_oi"] > 0]
+    below = [k for k, e in per.items() if k <= S and e["put_oi"] > 0] or [k for k, e in per.items() if e["put_oi"] > 0]
+    call_wall = max(above, key=lambda k: per[k]["call_oi"]) * scale if above else None
+    put_wall = max(below, key=lambda k: per[k]["put_oi"]) * scale if below else None
 
-    net_total = sum(v[0] + v[1] for v in per.values())
+    net_total = sum(e["call_gex"] + e["put_gex"] for e in per.values())
     flip, flip_note = gamma_flip_level(use, S, T)
     straddle = atm_straddle(contracts, S)
     em_pt = straddle * scale if straddle else None
+
+    # 행사가별 세부 내역 (Tradytics 등 다른 사이트와 strike 단위로 직접 대조할 수 있도록 노출합니다)
+    nearest = sorted(per.items(), key=lambda kv: abs(kv[0] - S))[:14]
+    by_strike = []
+    for K, e in sorted(nearest, key=lambda kv: kv[0]):
+        net_m = (e["call_gex"] + e["put_gex"]) / 1e6
+        by_strike.append({
+            "strike": round(K * scale, 1),
+            "call_oi": int(e["call_oi"]),
+            "put_oi": int(e["put_oi"]),
+            "call_iv": round(e["call_iv"] * 100, 1) if e["call_iv"] else None,
+            "put_iv": round(e["put_iv"] * 100, 1) if e["put_iv"] else None,
+            "call_gamma": round(e["call_gamma"], 5) if e["call_gamma"] else None,
+            "put_gamma": round(e["put_gamma"], 5) if e["put_gamma"] else None,
+            "call_gex_m": round(e["call_gex"] / 1e6, 1),
+            "put_gex_m": round(e["put_gex"] / 1e6, 1),
+            "net_gex_m": round(net_m, 1),
+        })
 
     return {
         "available": True,
@@ -827,6 +850,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source):
         "regime_text": ("양(+) 감마 우세 - 딜러 헤지가 변동성을 누르는 경향" if net_total >= 0
                         else "음(−) 감마 우세 - 딜러 헤지가 움직임을 키우는 경향"),
         "strike_count": len(per),
+        "by_strike": by_strike,
     }
 
 
