@@ -1,4 +1,3 @@
-
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)
 
 데이터 우선순위: Charles Schwab -> Yahoo Finance (자동 대체).
@@ -649,15 +648,15 @@ def parse_schwab_chain(data, exp_date):
 
 def fetch_schwab_chain(token, today_date):
     """(contracts, exp_date) 또는 None.
-    오늘(today_date) 만기(0DTE)가 있으면 그걸 무조건 우선 사용합니다.
-    한 번의 조회로 며칠치를 넉넉히 받아온 뒤, 반환된 만기 목록 안에서
-    '오늘 날짜와 정확히 일치'하는 게 있는지부터 확인 - 정렬 순서나
-    API 의 fromDate/toDate 해석 방식에 기대지 않기 위해서입니다.
-    오늘 만기가 없으면(휴장 다음 첫 거래일 등) 가장 가까운 미래 만기로 대체합니다."""
+    오늘(today_date) 만기(0DTE)를 우선 조회합니다. 단일 날짜로 조회해야
+    Schwab 이 그 날짜에 있는 스트라이크를 strikeCount 개수만큼 온전히 돌려줍니다
+    (여러 날짜를 한 번에 요청하면 strikeCount 가 만기별로 쪼개져서 0DTE 스트라이크
+    해상도가 떨어지고, 그러면 Wall·Gamma Flip·Net GEX 가 다른 사이트와 크게 어긋납니다).
+    오늘 조회가 비어 있을 때만(휴장 다음 첫 거래일 등) 기간을 넓혀 재시도합니다."""
     if not token:
         return None
 
-    def ask(to_date, strike_count):
+    def ask(from_date, to_date, strike_count):
         return schwab_get(
             token,
             "/chains",
@@ -666,20 +665,21 @@ def fetch_schwab_chain(token, today_date):
                 "contractType": "ALL",
                 "strikeCount": strike_count,
                 "includeUnderlyingQuote": "false",
-                "fromDate": today_date.isoformat(),
+                "fromDate": from_date.isoformat(),
                 "toDate": to_date.isoformat(),
             },
             timeout=6,
         )
 
     today_str = today_date.isoformat()
-    # 오늘부터 5일치를 한 번에 받아옵니다. (fromDate==toDate 단일일 조회는
-    # 일부 응답에서 비어 오는 경우가 있어, 오늘 만기를 놓치지 않도록 여유를 둡니다.)
-    data = ask(today_date + timedelta(days=5), 60)
+    data = ask(today_date, today_date, 80)
     exps = _chain_exps(data)
-    if not exps:
-        data = ask(today_date + timedelta(days=30), 25)
-        exps = _chain_exps(data)
+    if today_str not in exps:
+        # 오늘 만기가 없었던 경우에만 기간을 넓혀서 가장 가까운 미래 만기를 찾습니다.
+        wide = ask(today_date, today_date + timedelta(days=7), 30)
+        wide_exps = _chain_exps(wide)
+        if wide_exps:
+            data, exps = wide, wide_exps
     if not exps:
         return None
     exp = today_str if today_str in exps else exps[0]
@@ -842,7 +842,7 @@ def get_gex(token, spx_p, ratio, now_et):
     def load():
         r = fetch_schwab_chain(token, start)
         if r:
-            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} 옵션체인 (SPX/SPXW 만기 {r[1]})")
+            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} 옵션체인 (SPX/SPXW 단일 만기 {r[1]})")
             if res:
                 return res
         if ratio:
@@ -850,7 +850,7 @@ def get_gex(token, spx_p, ratio, now_et):
             if r:
                 res = analyze_gex(
                     r[0], spx_p, ratio, r[1], now_et,
-                    f"{SRC_YAHOO} SPY 옵션체인 (만기 {r[1]}) x SPX/SPY {ratio:.3f} 환산 · 근사치",
+                    f"{SRC_YAHOO} SPY 옵션체인 (단일 만기 {r[1]}) x SPX/SPY {ratio:.3f} 환산 · 근사치",
                 )
                 if res:
                     return res
