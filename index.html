@@ -571,7 +571,7 @@
             if (!isNum(g.gamma_flip) && g.gamma_flip_note) notes.push(g.gamma_flip_note);
             if (notes.length) { note.classList.remove('hidden'); note.innerText = notes.join(' · '); } else { note.classList.add('hidden'); }
 
-            setText('gex-meta', `만기 ${g.expiration}${g.is_0dte ? ' (0DTE)' : ''} · 순 GEX ${g.net_gex} · ${g.strike_count}개 행사가`);
+            setText('gex-meta', `만기 ${g.expiration}${g.is_0dte ? ' (0DTE)' : ''} · 이 만기만 집계 · 순 GEX ${g.net_gex} · ${g.strike_count}개 행사가`);
             setText('gex-em', g.expected_move);
             setText('gex-put-wall', isNum(g.put_wall) ? g.put_wall : NA);
             setText('gex-flip', isNum(g.gamma_flip) ? g.gamma_flip : NA);
