@@ -462,21 +462,42 @@ def compute_vwap(spy_candles, ratio, source):
     }
 
 
-def compute_volume_profile(spy_candles, ratio, source):
-    sess = last_session(spy_candles)
-    if not sess or not ratio:
+def last_rth_close(spx_candles):
+    """가장 최근 정규장(RTH) SPX 봉 하나 (기준 시각 + 종가)."""
+    sess = last_session(spx_candles)
+    return sess[-1] if sess else None
+
+
+VP_WINDOW_HOURS = 24
+BASIS_MAX_GAP_SEC = 20 * 60  # SPX 봉과 ES 봉 시각이 20분 넘게 벌어지면 베이시스를 신뢰하지 않습니다
+
+
+def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
+    """ES=F 의 정규장+프리/애프터마켓(확장세션) 거래량을, '마지막 정규장 베이시스'로
+    SPX 가격대에 매핑해서 만드는 Volume Profile. SPX 는 장중에만 거래되므로,
+    가장 최근 SPX 정규장 종가와 그 시각의 ES 가격 차이(베이시스)를 한 번 구한 뒤
+    그 값을 야간·프리마켓 ES 가격에도 그대로 더해 'SPX 환산가'로 씁니다."""
+    anchor = last_rth_close(spx_candles)
+    if not anchor or not es_candles:
         return None
+    es_at_anchor = min(es_candles, key=lambda c: abs(c["t"] - anchor["t"]))
+    if abs(es_at_anchor["t"] - anchor["t"]) > BASIS_MAX_GAP_SEC:
+        return None
+    basis = anchor["c"] - es_at_anchor["c"]  # SPX = ES + basis
+
+    cutoff = es_candles[-1]["t"] - VP_WINDOW_HOURS * 3600
+    window = [c for c in es_candles if c["t"] >= cutoff and c["v"] > 0]
+    if not window:
+        return None
+
     bins, total = {}, 0.0
-    for c in sess:
-        v = c["v"]
-        if v <= 0:
-            continue
-        lo, hi = c["l"] * ratio, c["h"] * ratio
+    for c in window:
+        lo, hi = c["l"] + basis, c["h"] + basis
         if hi < lo:
             lo, hi = hi, lo
         lo_b, hi_b = int(round(lo / 5.0)) * 5, int(round(hi / 5.0)) * 5
         rng = list(range(lo_b, hi_b + 5, 5))
-        each = v / len(rng)
+        each = c["v"] / len(rng)
         for b in rng:
             bins[b] = bins.get(b, 0.0) + each
             total += each
@@ -496,11 +517,17 @@ def compute_volume_profile(spy_candles, ratio, source):
         else:
             lo_i -= 1
             cur += dn
+    hours_covered = (window[-1]["t"] - window[0]["t"]) / 3600.0
     return {
         "val": float(keys[lo_i]),
         "poc": float(poc),
         "vah": float(keys[hi_i]),
-        "source": f"{source} x SPX/SPY 환산 · 5pt 구간 · 70% Value Area",
+        "basis": round(basis, 2),
+        "hours_covered": round(hours_covered, 1),
+        "source": (
+            f"{es_source} · 마지막 정규장 베이시스({basis:+.2f}pt, 기준 {spx_source}) 적용 · "
+            f"5pt 구간 · 70% Value Area · 최근 {hours_covered:.1f}시간(정규장+프리/애프터)"
+        ),
     }
 
 
@@ -1063,7 +1090,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     with ThreadPoolExecutor(max_workers=10) as ex:
         f_spx = {k: ex.submit(get_candles, token, "spx", k) for k in {"1h", "15m", "5m", "1m", r_key}}
         f_spy_v = ex.submit(get_candles, token, "spy", v_key)
-        f_spy_5 = ex.submit(get_candles, token, "spy", "5m")
+        f_es_5 = ex.submit(get_candles, token, "es", "5m")
         f_es = ex.submit(get_candles, token, "es", c_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
 
@@ -1072,7 +1099,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
 
     spx_c = {k: result(f"candles spx {k}", f) for k, f in f_spx.items()}
     spy_v = result("candles spy vwap", f_spy_v)
-    spy_5 = result("candles spy 5m", f_spy_5)
+    es_5 = result("candles es 5m", f_es_5)
     es_c = result("candles es", f_es)
     gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
 
@@ -1084,7 +1111,11 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         return None
 
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
-    vp = guard("volume_profile", compute_volume_profile, spy_5["candles"], ratio_for(spy_5), spy_5["source"]) if spy_5 else None
+    spx_5 = spx_c.get("5m")
+    vp = (
+        guard("volume_profile", compute_volume_profile, es_5["candles"], spx_5["candles"], es_5["source"], spx_5["source"])
+        if es_5 and spx_5 else None
+    )
     cvd = guard("cvd", compute_cvd, es_c["candles"], c_key, es_c["source"]) if es_c else None
 
     rsi = None
