@@ -684,14 +684,16 @@ def parse_schwab_chain(data, exp_date):
 
 
 def fetch_schwab_chain(token, today_date):
-    """(contracts, exp_date) 또는 None.
+    """((contracts, exp_date) 또는 None, diag) 를 돌려줍니다. diag 는 Schwab 이 실제로
+    무슨 만기들을 돌려줬는지 보여주는 진단 정보로, 0DTE 대신 엉뚱한(예: 다음 달) 만기가
+    잡혔을 때 원인을 화면에서 바로 확인할 수 있게 하기 위한 것입니다.
     오늘(today_date) 만기(0DTE)를 우선 조회합니다. 단일 날짜로 조회해야
     Schwab 이 그 날짜에 있는 스트라이크를 strikeCount 개수만큼 온전히 돌려줍니다
     (여러 날짜를 한 번에 요청하면 strikeCount 가 만기별로 쪼개져서 0DTE 스트라이크
     해상도가 떨어지고, 그러면 Wall·Gamma Flip·Net GEX 가 다른 사이트와 크게 어긋납니다).
     오늘 조회가 비어 있을 때만(휴장 다음 첫 거래일 등) 기간을 넓혀 재시도합니다."""
     if not token:
-        return None
+        return None, {"reason": "토큰 없음"}
 
     def ask(from_date, to_date, strike_count):
         return schwab_get(
@@ -711,17 +713,26 @@ def fetch_schwab_chain(token, today_date):
     today_str = today_date.isoformat()
     data = ask(today_date, today_date, 80)
     exps = _chain_exps(data)
-    if today_str not in exps:
+    single_day_had_today = today_str in exps
+    widened = False
+    if not single_day_had_today:
         # 오늘 만기가 없었던 경우에만 기간을 넓혀서 가장 가까운 미래 만기를 찾습니다.
+        widened = True
         wide = ask(today_date, today_date + timedelta(days=7), 30)
         wide_exps = _chain_exps(wide)
         if wide_exps:
             data, exps = wide, wide_exps
+    diag = {
+        "requested_date": today_str,
+        "single_day_query_had_today": single_day_had_today,
+        "widened_to_7d": widened,
+        "all_expirations_seen": exps[:10],
+    }
     if not exps:
-        return None
+        return None, diag
     exp = today_str if today_str in exps else exps[0]
     contracts = parse_schwab_chain(data, exp)
-    return (contracts, exp) if contracts else None
+    return (contracts, exp) if contracts else None, diag
 
 
 def fetch_yahoo_chain(start_date):
@@ -807,7 +818,7 @@ def gamma_flip_level(contracts, S, T):
     return None, ("±3% 범위 안에 전환점 없음 - 전 구간 양(+) 감마" if vals[0] > 0 else "±3% 범위 안에 전환점 없음 - 전 구간 음(−) 감마")
 
 
-def analyze_gex(contracts, spot, scale, exp_date, now_et, source):
+def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     """contracts 의 행사가는 체인 자체 단위(SPX=1.0, SPY=SPX/SPY 비율)입니다. scale 로 SPX 레벨로 환산."""
     S = spot / scale
     y, m, d = (int(x) for x in exp_date.split("-"))
@@ -888,11 +899,12 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source):
                         else "음(−) 감마 우세 - 딜러 헤지가 움직임을 키우는 경향"),
         "strike_count": len(per),
         "by_strike": by_strike,
+        "chain_diag": diag,
     }
 
 
-def gex_na(reason):
-    return {"available": False, "source": "N/A", "reason": reason}
+def gex_na(reason, diag=None):
+    return {"available": False, "source": "N/A", "reason": reason, "chain_diag": diag}
 
 
 def get_gex(token, spx_p, ratio, now_et):
@@ -901,21 +913,22 @@ def get_gex(token, spx_p, ratio, now_et):
     start = now_et.date() if now_et.hour < 16 else now_et.date() + timedelta(days=1)
 
     def load():
-        r = fetch_schwab_chain(token, start)
+        r, diag = fetch_schwab_chain(token, start)
         if r:
-            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} 옵션체인 (SPX/SPXW 단일 만기 {r[1]})")
+            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} 옵션체인 (SPX/SPXW 단일 만기 {r[1]})", diag)
             if res:
                 return res
         if ratio:
-            r = fetch_yahoo_chain(start)
-            if r:
+            ry = fetch_yahoo_chain(start)
+            if ry:
                 res = analyze_gex(
-                    r[0], spx_p, ratio, r[1], now_et,
-                    f"{SRC_YAHOO} SPY 옵션체인 (단일 만기 {r[1]}) x SPX/SPY {ratio:.3f} 환산 · 근사치",
+                    ry[0], spx_p, ratio, ry[1], now_et,
+                    f"{SRC_YAHOO} SPY 옵션체인 (단일 만기 {ry[1]}) x SPX/SPY {ratio:.3f} 환산 · 근사치",
+                    diag,
                 )
                 if res:
                     return res
-        return None
+        return gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)", diag)
 
     return cached("gex", 20, load) or gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)")
 
