@@ -463,9 +463,19 @@ def compute_vwap(spy_candles, ratio, source):
 
 
 def last_rth_close(spx_candles):
-    """가장 최근 정규장(RTH) SPX 봉 하나 (기준 시각 + 종가)."""
-    sess = last_session(spx_candles)
-    return sess[-1] if sess else None
+    """가장 최근에 '완결된' 정규장의 마지막 SPX 봉 (기준 시각 + 종가).
+    장이 열려 있는 동안 호출되면 오늘 봉은 아직 진행 중이라 노이즈가 있으므로,
+    반드시 전 거래일(가장 최근 완결 세션)의 마지막 봉을 씁니다. 그래야 베이시스가
+    '어제 정규장이 끝난 그 순간'처럼 SPX·ES 둘 다 안정적으로 확정된 값이 됩니다."""
+    if not spx_candles:
+        return None
+    last_date = datetime.fromtimestamp(spx_candles[-1]["t"], ET).date()
+    today = datetime.now(ET).date()
+    if last_date < today:
+        # 장 마감 후(또는 주말)라 가장 최근 봉 자체가 이미 완결된 세션입니다.
+        return spx_candles[-1]
+    prior = [c for c in spx_candles if datetime.fromtimestamp(c["t"], ET).date() < today]
+    return prior[-1] if prior else None
 
 
 VP_WINDOW_HOURS = 24
