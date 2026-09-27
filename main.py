@@ -11,10 +11,14 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
+import html as html_lib
+from typing import Optional
+
 import pytz
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 handler = app
@@ -1345,3 +1349,112 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         "cvd": cvd,
         "direction": direction,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# Schwab OAuth 콜백 (/api/callback)
+# Schwab 인증 페이지에서 승인하면 이 주소로 code 가 담겨 돌아옵니다.
+# 여기서 그 code 를 실제 refresh_token 으로 교환해서 화면에 보여줍니다.
+# Vercel 서버리스는 별도 저장소가 없어서, refresh_token 을 자동으로 환경변수에
+# 저장해주지는 못합니다 - 화면에 뜬 값을 복사해서 SCHWAB_REFRESH_TOKEN 에
+# 직접 넣고 재배포해야 합니다. (보통 7일마다 이 과정을 반복해야 합니다.)
+# ─────────────────────────────────────────────────────────────
+def render_callback_page(title, body_html, ok=True):
+    color = "#10b981" if ok else "#f43f5e"
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html_lib.escape(title)}</title>
+<style>
+body{{background:#080d1a;color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:24px;}}
+.card{{max-width:640px;margin:0 auto;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:20px;}}
+h1{{font-size:16px;color:{color};margin:0 0 12px;}}
+.box{{background:#020617;border:1px solid #1e293b;border-radius:6px;padding:10px;font-family:monospace;
+     font-size:12px;word-break:break-all;user-select:all;margin:8px 0;}}
+button{{background:#4f46e5;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer;}}
+button:active{{background:#4338ca;}}
+p{{font-size:12px;color:#94a3b8;line-height:1.7;}}
+code{{background:#1e293b;padding:1px 5px;border-radius:4px;}}
+</style></head>
+<body><div class="card"><h1>{html_lib.escape(title)}</h1>{body_html}</div></body></html>"""
+
+
+@app.get("/api/callback", response_class=HTMLResponse)
+def schwab_callback(request: Request, code: Optional[str] = None, error: Optional[str] = None):
+    if error:
+        return HTMLResponse(
+            render_callback_page("Schwab 인증 실패", f"<p>Schwab 이 인증을 거부했습니다: {html_lib.escape(error)}</p>", ok=False),
+            status_code=400,
+        )
+    if not code:
+        return HTMLResponse(
+            render_callback_page(
+                "잘못된 요청", "<p><code>code</code> 파라미터가 없습니다. Schwab 인증 페이지에서 승인 절차를 다시 시작해주세요.</p>", ok=False
+            ),
+            status_code=400,
+        )
+
+    app_key = os.environ.get("SCHWAB_APP_KEY")
+    app_secret = os.environ.get("SCHWAB_SECRET")
+    # 앱 등록 시 넣은 Redirect URI 와 정확히 같아야 합니다. 환경변수로 고정해두면
+    # 프리뷰/프로덕션 도메인이 달라져도 안전합니다.
+    redirect_uri = os.environ.get("SCHWAB_REDIRECT_URI") or str(request.url).split("?")[0]
+    if not app_key or not app_secret:
+        return HTMLResponse(
+            render_callback_page(
+                "설정 오류",
+                "<p><code>SCHWAB_APP_KEY</code> / <code>SCHWAB_SECRET</code> 환경변수가 설정되어 있지 않습니다. "
+                "Vercel 프로젝트 설정에서 먼저 등록해주세요.</p>",
+                ok=False,
+            ),
+            status_code=500,
+        )
+
+    try:
+        res = requests.post(
+            "https://api.schwabapi.com/v1/oauth/token",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
+            auth=(app_key, app_secret),
+            timeout=8,
+        )
+    except Exception as e:
+        return HTMLResponse(
+            render_callback_page("토큰 교환 실패", f"<p>Schwab 서버 요청 중 오류가 발생했습니다: {html_lib.escape(str(e))}</p>", ok=False),
+            status_code=502,
+        )
+
+    if res.status_code != 200:
+        detail = html_lib.escape(res.text[:500])
+        return HTMLResponse(
+            render_callback_page(
+                "토큰 교환 실패",
+                f"<p>Schwab 이 HTTP {res.status_code} 를 반환했습니다. 인가 코드는 보통 30초~몇 분 안에만 유효하니 "
+                f"이미 만료됐거나, redirect_uri 가 앱 등록 값과 다를 수 있습니다.</p>"
+                f"<div class='box'>{detail}</div>"
+                f"<p>이번에 사용된 redirect_uri: <code>{html_lib.escape(redirect_uri)}</code></p>",
+                ok=False,
+            ),
+            status_code=400,
+        )
+
+    body = res.json()
+    refresh_token = body.get("refresh_token", "")
+    access_token = body.get("access_token", "")
+    expires_in = body.get("expires_in", "")
+
+    return HTMLResponse(render_callback_page(
+        "✅ Schwab 인증 성공",
+        f"""
+        <p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의
+        <code>SCHWAB_REFRESH_TOKEN</code>에 붙여넣고 재배포하세요. 보통 7일 후 만료되니,
+        그 전에 이 인증 과정을 다시 거쳐야 합니다.</p>
+        <div class="box" id="rt">{html_lib.escape(refresh_token)}</div>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('rt').innerText).then(()=>{{this.innerText='복사됨 ✓';}})">
+            Refresh Token 복사
+        </button>
+        <p style="margin-top:16px;">access_token 은 참고용입니다 (보통 30분만 유효, 따로 저장할 필요 없음 - 앱이 자동으로 갱신합니다):</p>
+        <div class="box" style="color:#64748b;">{html_lib.escape(access_token[:40])}... (expires_in: {html_lib.escape(str(expires_in))}초)</div>
+        <p style="margin-top:16px;color:#f59e0b;">⚠️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
+        """,
+    ))
