@@ -238,7 +238,10 @@
             </span>
             <span id="gex-strike-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
-        <div id="gex-strike-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 overflow-x-auto">
+        <div id="gex-strike-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60">
+            <div id="gex-oi-skew" class="text-[9px] text-slate-400 font-mono mb-1.5"></div>
+            <div id="gex-gamma-note" class="text-[9px] text-slate-500 font-mono mb-1.5"></div>
+            <div class="overflow-x-auto">
             <table class="w-full text-[9px] font-mono border-collapse">
                 <thead>
                     <tr class="text-slate-500 text-left">
@@ -252,6 +255,7 @@
                 </thead>
                 <tbody id="gex-strike-rows"></tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -604,6 +608,7 @@
                 $('gex-strike-toggle').classList.add('hidden');
                 $('gex-strike-panel').classList.add('hidden');
                 $('gex-strike-rows').innerHTML = '';
+                setText('gex-oi-skew', ''); setText('gex-gamma-note', '');
                 return;
             }
 
@@ -640,10 +645,20 @@
                         <td class="pr-2 py-0.5 text-right font-bold ${netCls}">${r.net_gex_m}</td>
                     </tr>`;
                 }).join('');
+                const sk = g.oi_skew;
+                if (sk) {
+                    setText('gex-oi-skew',
+                        `현재가 기준 · 위: Call OI ${sk.call_oi_at_or_above_spot.toLocaleString()} / Put OI ${sk.put_oi_at_or_above_spot.toLocaleString()}` +
+                        ` · 아래: Call OI ${sk.call_oi_below_spot.toLocaleString()} / Put OI ${sk.put_oi_below_spot.toLocaleString()}`);
+                } else {
+                    setText('gex-oi-skew', '');
+                }
+                setText('gex-gamma-note', g.gamma_source_note || '');
             } else {
                 strikeToggle.classList.add('hidden');
                 $('gex-strike-panel').classList.add('hidden');
                 $('gex-strike-rows').innerHTML = '';
+                setText('gex-oi-skew', ''); setText('gex-gamma-note', '');
             }
 
             if (!isNum(spx)) return;
