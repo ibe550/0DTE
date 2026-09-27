@@ -161,6 +161,8 @@ QUOTES = OrderedDict([
     ("tnx", ("$TNX", "^TNX")),
     ("tyx", ("$TYX", "^TYX")),
     ("irx", ("$IRX", "^IRX")),
+    ("wti", ("/CL", "CL=F")),    # WTI 원유 선물 (NYMEX)
+    ("brent", ("/BZ", "BZ=F")),  # 브렌트유 선물 (ICE) - Schwab 이 못 주면 Yahoo 로 대체
 ])
 
 
@@ -1239,6 +1241,8 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         "vix": slim(quotes.get("vix")),
         "vix9d": slim(quotes.get("vix9d")),
         "mag7": quotes.get("mag7"),
+        "wti": quotes.get("wti"),
+        "brent": quotes.get("brent"),
         "yields": yields,
         "volume_profile": vp,
         "vwap": vwap,
