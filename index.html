@@ -44,30 +44,17 @@
 
     <!-- 2. 뉴스 리스크 -->
     <div class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-slate-800">
-        <div class="flex items-center space-x-2 mb-2">
+        <div id="news-tags" class="flex items-center flex-wrap gap-1 mb-2">
             <span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span>
-            <span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">FED</span>
-            <span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">INFLATION</span>
         </div>
         <div class="flex justify-between items-center mb-1 text-[10px] text-slate-400">
             <div class="flex items-center space-x-1 font-semibold">
                 <svg class="icon-sm text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 <span>HIGH-IMPACT HEADLINES</span>
             </div>
-            <div class="text-[9px] text-slate-500">Live Updated</div>
+            <div class="text-[9px] text-slate-500" id="news-source-label">--</div>
         </div>
-        <div class="flex justify-between items-start text-xs border-t border-slate-800/80 pt-1.5 mb-1">
-            <a href="https://finance.yahoo.com/topic/fed/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline text-[11px] md:text-xs truncate pr-2">
-                'This could be something more substantial': Wall Street braces for Fed decisions <span class="text-slate-500">- Yahoo Finance</span>
-            </a>
-            <span class="text-[10px] text-slate-500 whitespace-nowrap">Live</span>
-        </div>
-        <div class="flex justify-between items-start text-xs mb-1.5">
-            <a href="https://www.reuters.com/markets/" target="_blank" rel="noopener noreferrer" class="text-slate-300 hover:underline text-[11px] md:text-xs truncate pr-2">
-                0DTE Option Volumes Reach New Highs Amid SPX Intraday Volatility <span class="text-slate-500">- Reuters</span>
-            </a>
-            <span class="text-[10px] text-slate-500 whitespace-nowrap">Live</span>
-        </div>
+        <div id="news-list" class="divide-y divide-slate-800/80"></div>
     </div>
 
     <!-- 3. 메인 시세 4열 -->
@@ -885,6 +872,34 @@
             setTone('yield-spread', isNaN(bp) ? 'text-slate-500' : (bp < 0 ? 'text-rose-400' : 'text-emerald-400'));
         }
 
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function renderNews(n) {
+            const tagsWrap = $('news-tags');
+            const list = $('news-list');
+            const items = n && n.items ? n.items : [];
+            if (!items.length) {
+                tagsWrap.innerHTML = '<span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span> <span class="text-[9px] text-slate-500">N/A</span>';
+                setText('news-source-label', NA);
+                list.innerHTML = '<div class="text-[11px] text-slate-500 py-1.5">뉴스를 가져오지 못했습니다.</div>';
+                return;
+            }
+            const tagHtml = (n.tags || []).map((t) =>
+                `<span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">${escapeHtml(t)}</span>`
+            ).join('');
+            tagsWrap.innerHTML = '<span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span>' + (tagHtml || ' <span class="text-[9px] text-slate-500">없음</span>');
+            setText('news-source-label', n.source || NA);
+            list.innerHTML = items.map((it) => `
+                <div class="flex justify-between items-start text-xs py-1.5 first:pt-0 last:pb-0">
+                    <a href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline text-[11px] md:text-xs pr-2">
+                        ${escapeHtml(it.title)} <span class="text-slate-500">- ${escapeHtml(it.publisher)}</span>
+                    </a>
+                    <span class="text-[10px] text-slate-500 whitespace-nowrap">${escapeHtml(it.time_label || '')}</span>
+                </div>`).join('');
+        }
+
         function renderStatus(data) {
             const badge = $('global-source-badge');
             badge.innerText = `Source: ${data.source_summary}`;
@@ -914,6 +929,7 @@
 
                 const blocks = [
                     () => renderStatus(data),
+                    () => renderNews(data.news),
                     () => renderQuote('spx', data.spx, { pct: true }),
                     () => renderQuote('es', data.es, { pct: true }),
                     () => renderQuote('vix', data.vix, { invert: true }),
