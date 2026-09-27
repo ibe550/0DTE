@@ -831,8 +831,13 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         return None
 
     per = {}  # 행사가 -> {call_gex(+$), put_gex(-$), call_oi, put_oi, call_gamma, put_gamma}
+    gamma_from_schwab = gamma_from_calc = 0
     for c in use:
-        g = c["gamma"] or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
+        raw_g = c["gamma"]  # Schwab 이 실제로 돌려준 감마 (없으면 None)
+        g = raw_g or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
+        if g:
+            gamma_from_schwab += 1 if raw_g else 0
+            gamma_from_calc += 0 if raw_g else 1
         e = per.setdefault(c["K"], {"call_gex": 0.0, "put_gex": 0.0, "call_oi": 0.0, "put_oi": 0.0,
                                      "call_gamma": None, "put_gamma": None, "call_iv": None, "put_iv": None})
         if c["side"] == "C":
@@ -852,6 +857,10 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
             e["put_gamma"] = g
     if not per:
         return None
+    gamma_source_note = (
+        f"감마 {gamma_from_schwab}개는 Schwab 제공값, {gamma_from_calc}개는 자체 계산(Black-Scholes)값"
+        if (gamma_from_schwab or gamma_from_calc) else None
+    )
 
     # 벽(Wall) = 미결제약정(OI)이 가장 큰 행사가. 콜은 현재가 이상, 풋은 현재가 이하에서 찾습니다.
     above = [k for k, e in per.items() if k >= S and e["call_oi"] > 0] or [k for k, e in per.items() if e["call_oi"] > 0]
@@ -881,6 +890,10 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
             "put_gex_m": round(e["put_gex"] / 1e6, 1),
             "net_gex_m": round(net_m, 1),
         })
+    oi_above_call = sum(e["call_oi"] for k, e in per.items() if k >= S)
+    oi_above_put = sum(e["put_oi"] for k, e in per.items() if k >= S)
+    oi_below_call = sum(e["call_oi"] for k, e in per.items() if k < S)
+    oi_below_put = sum(e["put_oi"] for k, e in per.items() if k < S)
 
     return {
         "available": True,
@@ -899,6 +912,13 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
                         else "음(−) 감마 우세 - 딜러 헤지가 움직임을 키우는 경향"),
         "strike_count": len(per),
         "by_strike": by_strike,
+        "gamma_source_note": gamma_source_note,
+        "oi_skew": {
+            "call_oi_at_or_above_spot": int(oi_above_call),
+            "put_oi_at_or_above_spot": int(oi_above_put),
+            "call_oi_below_spot": int(oi_below_call),
+            "put_oi_below_spot": int(oi_below_put),
+        },
         "chain_diag": diag,
     }
 
