@@ -251,6 +251,97 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
+# 뉴스 (Yahoo Finance 검색 API - 실시간 헤드라인)
+# ─────────────────────────────────────────────────────────────
+NEWS_TAG_RULES = [
+    ("FED", ("federal reserve", "fomc", "powell", " fed ", "fed's", "fed rate", "rate cut", "rate hike", "rate decision")),
+    ("INFLATION", ("inflation", "cpi", "pce", "core prices", "consumer prices")),
+    ("JOBS", ("jobs report", "payrolls", "unemployment", "nonfarm", "jobless claims")),
+    ("EARNINGS", ("earnings", "guidance", "quarterly results", "profit warning")),
+    ("GEOPOLITICS", ("tariff", "sanctions", " war ", "conflict", "geopolit")),
+    ("YIELDS", ("treasury yield", "bond yield", "yields ")),
+    ("VOLATILITY", ("volatility", "vix", "selloff", "sell-off", "plunge", "rally", "swings")),
+]
+
+
+def tag_news(title):
+    t = f" {title.lower()} "
+    return [name for name, kws in NEWS_TAG_RULES if any(k in t for k in kws)]
+
+
+def relative_time_label(ts, now_ts):
+    if not ts:
+        return None
+    delta = now_ts - ts
+    if delta < 0:
+        delta = 0
+    if delta < 60:
+        return "방금"
+    if delta < 3600:
+        return f"{int(delta // 60)}m ago"
+    if delta < 86400:
+        return f"{int(delta // 3600)}h ago"
+    return f"{int(delta // 86400)}d ago"
+
+
+def fetch_market_news():
+    """Yahoo Finance 뉴스 검색으로 SPX/증시 관련 실시간 헤드라인을 가져옵니다.
+    실패하면(네트워크 오류 등) None - 화면에는 '뉴스를 가져오지 못했습니다'로 표시됩니다."""
+
+    def load():
+        try:
+            res = requests.get(
+                "https://query2.finance.yahoo.com/v1/finance/search",
+                headers=HEADERS,
+                params={"q": "S&P 500 stock market", "newsCount": 8, "quotesCount": 0, "lang": "en-US"},
+                timeout=4,
+            )
+            if res.status_code != 200:
+                return None
+            items = res.json().get("news") or []
+            out = []
+            for n in items:
+                title = n.get("title")
+                link = n.get("link")
+                if not title or not link:
+                    continue
+                out.append({
+                    "title": title,
+                    "link": link,
+                    "publisher": n.get("publisher") or "Yahoo Finance",
+                    "ts": num(n.get("providerPublishTime")),
+                    "tags": tag_news(title),
+                })
+            return out or None
+        except Exception:
+            return None
+
+    return cached("news", 90, load)
+
+
+def get_news(now_et):
+    items = fetch_market_news()
+    if not items:
+        return None
+    now_ts = now_et.timestamp()
+    out_items = []
+    for it in items[:6]:
+        out_items.append({
+            "title": it["title"],
+            "link": it["link"],
+            "publisher": it["publisher"],
+            "time_label": relative_time_label(it["ts"], now_ts),
+            "tags": it["tags"],
+        })
+    all_tags = []
+    for it in out_items:
+        for tag in it["tags"]:
+            if tag not in all_tags:
+                all_tags.append(tag)
+    return {"items": out_items, "tags": all_tags[:5], "source": f"{SRC_YAHOO} 뉴스 검색"}
+
+
+# ─────────────────────────────────────────────────────────────
 # 봉(candle) 데이터 (Schwab pricehistory 우선 -> Yahoo chart)
 # ─────────────────────────────────────────────────────────────
 # tf -> (Yahoo interval, Yahoo range, Schwab 분봉 단위, Schwab 조회 일수, 합칠 분 단위)
@@ -1138,6 +1229,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         f_es_5 = ex.submit(get_candles, token, "es", "5m")
         f_es = ex.submit(get_candles, token, "es", c_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
+        f_news = ex.submit(get_news, now_et)
 
     def result(name, fut):
         return guard(name, fut.result)
@@ -1147,6 +1239,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     es_5 = result("candles es 5m", f_es_5)
     es_c = result("candles es", f_es)
     gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
+    news = result("news", f_news)
 
     def ratio_for(spy_data):
         if ratio_q:
@@ -1241,6 +1334,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         "vix": slim(quotes.get("vix")),
         "vix9d": slim(quotes.get("vix9d")),
         "mag7": quotes.get("mag7"),
+        "news": news,
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
         "yields": yields,
