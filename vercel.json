@@ -15,8 +15,18 @@
       "dest": "main.py"
     },
     {
+      "src": "/api/refresh-token",
+      "dest": "main.py"
+    },
+    {
       "src": "/(.*)",
       "dest": "main.py"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/refresh-token",
+      "schedule": "0 8 * * *"
     }
   ]
 }
