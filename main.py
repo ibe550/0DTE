@@ -86,50 +86,134 @@ def src_kind(s):
 
 
 # ─────────────────────────────────────────────────────────────
+# 영속 저장소 (Vercel KV / Upstash Redis REST API)
+# 서버리스 함수는 실행이 끝나면 메모리가 사라지므로, refresh_token 을 여기 저장해둬야
+# 다음 호출(또는 며칠 뒤 호출)에서도 이어서 쓸 수 있습니다. 연결돼 있지 않으면
+# 이 계층은 그냥 조용히 no-op 이 되고, 매번 환경변수의 refresh_token 만 쓰게 됩니다
+# (예전 방식으로 자동 대체 - 자동 갱신 없이도 앱 자체는 계속 동작합니다).
+# ─────────────────────────────────────────────────────────────
+def _kv_config():
+    url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
+    token = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    if not url or not token:
+        return None, None
+    return url.rstrip("/"), token
+
+
+def kv_cmd(*args):
+    """Upstash/Vercel KV REST 단일 명령 실행. 연결 안 돼 있거나 실패하면 None."""
+    url, token = _kv_config()
+    if not url:
+        return None
+    try:
+        r = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=list(args),
+            timeout=4,
+        )
+        if r.status_code == 200:
+            return r.json().get("result")
+    except Exception:
+        pass
+    return None
+
+
+def kv_get(key):
+    return kv_cmd("GET", key)
+
+
+def kv_set(key, value, ex_seconds=None):
+    if ex_seconds:
+        return kv_cmd("SET", key, value, "EX", str(int(ex_seconds))) is not None
+    return kv_cmd("SET", key, value) is not None
+
+
+KV_AVAILABLE = _kv_config()[0] is not None
+
+
+# ─────────────────────────────────────────────────────────────
 # Schwab 인증 / 호출
 # ─────────────────────────────────────────────────────────────
-_TOKEN = {"value": None, "exp": 0.0}
+_TOKEN = {"value": None, "exp": 0.0}  # 같은 웜 서버리스 컨테이너 안에서 재사용하는 1차 캐시
+SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
+KV_KEY_ACCESS = "schwab:access_token"
+KV_KEY_ACCESS_EXP = "schwab:access_token_exp"
+KV_KEY_REFRESH = "schwab:refresh_token"
+REFRESH_TOKEN_TTL = 8 * 24 * 3600  # 실제 만료(7일)보다 여유를 둔 KV 보관 기간
 
 
-def get_schwab_token():
-    """(access_token | None, 상태 메시지). access token 은 만료 전까지 재사용합니다."""
-    now = time.time()
-    if _TOKEN["value"] and now < _TOKEN["exp"]:
-        return _TOKEN["value"], "연결됨"
-
-    app_key = os.environ.get("SCHWAB_APP_KEY")
-    app_secret = os.environ.get("SCHWAB_SECRET")
-    refresh_token = os.environ.get("SCHWAB_REFRESH_TOKEN")
-    if not app_key or not refresh_token:
-        return None, "Schwab 환경변수 없음 (SCHWAB_APP_KEY / SCHWAB_REFRESH_TOKEN)"
-
+def _schwab_token_request(data, app_key, app_secret):
     try:
         res = requests.post(
-            "https://api.schwabapi.com/v1/oauth/token",
+            SCHWAB_TOKEN_URL,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": app_key},
+            data=data,
             auth=(app_key, app_secret) if app_secret else None,
-            timeout=4,
+            timeout=6,
         )
     except Exception as e:
         return None, f"Schwab 토큰 요청 오류 ({type(e).__name__})"
-
     if res.status_code == 200:
         try:
-            body = res.json()
+            return res.json(), None
         except Exception:
-            body = {}
-        token = body.get("access_token")
-        if token:
-            ttl = int(num(body.get("expires_in")) or 1800)
-            _TOKEN["value"] = token
-            _TOKEN["exp"] = now + max(60, ttl - 120)
-            return token, "연결됨"
-
+            return None, "Schwab 응답 파싱 실패"
     hint = ""
     if res.status_code in (400, 401):
-        hint = " - refresh token 만료(7일마다 재발급 필요) 또는 키/시크릿 확인"
+        hint = " - refresh token 만료(7일) 또는 키/시크릿 확인. /api/callback 으로 재인증하세요"
     return None, f"Schwab 토큰 갱신 실패 (HTTP {res.status_code}){hint}"
+
+
+def get_schwab_token(force_refresh=False):
+    """(access_token | None, 상태 메시지).
+    우선순위: 인메모리 캐시(같은 컨테이너) -> KV 에 저장된 access_token(다른 서버리스
+    인스턴스가 이미 갱신해둔 걸 재사용, refresh_token 을 아끼기 위함) -> refresh_token 으로
+    새로 발급. refresh_token 은 KV 에 있으면 그걸(자동 로테이션된 최신값), 없으면
+    SCHWAB_REFRESH_TOKEN 환경변수(최초 부트스트랩용)를 씁니다. 새로 발급받을 때 Schwab 이
+    함께 주는 새 refresh_token 은 다시 KV 에 저장해서, 사람이 다시 로그인하지 않아도
+    7일 만료가 계속 뒤로 밀리게 합니다."""
+    now = time.time()
+    if not force_refresh and _TOKEN["value"] and now < _TOKEN["exp"]:
+        return _TOKEN["value"], "연결됨 (캐시)"
+
+    app_key = os.environ.get("SCHWAB_APP_KEY")
+    app_secret = os.environ.get("SCHWAB_SECRET")
+    if not app_key:
+        return None, "Schwab 환경변수 없음 (SCHWAB_APP_KEY)"
+
+    if not force_refresh:
+        kv_exp = num(kv_get(KV_KEY_ACCESS_EXP))
+        if kv_exp and now < kv_exp - 30:
+            kv_access = kv_get(KV_KEY_ACCESS)
+            if kv_access:
+                _TOKEN["value"] = kv_access
+                _TOKEN["exp"] = kv_exp - 30
+                return kv_access, "연결됨 (공유 캐시)"
+
+    refresh_token = kv_get(KV_KEY_REFRESH) or os.environ.get("SCHWAB_REFRESH_TOKEN")
+    if not refresh_token:
+        return None, "refresh_token 없음 - /api/callback 으로 최초 인증이 필요합니다"
+
+    body, err = _schwab_token_request({"grant_type": "refresh_token", "refresh_token": refresh_token}, app_key, app_secret)
+    if not body:
+        return None, err
+
+    access_token = body.get("access_token")
+    new_refresh = body.get("refresh_token")
+    if not access_token:
+        return None, "Schwab 응답에 access_token 이 없습니다"
+    ttl = int(num(body.get("expires_in")) or 1800)
+
+    _TOKEN["value"] = access_token
+    _TOKEN["exp"] = now + max(60, ttl - 120)
+    if KV_AVAILABLE:
+        kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
+        kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
+        if new_refresh:
+            kv_set(KV_KEY_REFRESH, new_refresh, ex_seconds=REFRESH_TOKEN_TTL)
+
+    return access_token, "연결됨 (새로 갱신)"
 
 
 def schwab_get(token, path, params=None, timeout=4):
@@ -146,6 +230,8 @@ def schwab_get(token, path, params=None, timeout=4):
             return r.json()
         if r.status_code == 401:
             _TOKEN["value"] = None  # 다음 요청에서 토큰 재발급
+            if KV_AVAILABLE:
+                kv_set(KV_KEY_ACCESS_EXP, "0")  # 공유 캐시도 즉시 무효화
     except Exception:
         pass
     return None
@@ -1443,12 +1529,35 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
     access_token = body.get("access_token", "")
     expires_in = body.get("expires_in", "")
 
+    kv_note = ""
+    if KV_AVAILABLE:
+        now = time.time()
+        ttl = int(num(expires_in) or 1800)
+        ok_r = kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TOKEN_TTL) if refresh_token else False
+        ok_a = kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl) if access_token else False
+        kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
+        _TOKEN["value"] = access_token
+        _TOKEN["exp"] = now + max(60, ttl - 120)
+        if ok_r and ok_a:
+            kv_note = (
+                "<p style='color:#10b981;'>✅ 저장소(KV)에도 자동으로 반영했습니다 - "
+                "Vercel 환경변수를 직접 바꾸지 않으셔도 앱이 바로 이 토큰을 씁니다. "
+                "이후로는 앱이 매번 새 refresh_token 을 스스로 저장소에 갱신해두므로, "
+                "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
+            )
+        else:
+            kv_note = "<p style='color:#f59e0b;'>⚠️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
+
+    manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
+        "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
+        "<code>SCHWAB_REFRESH_TOKEN</code>에 붙여넣고 재배포하세요.</p>"
+    )
+
     return HTMLResponse(render_callback_page(
         "✅ Schwab 인증 성공",
         f"""
-        <p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의
-        <code>SCHWAB_REFRESH_TOKEN</code>에 붙여넣고 재배포하세요. 보통 7일 후 만료되니,
-        그 전에 이 인증 과정을 다시 거쳐야 합니다.</p>
+        {kv_note}
+        {manual_note}
         <div class="box" id="rt">{html_lib.escape(refresh_token)}</div>
         <button onclick="navigator.clipboard.writeText(document.getElementById('rt').innerText).then(()=>{{this.innerText='복사됨 ✓';}})">
             Refresh Token 복사
@@ -1458,3 +1567,16 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
         <p style="margin-top:16px;color:#f59e0b;">⚠️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
         """,
     ))
+
+
+# ─────────────────────────────────────────────────────────────
+# 자동 갱신용 크론 엔드포인트 (/api/refresh-token)
+# Vercel Cron 이 매일 한 번 이 주소를 호출해서, 아무도 앱을 안 열어봐도
+# refresh_token 이 7일 안에 최소 한 번은 갱신되도록 보장합니다.
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/refresh-token")
+def refresh_token_cron():
+    if not KV_AVAILABLE:
+        return {"status": "skipped", "reason": "KV 저장소가 연결되어 있지 않습니다 (KV_REST_API_URL/TOKEN 필요)"}
+    token, msg = get_schwab_token(force_refresh=True)
+    return {"status": "ok" if token else "error", "message": msg}
