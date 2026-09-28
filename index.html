@@ -107,16 +107,19 @@
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">3M T-BILL (IRX)</div>
             <div id="yield-3m" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div id="yield-3m-chg" class="text-[8px] md:text-[10px] font-semibold text-slate-500 truncate">--</div>
             <div id="yield-3m-src" class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">--</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y YIELD (^TNX)</div>
             <div id="yield-10y" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div id="yield-10y-chg" class="text-[8px] md:text-[10px] font-semibold text-slate-500 truncate">--</div>
             <div id="yield-10y-src" class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">--</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
             <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">30Y YIELD (^TYX)</div>
             <div id="yield-30y" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div id="yield-30y-chg" class="text-[8px] md:text-[10px] font-semibold text-slate-500 truncate">--</div>
             <div id="yield-30y-src" class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">--</div>
         </div>
         <div class="card p-1.5 md:p-2.5">
@@ -859,13 +862,20 @@
         }
 
         function renderYields(y) {
-            const pairs = [['yield-3m', 'y3m', 'yield-3m-src'], ['yield-10y', 'y10', 'yield-10y-src'], ['yield-30y', 'y30', 'yield-30y-src']];
-            pairs.forEach(([id, key, srcId]) => {
+            const pairs = [
+                ['yield-3m', 'y3m', 'yield-3m-src', 'yield-3m-chg', 'y3m_change_text', 'y3m_change_bp'],
+                ['yield-10y', 'y10', 'yield-10y-src', 'yield-10y-chg', 'y10_change_text', 'y10_change_bp'],
+                ['yield-30y', 'y30', 'yield-30y-src', 'yield-30y-chg', 'y30_change_text', 'y30_change_bp'],
+            ];
+            pairs.forEach(([id, key, srcId, chgId, chgTextKey, chgBpKey]) => {
                 setText(id, y ? y[key] : null);
                 setTone(id, y && y[key] ? 'text-slate-200' : 'text-slate-500');
                 const s = y && y.sources ? y.sources[key] : null;
                 setText(srcId, srcShort(s));
                 if ($(srcId)) $(srcId).title = s || '';
+                const bp = y ? y[chgBpKey] : null;
+                setText(chgId, y ? y[chgTextKey] : null);
+                setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-emerald-400' : (bp < 0 ? 'text-rose-400' : 'text-slate-400')));
             });
             setText('yield-spread', y ? y.spread : null);
             const bp = y && y.spread ? parseInt(y.spread, 10) : NaN;
