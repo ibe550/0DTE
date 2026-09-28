@@ -1393,11 +1393,22 @@ def build_direction(tf_results, tf_sources, evidence):
 # ─────────────────────────────────────────────────────────────
 # 금리
 # ─────────────────────────────────────────────────────────────
-def norm_yield(x):
-    """지수 단위가 %×10(예: 42.5) 이든 %(예: 4.25) 이든 % 로 맞춥니다."""
+def yield_scale(raw_price):
+    """가격이 %×10(지수, 예: 42.5) 단위인지 %(예: 4.25) 그대로인지 판단합니다.
+    변화량(change)은 절댓값이 작아서 이 판정을 스스로 할 수 없으므로,
+    반드시 가격에서 구한 배율을 그대로 넘겨 써야 합니다."""
+    if raw_price is None:
+        return 1.0
+    return 10.0 if raw_price > 25 else 1.0
+
+
+def norm_yield(x, scale=None):
+    """지수 단위를 % 로 맞춥니다. scale 을 안 넘기면 x 자신의 크기로 추정합니다
+    (가격처럼 그 자체로 판단 가능한 값에만 이렇게 쓰세요 - change 값에는 쓰면 안 됩니다)."""
     if x is None:
         return None
-    return x / 10.0 if x > 25 else x
+    s = scale if scale is not None else yield_scale(x)
+    return x / s
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1482,19 +1493,39 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
 
     # 금리 (^IRX 는 13주 T-bill 이라 "2Y" 가 아니라 "3M" 으로 표기합니다)
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
-    y10 = norm_yield(q10["price"]) if q10 else None
-    y30 = norm_yield(q30["price"]) if q30 else None
-    y3m = norm_yield(q3m["price"]) if q3m else None
+
+    def yield_level_and_change(q):
+        """(퍼센트 값, 전일 대비 변화 bp) - price 로 판정한 배율을 change 에도 그대로 적용합니다."""
+        if not q:
+            return None, None
+        scale = yield_scale(q["price"])
+        level = norm_yield(q["price"], scale)
+        chg = q.get("change")
+        bp = int(round(norm_yield(chg, scale) * 100)) if chg is not None else None
+        return level, bp
+
+    y10, y10_bp = yield_level_and_change(q10)
+    y30, y30_bp = yield_level_and_change(q30)
+    y3m, y3m_bp = yield_level_and_change(q3m)
     spread_bp = int(round((y10 - y3m) * 100)) if (y10 is not None and y3m is not None) else None
 
     def pct_text(v):
         return f"{v:.3f}%" if v is not None else None
 
+    def bp_text(v):
+        return f"{'+' if v > 0 else ''}{v} bp" if v is not None else None
+
     yields = {
         "y3m": pct_text(y3m),
         "y10": pct_text(y10),
         "y30": pct_text(y30),
-        "spread": (f"{'+' if spread_bp >= 0 else ''}{spread_bp} bp" if spread_bp is not None else None),
+        "y3m_change_bp": y3m_bp,
+        "y10_change_bp": y10_bp,
+        "y30_change_bp": y30_bp,
+        "y3m_change_text": bp_text(y3m_bp),
+        "y10_change_text": bp_text(y10_bp),
+        "y30_change_text": bp_text(y30_bp),
+        "spread": (f"{'+' if spread_bp > 0 else ''}{spread_bp} bp" if spread_bp is not None else None),
         "sources": {
             "y3m": q3m["source"] if q3m else None,
             "y10": q10["source"] if q10 else None,
