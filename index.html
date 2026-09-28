@@ -883,7 +883,10 @@
             if (!items.length) {
                 tagsWrap.innerHTML = '<span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span> <span class="text-[9px] text-slate-500">N/A</span>';
                 setText('news-source-label', NA);
-                list.innerHTML = '<div class="text-[11px] text-slate-500 py-1.5">뉴스를 가져오지 못했습니다.</div>';
+                const why = (n && n.diag ? n.diag : []).filter((d) => !d.ok)
+                    .map((d) => `<div>· ${escapeHtml(d.source)}: ${escapeHtml(d.error || '실패')}</div>`).join('');
+                list.innerHTML = '<div class="text-[11px] text-slate-500 py-1.5">뉴스를 가져오지 못했습니다.' +
+                    (why ? `<div class="mt-1 text-[10px] text-slate-600 font-mono">${why}</div>` : '') + '</div>';
                 return;
             }
             const tagHtml = (n.tags || []).map((t) =>
