@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import html as html_lib
+import xml.etree.ElementTree as XET
+from email.utils import parsedate_to_datetime
 from typing import Optional
 
 import pytz
@@ -341,7 +343,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 뉴스 (Yahoo Finance 검색 API - 실시간 헤드라인)
+# 뉴스 (Yahoo 검색·Yahoo RSS·Google News·CNBC 를 동시에 조회해 합침)
 # ─────────────────────────────────────────────────────────────
 NEWS_TAG_RULES = [
     ("FED", ("federal reserve", "fomc", "powell", " fed ", "fed's", "fed rate", "rate cut", "rate hike", "rate decision")),
@@ -374,61 +376,169 @@ def relative_time_label(ts, now_ts):
     return f"{int(delta // 86400)}d ago"
 
 
-def fetch_market_news():
-    """Yahoo Finance 뉴스 검색으로 SPX/증시 관련 실시간 헤드라인을 가져옵니다.
-    실패하면(네트워크 오류 등) None - 화면에는 '뉴스를 가져오지 못했습니다'로 표시됩니다."""
+NEWS_MAX_CHARS = 1_500_000
+NEWS_MAX_AGE_SEC = 48 * 3600
+_NEWS_CACHE = {"ts": 0.0, "items": [], "diag": []}
 
-    def load():
+
+def _news_http(url, params=None):
+    r = requests.get(
+        url,
+        headers={**HEADERS, "Accept": "application/rss+xml, application/xml, text/xml, application/json, */*"},
+        params=params,
+        timeout=3.5,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"HTTP {r.status_code}")
+    if len(r.text) > NEWS_MAX_CHARS:
+        raise RuntimeError("응답이 너무 큼")
+    return r
+
+
+def _parse_rss(text, default_publisher, split_publisher=False):
+    root = XET.fromstring(text)
+    out = []
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        ts = None
+        pub = item.findtext("pubDate")
+        if pub:
+            try:
+                ts = parsedate_to_datetime(pub).timestamp()
+            except Exception:
+                ts = None
+        publisher = default_publisher
+        src_el = item.find("source")
+        if src_el is not None and (src_el.text or "").strip():
+            publisher = src_el.text.strip()
+        if split_publisher and " - " in title:
+            head, _, tail = title.rpartition(" - ")
+            if head and 0 < len(tail) <= 40:
+                title, publisher = head.strip(), tail.strip()
+        if title and link.lower().startswith(("http://", "https://")):
+            out.append({"title": title, "link": link, "publisher": publisher, "ts": ts})
+    return out
+
+
+def _news_yahoo_search():
+    last_err = None
+    for host in ("query2", "query1"):
         try:
-            res = requests.get(
-                "https://query2.finance.yahoo.com/v1/finance/search",
-                headers=HEADERS,
-                params={"q": "S&P 500 stock market", "newsCount": 8, "quotesCount": 0, "lang": "en-US"},
-                timeout=4,
+            r = _news_http(
+                f"https://{host}.finance.yahoo.com/v1/finance/search",
+                {"q": "S&P 500 stock market", "newsCount": 10, "quotesCount": 0, "lang": "en-US"},
             )
-            if res.status_code != 200:
-                return None
-            items = res.json().get("news") or []
             out = []
-            for n in items:
-                title = n.get("title")
-                link = n.get("link")
-                if not title or not link:
-                    continue
-                out.append({
-                    "title": title,
-                    "link": link,
-                    "publisher": n.get("publisher") or "Yahoo Finance",
-                    "ts": num(n.get("providerPublishTime")),
-                    "tags": tag_news(title),
-                })
-            return out or None
-        except Exception:
-            return None
+            for n in r.json().get("news") or []:
+                title, link = n.get("title"), n.get("link")
+                if title and link and str(link).lower().startswith(("http://", "https://")):
+                    out.append({"title": title, "link": link, "publisher": n.get("publisher") or "Yahoo Finance",
+                                "ts": num(n.get("providerPublishTime"))})
+            if out:
+                return out
+            last_err = "뉴스 0건"
+        except Exception as e:
+            last_err = str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}"
+    raise RuntimeError(last_err or "실패")
 
-    return cached("news", 90, load)
+
+def _news_yahoo_rss():
+    r = _news_http("https://feeds.finance.yahoo.com/rss/2.0/headline",
+                   {"s": "^GSPC,SPY,^VIX", "region": "US", "lang": "en-US"})
+    return _parse_rss(r.text, "Yahoo Finance")
+
+
+def _news_google_rss():
+    r = _news_http("https://news.google.com/rss/search",
+                   {"q": "(S&P 500 OR Wall Street OR Federal Reserve OR inflation) when:1d",
+                    "hl": "en-US", "gl": "US", "ceid": "US:en"})
+    return _parse_rss(r.text, "Google News", split_publisher=True)
+
+
+def _news_cnbc_rss():
+    r = _news_http("https://search.cnbc.com/rs/search/combinedcms/view.xml",
+                   {"partnerId": "wrss01", "id": "10000664"})
+    return _parse_rss(r.text, "CNBC")
+
+
+NEWS_SOURCES = [
+    ("Yahoo 검색", _news_yahoo_search),
+    ("Yahoo RSS", _news_yahoo_rss),
+    ("Google News", _news_google_rss),
+    ("CNBC", _news_cnbc_rss),
+]
+
+
+def _norm_title(t):
+    return "".join(ch for ch in t.lower() if ch.isalnum())[:60]
+
+
+def fetch_market_news(now_ts=None):
+    """여러 뉴스 소스를 동시에 조회해서 합치고(중복 제거) 최신순으로 정렬합니다.
+    한 곳이 막혀도(예: Yahoo 검색 API 차단) 다른 곳에서 가져오고, 소스별 실패 이유(diag)를
+    같이 돌려줘서 화면에서 원인을 바로 볼 수 있게 합니다. -> (items, diag)"""
+    now = time.time()
+    ttl = 60 if _NEWS_CACHE["items"] else 20
+    if _NEWS_CACHE["ts"] and now - _NEWS_CACHE["ts"] < ttl:
+        return _NEWS_CACHE["items"], _NEWS_CACHE["diag"]
+
+    def run(src):
+        name, fn = src
+        try:
+            items = fn()
+            return name, items, None
+        except Exception as e:
+            return name, None, (str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}")[:120]
+
+    with ThreadPoolExecutor(max_workers=len(NEWS_SOURCES)) as ex:
+        results = list(ex.map(run, NEWS_SOURCES))
+
+    diag, merged, seen = [], [], set()
+    for name, items, err in results:  # NEWS_SOURCES 순서 = 우선순위 (중복 시 앞선 소스 것을 유지)
+        if err:
+            diag.append({"source": name, "ok": False, "error": err})
+            continue
+        diag.append({"source": name, "ok": True, "count": len(items)})
+        for it in items:
+            key = _norm_title(it["title"])
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            it["from"] = name
+            it["tags"] = tag_news(it["title"])
+            merged.append(it)
+
+    merged.sort(key=lambda x: x["ts"] or 0, reverse=True)
+    ref_ts = now_ts if now_ts is not None else now
+    fresh = [x for x in merged if x["ts"] and ref_ts - x["ts"] <= NEWS_MAX_AGE_SEC]
+    items = fresh if len(fresh) >= 3 else merged  # 최근 뉴스가 너무 적으면 오래된 것도 허용
+    _NEWS_CACHE.update(ts=now, items=items[:10], diag=diag)
+    return _NEWS_CACHE["items"], diag
 
 
 def get_news(now_et):
-    items = fetch_market_news()
-    if not items:
-        return None
     now_ts = now_et.timestamp()
-    out_items = []
-    for it in items[:6]:
-        out_items.append({
-            "title": it["title"],
-            "link": it["link"],
-            "publisher": it["publisher"],
-            "time_label": relative_time_label(it["ts"], now_ts),
-            "tags": it["tags"],
-        })
+    items, diag = fetch_market_news(now_ts)
+    out_items = [{
+        "title": it["title"],
+        "link": it["link"],
+        "publisher": it["publisher"],
+        "time_label": relative_time_label(it["ts"], now_ts),
+        "tags": it["tags"],
+    } for it in items[:6]]
     all_tags = []
     for it in out_items:
         for tag in it["tags"]:
             if tag not in all_tags:
                 all_tags.append(tag)
-    return {"items": out_items, "tags": all_tags[:5], "source": f"{SRC_YAHOO} 뉴스 검색"}
+    used = [d["source"] for d in diag if d["ok"] and d.get("count")]
+    return {
+        "items": out_items,
+        "tags": all_tags[:5],
+        "source": " + ".join(used) if used else "N/A",
+        "diag": diag,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
