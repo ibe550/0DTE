@@ -42,6 +42,15 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
+    <!-- 1-1. 오늘의 중요 발표 (BLS 공식 일정) -->
+    <div id="econ-card" class="hidden card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
+        <div class="flex justify-between items-center mb-1.5">
+            <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표</span>
+            <span class="text-[9px] text-slate-500" id="econ-source">--</span>
+        </div>
+        <div id="econ-list" class="space-y-1"></div>
+    </div>
+
     <!-- 2. 뉴스 리스크 -->
     <div class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-slate-800">
         <div id="news-tags" class="flex items-center flex-wrap gap-1 mb-2">
@@ -886,6 +895,28 @@
             return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
+        function renderEconEvents(e) {
+            const card = $('econ-card');
+            const items = e && e.items ? e.items : [];
+            if (!items.length) {
+                card.classList.add('hidden');
+                return;
+            }
+            card.classList.remove('hidden');
+            setText('econ-source', e.source || NA);
+            $('econ-list').innerHTML = items.map((it) => {
+                const cls = it.passed ? 'text-slate-500' : 'text-amber-300 font-semibold';
+                const dot = it.passed ? 'bg-slate-600' : 'bg-amber-400 animate-pulse';
+                return `<div class="flex items-center justify-between text-[11px] ${cls}">
+                    <span class="flex items-center space-x-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full ${dot} inline-block"></span>
+                        <span>${escapeHtml(it.title)}</span>
+                    </span>
+                    <span class="font-mono text-[10px]">${escapeHtml(it.time)}${it.passed ? ' · 발표완료' : ''}</span>
+                </div>`;
+            }).join('');
+        }
+
         function renderNews(n) {
             const tagsWrap = $('news-tags');
             const list = $('news-list');
@@ -942,6 +973,7 @@
 
                 const blocks = [
                     () => renderStatus(data),
+                    () => renderEconEvents(data.econ_events),
                     () => renderNews(data.news),
                     () => renderQuote('spx', data.spx, { pct: true }),
                     () => renderQuote('es', data.es, { pct: true }),
