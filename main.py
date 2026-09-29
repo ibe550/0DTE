@@ -346,19 +346,110 @@ def get_all_quotes(token):
 # 뉴스 (Yahoo 검색·Yahoo RSS·Google News·CNBC 를 동시에 조회해 합침)
 # ─────────────────────────────────────────────────────────────
 NEWS_TAG_RULES = [
-    ("FED", ("federal reserve", "fomc", "powell", " fed ", "fed's", "fed rate", "rate cut", "rate hike", "rate decision")),
-    ("INFLATION", ("inflation", "cpi", "pce", "core prices", "consumer prices")),
-    ("JOBS", ("jobs report", "payrolls", "unemployment", "nonfarm", "jobless claims")),
-    ("EARNINGS", ("earnings", "guidance", "quarterly results", "profit warning")),
-    ("GEOPOLITICS", ("tariff", "sanctions", " war ", "conflict", "geopolit")),
-    ("YIELDS", ("treasury yield", "bond yield", "yields ")),
-    ("VOLATILITY", ("volatility", "vix", "selloff", "sell-off", "plunge", "rally", "swings")),
+    ("FED", ("federal reserve", "fomc", "powell", " fed ", "fed's", "fed rate", "rate cut", "rate hike",
+              "rate decision", "central bank", "quantitative", "interest rate")),
+    ("INFLATION", ("inflation", "cpi", "pce", "core prices", "consumer prices", "producer price")),
+    ("JOBS", ("jobs report", "payrolls", "unemployment", "nonfarm", "jobless claims", "jolts",
+               "job openings", "labor market", "hiring")),
+    ("MACRO", ("gdp", "ism ", "pmi ", "retail sales", "consumer confidence", "consumer sentiment",
+                "housing starts", "industrial production", "durable goods")),
+    ("EARNINGS", ("earnings", "guidance", "quarterly results", "profit warning", "beats estimates",
+                   "misses estimates")),
+    ("GEOPOLITICS", ("tariff", "sanctions", " war ", "conflict", "geopolit", "opec", " china ", "trade deal")),
+    ("YIELDS", ("treasury yield", "bond yield", "yields ", "10-year", "2-year")),
+    ("VOLATILITY", ("volatility", "vix", "selloff", "sell-off", "plunge", "rally", "swings", "record high",
+                     "correction", "crash", "circuit breaker")),
+    ("POLICY", ("sec ", "antitrust", "shutdown", "debt ceiling", "stimulus", "regulation", "white house",
+                 "executive order")),
 ]
 
 
 def tag_news(title):
     t = f" {title.lower()} "
     return [name for name, kws in NEWS_TAG_RULES if any(k in t for k in kws)]
+
+
+BLS_TITLE_KR = {
+    "Employment Situation": "고용보고서 (비농업고용, NFP)",
+    "Consumer Price Index": "소비자물가지수 (CPI)",
+    "Producer Price Index": "생산자물가지수 (PPI)",
+    "Job Openings and Labor Turnover Survey": "구인이직보고서 (JOLTS)",
+    "Employment Cost Index": "고용비용지수 (ECI)",
+    "Productivity and Costs": "생산성 및 단위노동비용",
+    "U.S. Import and Export Price Indexes": "수출입물가지수",
+}
+HIGH_IMPACT_BLS_TITLES = set(BLS_TITLE_KR)
+BLS_ICS_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
+_BLS_CAL_CACHE = {"attempt_ts": 0.0, "events": None, "error": None}
+BLS_CAL_RETRY_SEC = 300       # 실패 시 최소 재시도 간격 (BLS 를 매 폴링마다 두드리지 않기 위해)
+BLS_CAL_REFRESH_SEC = 6 * 3600  # 성공했어도 이 정도 지나면 다시 최신인지 확인
+
+
+def _parse_ics_events(text):
+    """아주 단순한 ICS 파서 - SUMMARY 와 DTSTART(US-Eastern) 만 뽑습니다."""
+    events, cur = [], {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line == "BEGIN:VEVENT":
+            cur = {}
+        elif line == "END:VEVENT":
+            if "summary" in cur and "dt" in cur:
+                events.append(cur)
+            cur = {}
+        elif line.startswith("SUMMARY:"):
+            cur["summary"] = line[len("SUMMARY:"):].strip()
+        elif line.startswith("DTSTART"):
+            try:
+                val = line.split(":", 1)[1].strip()
+                naive = datetime.strptime(val.replace("Z", ""), "%Y%m%dT%H%M%S")
+                cur["dt"] = naive.replace(tzinfo=pytz.UTC).astimezone(ET) if val.endswith("Z") else ET.localize(naive)
+            except Exception:
+                pass
+    return events
+
+
+def fetch_bls_calendar():
+    """(events, error) - BLS 공식 발표 일정(ICS, bls.gov). 일정은 자주 안 바뀌니 성공하면
+    6시간 캐시하고, 실패해도 이전 성공 데이터를 그대로 유지한 채 5분 뒤에만 재시도합니다."""
+    now = time.time()
+    stale_after = BLS_CAL_RETRY_SEC if _BLS_CAL_CACHE["events"] is None else BLS_CAL_REFRESH_SEC
+    if now - _BLS_CAL_CACHE["attempt_ts"] < stale_after:
+        return _BLS_CAL_CACHE["events"], _BLS_CAL_CACHE["error"]
+    _BLS_CAL_CACHE["attempt_ts"] = now
+    try:
+        r = requests.get(BLS_ICS_URL, headers=HEADERS, timeout=4)
+        if r.status_code != 200:
+            raise RuntimeError(f"HTTP {r.status_code}")
+        if len(r.text) > 3_000_000:
+            raise RuntimeError("응답이 너무 큼")
+        _BLS_CAL_CACHE["events"] = _parse_ics_events(r.text)
+        _BLS_CAL_CACHE["error"] = None
+    except Exception as e:
+        _BLS_CAL_CACHE["error"] = f"{type(e).__name__}: {e}"
+        # events 는 건드리지 않습니다 - 이전에 성공한 적이 있다면 그 값을 계속 씁니다.
+    return _BLS_CAL_CACHE["events"], _BLS_CAL_CACHE["error"]
+
+
+def get_today_econ_events(now_et):
+    """오늘(미 동부시간) 예정된, 지수에 영향을 줄 수 있는 BLS 공식 발표만 골라 돌려줍니다."""
+    events, err = fetch_bls_calendar()
+    if events is None:
+        return {"items": [], "source": "N/A", "error": err or "BLS 캘린더를 가져오지 못했습니다"}
+    today = now_et.date()
+    now_ts = now_et.timestamp()
+    items = []
+    for e in events:
+        if e["dt"].date() != today or e["summary"] not in HIGH_IMPACT_BLS_TITLES:
+            continue
+        items.append({
+            "title": BLS_TITLE_KR.get(e["summary"], e["summary"]),
+            "title_en": e["summary"],
+            "time": e["dt"].strftime("%H:%M ET"),
+            "ts": e["dt"].timestamp(),
+            "passed": e["dt"].timestamp() < now_ts,
+        })
+    items.sort(key=lambda x: x["ts"])
+    return {"items": items, "source": "BLS 공식 일정 (bls.gov)", "error": None}
 
 
 def relative_time_label(ts, now_ts):
@@ -509,10 +600,15 @@ def fetch_market_news(now_ts=None):
             it["tags"] = tag_news(it["title"])
             merged.append(it)
 
-    merged.sort(key=lambda x: x["ts"] or 0, reverse=True)
+    # 태그(FED/INFLATION/JOBS/MACRO/...)가 하나도 안 붙은 건 지수에 큰 영향을 주기 힘든
+    # 잡다한 뉴스로 보고 뺍니다. 태그 붙은 게 너무 적으면(3건 미만) 그때만 나머지도 보여줍니다.
+    important = [x for x in merged if x["tags"]]
+    pool = important if len(important) >= 3 else merged
+
+    pool.sort(key=lambda x: x["ts"] or 0, reverse=True)
     ref_ts = now_ts if now_ts is not None else now
-    fresh = [x for x in merged if x["ts"] and ref_ts - x["ts"] <= NEWS_MAX_AGE_SEC]
-    items = fresh if len(fresh) >= 3 else merged  # 최근 뉴스가 너무 적으면 오래된 것도 허용
+    fresh = [x for x in pool if x["ts"] and ref_ts - x["ts"] <= NEWS_MAX_AGE_SEC]
+    items = fresh if len(fresh) >= 3 else pool  # 최근 뉴스가 너무 적으면 오래된 것도 허용
     _NEWS_CACHE.update(ts=now, items=items[:10], diag=diag)
     return _NEWS_CACHE["items"], diag
 
@@ -1441,6 +1537,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         f_es = ex.submit(get_candles, token, "es", c_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
         f_news = ex.submit(get_news, now_et)
+        f_econ = ex.submit(get_today_econ_events, now_et)
 
     def result(name, fut):
         return guard(name, fut.result)
@@ -1451,6 +1548,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     es_c = result("candles es", f_es)
     gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
     news = result("news", f_news)
+    econ_events = result("econ_events", f_econ) or {"items": [], "source": "N/A", "error": "계산 오류"}
 
     def ratio_for(spy_data):
         if ratio_q:
@@ -1566,6 +1664,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         "vix9d": slim(quotes.get("vix9d")),
         "mag7": quotes.get("mag7"),
         "news": news,
+        "econ_events": econ_events,
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
         "yields": yields,
