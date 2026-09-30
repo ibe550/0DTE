@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.1</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.2</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -348,12 +348,12 @@
         </div>
     </div>
 
-    <!-- 9. ES 24H VOLUME + CVD -->
+    <!-- 9. SPY VOLUME + CVD -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
                 <div class="flex items-center space-x-2">
-                    <span class="text-xs font-bold text-slate-200">📊 ES VOLUME + CVD — <span id="cvd-title-tf">15M</span></span>
+                    <span class="text-xs font-bold text-slate-200">📊 SPY VOLUME + CVD — <span id="cvd-title-tf">5M</span></span>
                 </div>
             </div>
             <div class="text-right max-w-[60%]">
@@ -371,8 +371,8 @@
         <div class="flex justify-between items-center mb-2">
             <div class="flex space-x-1" id="cvd-tf-group">
                 <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
-                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
-                <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="15m">15m</button>
+                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="5m">5m</button>
+                <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
                 <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
                 <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
             </div>
@@ -508,7 +508,7 @@
         const NA = 'N/A';
         let currentVwapTf = '1H';
         let currentRsiTf = '1H';
-        let currentCvdTf = '15m';
+        let currentCvdTf = '5m';
         let inFlight = false;
         let reqSeq = 0;
 
@@ -580,7 +580,6 @@
         function changeRsiTimeframe(tf) { currentRsiTf = tf; markActive('#rsi-tf-group', 'rsi-tf-btn', tf, 'bg-indigo-600'); setText('rsi-title-tf', tf); fetchRealMarketData(true); }
         function changeCvdTimeframe(tf) { currentCvdTf = tf; markActive('#cvd-tf-group', 'cvd-tf-btn', tf, 'bg-teal-600'); setText('cvd-title-tf', tf.toUpperCase()); fetchRealMarketData(true); }
 
-        // 값 배열 -> SVG path. (x0,y0)=그래프 영역 좌상단, (w,h)=크기. 축 라벨/격자선과 좌표가 일치합니다.
         function generatePath(arr, minVal, maxVal, x0, y0, w, h) {
             if (!arr || arr.length < 2 || maxVal === minVal) return '';
             const step = w / (arr.length - 1);
@@ -591,7 +590,6 @@
             }).join(' ');
         }
 
-        // ── 시세 카드 ──────────────────────────────
         function renderQuote(pfx, q, opts = {}) {
             if (!q) {
                 setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
@@ -608,7 +606,6 @@
             if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
         }
 
-        // ── GEX ───────────────────────────────────
         function renderGex(g, spx) {
             const ok = g && g.available;
             const note = $('gex-note');
@@ -704,7 +701,6 @@
             });
         }
 
-        // ── VWAP ──────────────────────────────────
         function renderVwap(v) {
             const paths = ['vwap-center-line', 'vwap-band-upper', 'vwap-band-lower', 'vwap-band2-upper', 'vwap-band2-lower'];
             if (!v || !v.series || !v.series.length) {
@@ -725,7 +721,6 @@
             draw('vwap-band2-upper', v.upper2); draw('vwap-band2-lower', v.lower2);
         }
 
-        // ── RSI ───────────────────────────────────
         function renderRsi(r) {
             if (!r) {
                 setText('rsi-value', NA); setText('rsi-status', NA); setText('rsi-source', NA);
@@ -735,20 +730,16 @@
             setText('rsi-value', r.val); setText('rsi-status', r.status); setText('rsi-source', r.source);
             const cls = r.val >= 70 ? 'bg-rose-950/80 text-rose-300' : (r.val >= 55 ? 'bg-amber-950 text-amber-400' : (r.val <= 30 ? 'bg-emerald-950/80 text-emerald-300' : 'bg-slate-800 text-slate-300'));
             $('rsi-status').className = `text-[9px] px-1.5 py-0.2 rounded font-bold ${cls}`;
-            // 20~80 을 y=80~20 (70 → y30, 50 → y50, 30 → y70)에 맞춥니다
             $('rsi-dynamic-line').setAttribute('d', generatePath(r.history, 20, 80, 30, 20, 450, 60));
         }
 
-        // ── CVD ───────────────────────────────────
         function renderCvd(c) {
             const pill = $('cvd-status-pill');
             if (!c) {
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
-                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
-                $('cvd-x-axis').innerHTML = '<span>--</span>';
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-x-axis').innerHTML = '<span>--</span>';
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
                 return;
@@ -782,7 +773,6 @@
             setText('cvd-y-max', fmtK(maxVol));
             setText('cvd-y-mid', fmtK(maxVol / 2));
 
-            // 봉 개수에 맞춰 폭을 동적으로 계산합니다 (x=40~480 영역 안에서 균등 배치)
             const AREA_X0 = 40, AREA_W = 440;
             const n = Math.max(bars.length, 1);
             const slot = AREA_W / n;
@@ -801,7 +791,6 @@
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            // 시간축 라벨: 최대 6개, 실제 봉 시각(ET) 기준
             const axis = $('cvd-x-axis');
             if (!bars.length) { axis.innerHTML = '<span>--</span>'; }
             else {
@@ -816,7 +805,6 @@
             }
         }
 
-        // ── 방향 분석 ─────────────────────────────
         function renderDirection(d) {
             const tfKeys = ['1h', '15m', '5m', '1m'];
             const list = $('evidence-list');
@@ -826,7 +814,7 @@
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50%'; $('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
                 tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
                 list.innerHTML = '';
                 return;
@@ -881,7 +869,7 @@
                 setTone(id, y && y[key] ? 'text-slate-200' : 'text-slate-500');
                 const s = y && y.sources ? y.sources[key] : null;
                 setText(srcId, srcShort(s));
-                if ($(srcId)) $(srcId).title = s || '';
+                if ($(srcId))$(srcId).title = s || '';
                 const bp = y ? y[chgBpKey] : null;
                 setText(chgId, y ? y[chgTextKey] : null);
                 setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-emerald-400' : (bp < 0 ? 'text-rose-400' : 'text-slate-400')));
@@ -968,7 +956,7 @@
                 const url = `${API_URL}?vwap_tf=${currentVwapTf}&rsi_tf=${currentRsiTf}&cvd_tf=${currentCvdTf}`;
                 const res = await fetch(url, { signal: ctrl.signal });
                 const data = await res.json();
-                if (mySeq !== reqSeq) return; // 그 사이 더 새 요청이 시작됨
+                if (mySeq !== reqSeq) return;
                 if (data.status !== 'success') throw new Error('API status ' + data.status);
 
                 const blocks = [
