@@ -936,7 +936,11 @@ CVD_MAX_BARS = 96        # 화면에 그릴 봉 개수 상한 (촘촘한 타임�
 
 
 def compute_cvd(es_candles, tf_key, source):
-    """봉 색(종가>=시가) 기준 매수/매도 거래량 근사치. 실제 체결 CVD 가 아닙니다.
+    """매수/매도 거래량 근사치 (실제 체결 CVD 가 아닙니다). 각 봉을, 그 봉의 시가가 아니라
+    '직전 봉 종가 대비' 올랐는지/내렸는지로 매수·매도를 가릅니다.
+    (봉 자신의 시가·종가만 보면, 봉 내부에서 잠깐 반등했다가 마감한 하락 추세의 봉도
+    '매수'로 잡혀서, 가격은 계속 내려가는데 매수 비율이 더 높게 나오는 왜곡이 생깁니다.
+    직전 종가 대비로 비교하면 여러 봉에 걸친 실제 가격 흐름과 훨씬 더 일치합니다.)
     최근 CVD_WINDOW_HOURS 시간을 선택한 타임프레임 봉으로 나눠서 보여주되,
     봉 개수가 CVD_MAX_BARS 를 넘으면(촘촘한 타임프레임) 최근 CVD_MAX_BARS 개만 표시합니다."""
     if not es_candles:
@@ -951,9 +955,11 @@ def compute_cvd(es_candles, tf_key, source):
 
     buy = sell = running = 0.0
     out = []
+    prev_close = None
     for c in bars:
         v = c["v"]
-        bull = c["c"] >= c["o"]
+        ref = prev_close if prev_close is not None else c["o"]  # 윈도우의 첫 봉만 자기 시가로 대체
+        bull = c["c"] >= ref
         if bull:
             buy += v
             running += v
@@ -961,6 +967,7 @@ def compute_cvd(es_candles, tf_key, source):
             sell += v
             running -= v
         out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": bull, "cvd_line": round(running / 1000.0, 2)})
+        prev_close = c["c"]
     total = buy + sell
     if total <= 0:
         return None
@@ -987,7 +994,7 @@ def compute_cvd(es_candles, tf_key, source):
     aggregate_range = f"{et_label_sec(start_ts)} ~ {et_label_sec(end_ts)} ({len(bars)}개 {tf_label} 봉)"
     data_desc = (
         f"ES 최근 {covered_hours:.1f}시간 · {source} · ES=F price history · "
-        f"봉 색(종가≥시가) 기준 근사치 · 실제 체결(Buy/Sell) CVD 아님"
+        f"직전 봉 종가 대비 상승/하락 기준 근사치 · 실제 체결(Buy/Sell) CVD 아님"
     )
     return {
         "source": source,
