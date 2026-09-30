@@ -89,10 +89,6 @@ def src_kind(s):
 
 # ─────────────────────────────────────────────────────────────
 # 영속 저장소 (Vercel KV / Upstash Redis REST API)
-# 서버리스 함수는 실행이 끝나면 메모리가 사라지므로, refresh_token 을 여기 저장해둬야
-# 다음 호출(또는 며칠 뒤 호출)에서도 이어서 쓸 수 있습니다. 연결돼 있지 않으면
-# 이 계층은 그냥 조용히 no-op 이 되고, 매번 환경변수의 refresh_token 만 쓰게 됩니다
-# (예전 방식으로 자동 대체 - 자동 갱신 없이도 앱 자체는 계속 동작합니다).
 # ─────────────────────────────────────────────────────────────
 def _kv_config():
     url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
@@ -137,12 +133,12 @@ KV_AVAILABLE = _kv_config()[0] is not None
 # ─────────────────────────────────────────────────────────────
 # Schwab 인증 / 호출
 # ─────────────────────────────────────────────────────────────
-_TOKEN = {"value": None, "exp": 0.0}  # 같은 웜 서버리스 컨테이너 안에서 재사용하는 1차 캐시
+_TOKEN = {"value": None, "exp": 0.0}
 SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 KV_KEY_ACCESS = "schwab:access_token"
 KV_KEY_ACCESS_EXP = "schwab:access_token_exp"
 KV_KEY_REFRESH = "schwab:refresh_token"
-REFRESH_TOKEN_TTL = 8 * 24 * 3600  # 실제 만료(7일)보다 여유를 둔 KV 보관 기간
+REFRESH_TOKEN_TTL = 8 * 24 * 3600
 
 
 def _schwab_token_request(data, app_key, app_secret):
@@ -168,13 +164,6 @@ def _schwab_token_request(data, app_key, app_secret):
 
 
 def get_schwab_token(force_refresh=False):
-    """(access_token | None, 상태 메시지).
-    우선순위: 인메모리 캐시(같은 컨테이너) -> KV 에 저장된 access_token(다른 서버리스
-    인스턴스가 이미 갱신해둔 걸 재사용, refresh_token 을 아끼기 위함) -> refresh_token 으로
-    새로 발급. refresh_token 은 KV 에 있으면 그걸(자동 로테이션된 최신값), 없으면
-    SCHWAB_REFRESH_TOKEN 환경변수(최초 부트스트랩용)를 씁니다. 새로 발급받을 때 Schwab 이
-    함께 주는 새 refresh_token 은 다시 KV 에 저장해서, 사람이 다시 로그인하지 않아도
-    7일 만료가 계속 뒤로 밀리게 합니다."""
     now = time.time()
     if not force_refresh and _TOKEN["value"] and now < _TOKEN["exp"]:
         return _TOKEN["value"], "연결됨 (캐시)"
@@ -231,9 +220,9 @@ def schwab_get(token, path, params=None, timeout=4):
         if r.status_code == 200:
             return r.json()
         if r.status_code == 401:
-            _TOKEN["value"] = None  # 다음 요청에서 토큰 재발급
+            _TOKEN["value"] = None
             if KV_AVAILABLE:
-                kv_set(KV_KEY_ACCESS_EXP, "0")  # 공유 캐시도 즉시 무효화
+                kv_set(KV_KEY_ACCESS_EXP, "0")
     except Exception:
         pass
     return None
@@ -242,7 +231,6 @@ def schwab_get(token, path, params=None, timeout=4):
 # ─────────────────────────────────────────────────────────────
 # 시세 (Schwab 우선 -> Yahoo)
 # ─────────────────────────────────────────────────────────────
-# key: (Schwab 심볼, Yahoo 심볼)   ※ Yahoo 의 S&P500 지수 심볼은 ^GSPC 입니다 (^SPX 는 없음)
 QUOTES = OrderedDict([
     ("spx", ("$SPX", "^GSPC")),
     ("es", ("/ES", "ES=F")),
@@ -253,8 +241,8 @@ QUOTES = OrderedDict([
     ("tnx", ("$TNX", "^TNX")),
     ("tyx", ("$TYX", "^TYX")),
     ("irx", ("$IRX", "^IRX")),
-    ("wti", ("/CL", "CL=F")),    # WTI 원유 선물 (NYMEX)
-    ("brent", ("/BZ", "BZ=F")),  # 브렌트유 선물 (ICE) - Schwab 이 못 주면 Yahoo 로 대체
+    ("wti", ("/CL", "CL=F")),
+    ("brent", ("/BZ", "BZ=F")),
 ])
 
 
@@ -318,7 +306,6 @@ def get_all_quotes(token):
         symbols = [s for s, _ in QUOTES.values()]
         schwab = fetch_schwab_quotes(token, symbols) if token else {}
         if token and not schwab:
-            # 묶음 요청이 통째로 실패한 경우(심볼 하나가 문제일 수 있음): $SPX 가 되는지 확인 후 개별 조회
             if fetch_schwab_quotes(token, ["$SPX"]):
                 with ThreadPoolExecutor(max_workers=len(symbols)) as ex:
                     for part in ex.map(lambda sym: fetch_schwab_quotes(token, [sym]), symbols):
@@ -343,7 +330,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 뉴스 (Yahoo 검색·Yahoo RSS·Google News·CNBC 를 동시에 조회해 합침)
+# 뉴스 및 중요 발표
 # ─────────────────────────────────────────────────────────────
 NEWS_TAG_RULES = [
     ("FED", ("federal reserve", "fomc", "powell", " fed ", "fed's", "fed rate", "rate cut", "rate hike",
@@ -381,12 +368,11 @@ BLS_TITLE_KR = {
 HIGH_IMPACT_BLS_TITLES = set(BLS_TITLE_KR)
 BLS_ICS_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
 _BLS_CAL_CACHE = {"attempt_ts": 0.0, "events": None, "error": None}
-BLS_CAL_RETRY_SEC = 300       # 실패 시 최소 재시도 간격 (BLS 를 매 폴링마다 두드리지 않기 위해)
-BLS_CAL_REFRESH_SEC = 6 * 3600  # 성공했어도 이 정도 지나면 다시 최신인지 확인
+BLS_CAL_RETRY_SEC = 300
+BLS_CAL_REFRESH_SEC = 6 * 3600
 
 
 def _parse_ics_events(text):
-    """아주 단순한 ICS 파서 - SUMMARY 와 DTSTART(US-Eastern) 만 뽑습니다."""
     events, cur = [], {}
     for raw in text.splitlines():
         line = raw.strip()
@@ -409,8 +395,6 @@ def _parse_ics_events(text):
 
 
 def fetch_bls_calendar():
-    """(events, error) - BLS 공식 발표 일정(ICS, bls.gov). 일정은 자주 안 바뀌니 성공하면
-    6시간 캐시하고, 실패해도 이전 성공 데이터를 그대로 유지한 채 5분 뒤에만 재시도합니다."""
     now = time.time()
     stale_after = BLS_CAL_RETRY_SEC if _BLS_CAL_CACHE["events"] is None else BLS_CAL_REFRESH_SEC
     if now - _BLS_CAL_CACHE["attempt_ts"] < stale_after:
@@ -426,12 +410,10 @@ def fetch_bls_calendar():
         _BLS_CAL_CACHE["error"] = None
     except Exception as e:
         _BLS_CAL_CACHE["error"] = f"{type(e).__name__}: {e}"
-        # events 는 건드리지 않습니다 - 이전에 성공한 적이 있다면 그 값을 계속 씁니다.
     return _BLS_CAL_CACHE["events"], _BLS_CAL_CACHE["error"]
 
 
 def get_today_econ_events(now_et):
-    """오늘(미 동부시간) 예정된, 지수에 영향을 줄 수 있는 BLS 공식 발표만 골라 돌려줍니다."""
     events, err = fetch_bls_calendar()
     if events is None:
         return {"items": [], "source": "N/A", "error": err or "BLS 캘린더를 가져오지 못했습니다"}
@@ -566,9 +548,6 @@ def _norm_title(t):
 
 
 def fetch_market_news(now_ts=None):
-    """여러 뉴스 소스를 동시에 조회해서 합치고(중복 제거) 최신순으로 정렬합니다.
-    한 곳이 막혀도(예: Yahoo 검색 API 차단) 다른 곳에서 가져오고, 소스별 실패 이유(diag)를
-    같이 돌려줘서 화면에서 원인을 바로 볼 수 있게 합니다. -> (items, diag)"""
     now = time.time()
     ttl = 60 if _NEWS_CACHE["items"] else 20
     if _NEWS_CACHE["ts"] and now - _NEWS_CACHE["ts"] < ttl:
@@ -586,7 +565,7 @@ def fetch_market_news(now_ts=None):
         results = list(ex.map(run, NEWS_SOURCES))
 
     diag, merged, seen = [], [], set()
-    for name, items, err in results:  # NEWS_SOURCES 순서 = 우선순위 (중복 시 앞선 소스 것을 유지)
+    for name, items, err in results:
         if err:
             diag.append({"source": name, "ok": False, "error": err})
             continue
@@ -600,15 +579,13 @@ def fetch_market_news(now_ts=None):
             it["tags"] = tag_news(it["title"])
             merged.append(it)
 
-    # 태그(FED/INFLATION/JOBS/MACRO/...)가 하나도 안 붙은 건 지수에 큰 영향을 주기 힘든
-    # 잡다한 뉴스로 보고 뺍니다. 태그 붙은 게 너무 적으면(3건 미만) 그때만 나머지도 보여줍니다.
     important = [x for x in merged if x["tags"]]
     pool = important if len(important) >= 3 else merged
 
     pool.sort(key=lambda x: x["ts"] or 0, reverse=True)
     ref_ts = now_ts if now_ts is not None else now
     fresh = [x for x in pool if x["ts"] and ref_ts - x["ts"] <= NEWS_MAX_AGE_SEC]
-    items = fresh if len(fresh) >= 3 else pool  # 최근 뉴스가 너무 적으면 오래된 것도 허용
+    items = fresh if len(fresh) >= 3 else pool
     _NEWS_CACHE.update(ts=now, items=items[:10], diag=diag)
     return _NEWS_CACHE["items"], diag
 
@@ -640,13 +617,12 @@ def get_news(now_et):
 # ─────────────────────────────────────────────────────────────
 # 봉(candle) 데이터 (Schwab pricehistory 우선 -> Yahoo chart)
 # ─────────────────────────────────────────────────────────────
-# tf -> (Yahoo interval, Yahoo range, Schwab 분봉 단위, Schwab 조회 일수, 합칠 분 단위)
 TF_SPEC = {
     "1m": ("1m", "2d", 1, 2, None),
     "5m": ("5m", "5d", 5, 5, None),
     "15m": ("15m", "5d", 15, 5, None),
     "30m": ("30m", "5d", 30, 5, None),
-    "1h": ("60m", "1mo", 30, 10, 60),  # Schwab 은 60분봉이 없어 30분봉을 합칩니다
+    "1h": ("60m", "1mo", 30, 10, 60),
 }
 TF_LABEL = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H"}
 INSTR = {"spx": ("$SPX", "^GSPC"), "spy": ("SPY", "SPY"), "es": (None, "ES=F")}
@@ -654,7 +630,7 @@ INSTR = {"spx": ("$SPX", "^GSPC"), "spy": ("SPY", "SPY"), "es": (None, "ES=F")}
 
 def normalize_tf(tf):
     key = str(tf or "").strip().lower()
-    return key if key in TF_SPEC else "1h"
+    return key if key in TF_SPEC else "5m"
 
 
 def yahoo_candles(symbol, interval, range_str):
@@ -672,7 +648,7 @@ def yahoo_candles(symbol, interval, range_str):
             break
         o, h, l, c = num(opens[i]), num(highs[i]), num(lows[i]), num(closes[i])
         if None in (o, h, l, c):
-            continue  # 값이 비어 있는 봉은 통째로 건너뜁니다 (배열이 어긋나지 않도록)
+            continue
         v = num(vols[i]) if i < len(vols) else 0.0
         out.append({"t": int(t), "o": o, "h": h, "l": l, "c": c, "v": v or 0.0})
     return out
@@ -706,7 +682,6 @@ def schwab_candles(token, symbol, freq, days):
 
 
 def aggregate_candles(candles, minutes):
-    """분봉을 미국 정규장 시작(09:30 ET) 기준으로 minutes 단위 봉으로 합칩니다."""
     groups = OrderedDict()
     for cd in candles:
         dt = datetime.fromtimestamp(cd["t"], ET)
@@ -723,7 +698,6 @@ def aggregate_candles(candles, minutes):
 
 
 def get_candles(token, inst, tf):
-    """{"candles": [...], "source": "..."} 또는 None."""
     key = normalize_tf(tf)
 
     def load():
@@ -763,7 +737,6 @@ def et_time_sec(ts):
 
 
 def fmt_vol(v):
-    """거래량 표시용 포맷 (부호 없음): 1234 -> '1.2K', 1_270_000 -> '1.27M'."""
     v = float(v)
     if v >= 1e6:
         return f"{v / 1e6:.2f}M"
@@ -792,7 +765,6 @@ def _rsi_value(avg_gain, avg_loss):
 
 
 def rsi_series(closes, period=14):
-    """Wilder RSI. 데이터가 모자라면 빈 리스트 (가짜 50 을 만들지 않습니다)."""
     if len(closes) < period + 1:
         return []
     gains, losses = [], []
@@ -811,10 +783,9 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD
+# VWAP / Volume Profile / CVD (A/D Pressure Model)
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source):
-    """당일(마지막 세션) 기준 VWAP. SPY -> SPX 환산(ratio). 밴드는 거래량 가중 표준편차."""
     sess = last_session(spy_candles)
     if not sess or not ratio:
         return None
@@ -852,37 +823,28 @@ def compute_vwap(spy_candles, ratio, source):
 
 
 def last_rth_close(spx_candles):
-    """가장 최근에 '완결된' 정규장의 마지막 SPX 봉 (기준 시각 + 종가).
-    장이 열려 있는 동안 호출되면 오늘 봉은 아직 진행 중이라 노이즈가 있으므로,
-    반드시 전 거래일(가장 최근 완결 세션)의 마지막 봉을 씁니다. 그래야 베이시스가
-    '어제 정규장이 끝난 그 순간'처럼 SPX·ES 둘 다 안정적으로 확정된 값이 됩니다."""
     if not spx_candles:
         return None
     last_date = datetime.fromtimestamp(spx_candles[-1]["t"], ET).date()
     today = datetime.now(ET).date()
     if last_date < today:
-        # 장 마감 후(또는 주말)라 가장 최근 봉 자체가 이미 완결된 세션입니다.
         return spx_candles[-1]
     prior = [c for c in spx_candles if datetime.fromtimestamp(c["t"], ET).date() < today]
     return prior[-1] if prior else None
 
 
 VP_WINDOW_HOURS = 24
-BASIS_MAX_GAP_SEC = 20 * 60  # SPX 봉과 ES 봉 시각이 20분 넘게 벌어지면 베이시스를 신뢰하지 않습니다
+BASIS_MAX_GAP_SEC = 20 * 60
 
 
 def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
-    """ES=F 의 정규장+프리/애프터마켓(확장세션) 거래량을, '마지막 정규장 베이시스'로
-    SPX 가격대에 매핑해서 만드는 Volume Profile. SPX 는 장중에만 거래되므로,
-    가장 최근 SPX 정규장 종가와 그 시각의 ES 가격 차이(베이시스)를 한 번 구한 뒤
-    그 값을 야간·프리마켓 ES 가격에도 그대로 더해 'SPX 환산가'로 씁니다."""
     anchor = last_rth_close(spx_candles)
     if not anchor or not es_candles:
         return None
     es_at_anchor = min(es_candles, key=lambda c: abs(c["t"] - anchor["t"]))
     if abs(es_at_anchor["t"] - anchor["t"]) > BASIS_MAX_GAP_SEC:
         return None
-    basis = anchor["c"] - es_at_anchor["c"]  # SPX = ES + basis
+    basis = anchor["c"] - es_at_anchor["c"]
 
     cutoff = es_candles[-1]["t"] - VP_WINDOW_HOURS * 3600
     window = [c for c in es_candles if c["t"] >= cutoff and c["v"] > 0]
@@ -931,70 +893,84 @@ def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
 
 
 TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
-CVD_WINDOW_HOURS = 24    # 목표 조회 구간
-CVD_MAX_BARS = 96        # 화면에 그릴 봉 개수 상한 (촘촘한 타임프레임은 구간이 짧아집니다)
+CVD_WINDOW_HOURS = 24
+CVD_MAX_BARS = 96
 
 
-def compute_cvd(es_candles, tf_key, source):
-    """매수/매도 거래량 근사치 (실제 체결 CVD 가 아닙니다). 각 봉을, 그 봉의 시가가 아니라
-    '직전 봉 종가 대비' 올랐는지/내렸는지로 매수·매도를 가릅니다.
-    (봉 자신의 시가·종가만 보면, 봉 내부에서 잠깐 반등했다가 마감한 하락 추세의 봉도
-    '매수'로 잡혀서, 가격은 계속 내려가는데 매수 비율이 더 높게 나오는 왜곡이 생깁니다.
-    직전 종가 대비로 비교하면 여러 봉에 걸친 실제 가격 흐름과 훨씬 더 일치합니다.)
-    최근 CVD_WINDOW_HOURS 시간을 선택한 타임프레임 봉으로 나눠서 보여주되,
-    봉 개수가 CVD_MAX_BARS 를 넘으면(촘촘한 타임프레임) 최근 CVD_MAX_BARS 개만 표시합니다."""
-    if not es_candles:
+def compute_cvd(candles, tf_key, source, symbol="SPY"):
+    """A/D (Accumulation/Distribution) 방식의 캔들 내 종가 압력(Volume Fraction) 가중 CVD 모델.
+    단순 양봉/음봉 판정 대신 (Close - Low)/(High - Low) 비율을 거래량에 가중하여
+    장 마감 10분 전 장대 음봉 및 매도 폭탄을 즉시 감지합니다.
+    """
+    if not candles:
         return None
-    tf_min = TF_MINUTES.get(tf_key, 60)
+    tf_min = TF_MINUTES.get(tf_key, 5)
     tf_label = TF_LABEL.get(tf_key, tf_key)
     max_by_window = max(1, int(CVD_WINDOW_HOURS * 60 // tf_min))
-    n = min(max_by_window, CVD_MAX_BARS, len(es_candles))
-    bars = es_candles[-n:]
+    n = min(max_by_window, CVD_MAX_BARS, len(candles))
+    bars = candles[-n:]
     if not bars:
         return None
 
     buy = sell = running = 0.0
     out = []
-    prev_close = None
     for c in bars:
         v = c["v"]
-        ref = prev_close if prev_close is not None else c["o"]  # 윈도우의 첫 봉만 자기 시가로 대체
-        bull = c["c"] >= ref
-        if bull:
-            buy += v
-            running += v
+        h, l, cl = c["h"], c["l"], c["c"]
+        rng = h - l
+        
+        # 캔들 내 매수/매도 세력 압력 분할
+        if rng > 0:
+            buy_ratio = (cl - l) / rng
+            sell_ratio = (h - cl) / rng
         else:
-            sell += v
-            running -= v
-        out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": bull, "cvd_line": round(running / 1000.0, 2)})
-        prev_close = c["c"]
+            buy_ratio = 0.5
+            sell_ratio = 0.5
+            
+        bar_buy = v * buy_ratio
+        bar_sell = v * sell_ratio
+        bar_delta = bar_buy - bar_sell
+        
+        buy += bar_buy
+        sell += bar_sell
+        running += bar_delta
+        
+        out.append({
+            "t": c["t"],
+            "vol": round(v / 1000.0, 2),
+            "is_bull": bar_delta >= 0,
+            "cvd_line": round(running / 1000.0, 2),
+        })
+
     total = buy + sell
     if total <= 0:
         return None
+        
     buy_pct = int(round(buy / total * 100))
     sell_pct = 100 - buy_pct
-    if buy_pct >= 65:
+    
+    if buy_pct >= 60:
         status, tone = "Buying Pressure", "bull"
-        text = f"Strong buying pressure – {buy_pct}% of session volume in bullish bars."
-    elif buy_pct >= 55:
+        text = f"Strong buying pressure – {buy_pct}% of session volume in buy pressure."
+    elif buy_pct >= 53:
         status, tone = "Buying Pressure", "bull"
-        text = f"Moderate buying pressure – {buy_pct}% of session volume in bullish bars."
-    elif buy_pct > 45:
+        text = f"Moderate buying pressure – {buy_pct}% of session volume in buy pressure."
+    elif buy_pct > 47:
         status, tone = "Balanced", "flat"
         text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% of session volume."
-    elif buy_pct > 35:
+    elif buy_pct > 40:
         status, tone = "Selling Pressure", "bear"
-        text = f"Moderate selling pressure – {sell_pct}% of session volume in bearish bars."
+        text = f"Moderate selling pressure – {sell_pct}% of session volume in sell pressure."
     else:
         status, tone = "Selling Pressure", "bear"
-        text = f"Strong selling pressure – {sell_pct}% of session volume in bearish bars."
+        text = f"Strong selling pressure – {sell_pct}% of session volume in sell pressure."
 
     start_ts, end_ts = bars[0]["t"], bars[-1]["t"]
     covered_hours = (end_ts - start_ts) / 3600.0
     aggregate_range = f"{et_label_sec(start_ts)} ~ {et_label_sec(end_ts)} ({len(bars)}개 {tf_label} 봉)"
     data_desc = (
-        f"ES 최근 {covered_hours:.1f}시간 · {source} · ES=F price history · "
-        f"직전 봉 종가 대비 상승/하락 기준 근사치 · 실제 체결(Buy/Sell) CVD 아님"
+        f"{symbol} 최근 {covered_hours:.1f}시간 · {source} · "
+        f"A/D 체결 압력(고저-종가 가중) 기반 정밀 CVD"
     )
     return {
         "source": source,
@@ -1065,7 +1041,7 @@ def parse_schwab_chain(data, exp_date):
                         K = num(skey)
                     if K is None:
                         continue
-                    iv = num(o.get("volatility"))  # Schwab 은 % 단위 (-999 = 없음)
+                    iv = num(o.get("volatility"))
                     contracts.append({
                         "K": K,
                         "side": side,
@@ -1080,14 +1056,6 @@ def parse_schwab_chain(data, exp_date):
 
 
 def fetch_schwab_chain(token, today_date):
-    """((contracts, exp_date) 또는 None, diag) 를 돌려줍니다. diag 는 Schwab 이 실제로
-    무슨 만기들을 돌려줬는지 보여주는 진단 정보로, 0DTE 대신 엉뚱한(예: 다음 달) 만기가
-    잡혔을 때 원인을 화면에서 바로 확인할 수 있게 하기 위한 것입니다.
-    오늘(today_date) 만기(0DTE)를 우선 조회합니다. 단일 날짜로 조회해야
-    Schwab 이 그 날짜에 있는 스트라이크를 strikeCount 개수만큼 온전히 돌려줍니다
-    (여러 날짜를 한 번에 요청하면 strikeCount 가 만기별로 쪼개져서 0DTE 스트라이크
-    해상도가 떨어지고, 그러면 Wall·Gamma Flip·Net GEX 가 다른 사이트와 크게 어긋납니다).
-    오늘 조회가 비어 있을 때만(휴장 다음 첫 거래일 등) 기간을 넓혀 재시도합니다."""
     if not token:
         return None, {"reason": "토큰 없음"}
 
@@ -1112,7 +1080,6 @@ def fetch_schwab_chain(token, today_date):
     single_day_had_today = today_str in exps
     widened = False
     if not single_day_had_today:
-        # 오늘 만기가 없었던 경우에만 기간을 넓혀서 가장 가까운 미래 만기를 찾습니다.
         widened = True
         wide = ask(today_date, today_date + timedelta(days=7), 30)
         wide_exps = _chain_exps(wide)
@@ -1132,7 +1099,6 @@ def fetch_schwab_chain(token, today_date):
 
 
 def fetch_yahoo_chain(start_date):
-    """Yahoo SPY 옵션체인 (yfinance). 필요할 때만 import 해서 콜드스타트를 줄입니다."""
     try:
         import yfinance as yf
     except Exception:
@@ -1189,7 +1155,6 @@ def atm_straddle(contracts, S):
 
 
 def gamma_flip_level(contracts, S, T):
-    """스팟을 ±3% 움직여 가며 딜러 순감마(콜 +, 풋 −)가 0 이 되는 지점을 찾습니다."""
     prof = [c for c in contracts if c["iv"] and c["oi"] > 0 and abs(c["K"] / S - 1.0) <= 0.05]
     if len(prof) < 6:
         return None, None
@@ -1215,7 +1180,6 @@ def gamma_flip_level(contracts, S, T):
 
 
 def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
-    """contracts 의 행사가는 체인 자체 단위(SPX=1.0, SPY=SPX/SPY 비율)입니다. scale 로 SPX 레벨로 환산."""
     S = spot / scale
     y, m, d = (int(x) for x in exp_date.split("-"))
     exp_dt = ET.localize(datetime(y, m, d, 16, 0))
@@ -1226,10 +1190,10 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     if len(use) < 6:
         return None
 
-    per = {}  # 행사가 -> {call_gex(+$), put_gex(-$), call_oi, put_oi, call_gamma, put_gamma}
+    per = {}
     gamma_from_schwab = gamma_from_calc = 0
     for c in use:
-        raw_g = c["gamma"]  # Schwab 이 실제로 돌려준 감마 (없으면 None)
+        raw_g = c["gamma"]
         g = raw_g or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
         if g:
             gamma_from_schwab += 1 if raw_g else 0
@@ -1258,7 +1222,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         if (gamma_from_schwab or gamma_from_calc) else None
     )
 
-    # 벽(Wall) = 미결제약정(OI)이 가장 큰 행사가. 콜은 현재가 이상, 풋은 현재가 이하에서 찾습니다.
     above = [k for k, e in per.items() if k >= S and e["call_oi"] > 0] or [k for k, e in per.items() if e["call_oi"] > 0]
     below = [k for k, e in per.items() if k <= S and e["put_oi"] > 0] or [k for k, e in per.items() if e["put_oi"] > 0]
     call_wall = max(above, key=lambda k: per[k]["call_oi"]) * scale if above else None
@@ -1269,7 +1232,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     straddle = atm_straddle(contracts, S)
     em_pt = straddle * scale if straddle else None
 
-    # 행사가별 세부 내역 (Tradytics 등 다른 사이트와 strike 단위로 직접 대조할 수 있도록 노출합니다)
     nearest = sorted(per.items(), key=lambda kv: abs(kv[0] - S))[:14]
     by_strike = []
     for K, e in sorted(nearest, key=lambda kv: kv[0]):
@@ -1372,21 +1334,20 @@ def status_of(score):
 
 
 def analyze_tf(candles):
-    """봉 6가지 신호의 합(-6 ~ +6). 봉이 22개 미만이면 None."""
     closes = [c["c"] for c in candles]
     if len(closes) < 22:
         return None
     e9, e21 = ema_series(closes, 9), ema_series(closes, 21)
     comps = [
-        sgn(closes[-1] - e9[-1]),   # 가격 vs EMA9
-        sgn(e9[-1] - e21[-1]),      # EMA9 vs EMA21
+        sgn(closes[-1] - e9[-1]),
+        sgn(e9[-1] - e21[-1]),
     ]
     if len(closes) >= 50:
         e50 = ema_series(closes, 50)
-        comps.append(sgn(e21[-1] - e50[-1]))  # EMA21 vs EMA50
+        comps.append(sgn(e21[-1] - e50[-1]))
     else:
         comps.append(0)
-    comps.append(sgn(e21[-1] - e21[-4]))      # EMA21 기울기 (3봉)
+    comps.append(sgn(e21[-1] - e21[-4]))
     rs = rsi_series(closes)
     comps.append(0 if not rs else (1 if rs[-1] >= 55 else (-1 if rs[-1] <= 45 else 0)))
     if len(candles) >= 6:
@@ -1497,17 +1458,12 @@ def build_direction(tf_results, tf_sources, evidence):
 # 금리
 # ─────────────────────────────────────────────────────────────
 def yield_scale(raw_price):
-    """가격이 %×10(지수, 예: 42.5) 단위인지 %(예: 4.25) 그대로인지 판단합니다.
-    변화량(change)은 절댓값이 작아서 이 판정을 스스로 할 수 없으므로,
-    반드시 가격에서 구한 배율을 그대로 넘겨 써야 합니다."""
     if raw_price is None:
         return 1.0
     return 10.0 if raw_price > 25 else 1.0
 
 
 def norm_yield(x, scale=None):
-    """지수 단위를 % 로 맞춥니다. scale 을 안 넘기면 x 자신의 크기로 추정합니다
-    (가격처럼 그 자체로 판단 가능한 값에만 이렇게 쓰세요 - change 값에는 쓰면 안 됩니다)."""
     if x is None:
         return None
     s = scale if scale is not None else yield_scale(x)
@@ -1518,7 +1474,7 @@ def norm_yield(x, scale=None):
 # API
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/market-data")
-def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"):
+def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "5m"):
     now_et = datetime.now(ET)
     now_str = now_et.strftime("%m/%d %H:%M:%S ET")
     errors = []
@@ -1526,7 +1482,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     def guard(name, fn, *args):
         try:
             return fn(*args)
-        except Exception as e:  # 한 블록이 죽어도 나머지는 살립니다
+        except Exception as e:
             errors.append(f"{name}: {type(e).__name__}: {e}")
             return None
 
@@ -1540,8 +1496,8 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     with ThreadPoolExecutor(max_workers=10) as ex:
         f_spx = {k: ex.submit(get_candles, token, "spx", k) for k in {"1h", "15m", "5m", "1m", r_key}}
         f_spy_v = ex.submit(get_candles, token, "spy", v_key)
-        f_es_5 = ex.submit(get_candles, token, "es", "5m")
-        f_es = ex.submit(get_candles, token, "es", c_key)
+        f_spy_c = ex.submit(get_candles, token, "spy", c_key)  # CVD 전용 SPY 봉
+        f_es_5 = ex.submit(get_candles, token, "es", "5m")     # Volume Profile 용 ES 24H 봉
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
         f_news = ex.submit(get_news, now_et)
         f_econ = ex.submit(get_today_econ_events, now_et)
@@ -1551,8 +1507,8 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
 
     spx_c = {k: result(f"candles spx {k}", f) for k, f in f_spx.items()}
     spy_v = result("candles spy vwap", f_spy_v)
+    spy_c = result("candles spy cvd", f_spy_c)
     es_5 = result("candles es 5m", f_es_5)
-    es_c = result("candles es", f_es)
     gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
     news = result("news", f_news)
     econ_events = result("econ_events", f_econ) or {"items": [], "source": "N/A", "error": "계산 오류"}
@@ -1570,7 +1526,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
         guard("volume_profile", compute_volume_profile, es_5["candles"], spx_5["candles"], es_5["source"], spx_5["source"])
         if es_5 and spx_5 else None
     )
-    cvd = guard("cvd", compute_cvd, es_c["candles"], c_key, es_c["source"]) if es_c else None
+    cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY") if spy_c else None
 
     rsi = None
     rc = spx_c.get(r_key)
@@ -1596,11 +1552,9 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 금리 (^IRX 는 13주 T-bill 이라 "2Y" 가 아니라 "3M" 으로 표기합니다)
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
     def yield_level_and_change(q):
-        """(퍼센트 값, 전일 대비 변화 bp) - price 로 판정한 배율을 change 에도 그대로 적용합니다."""
         if not q:
             return None, None
         scale = yield_scale(q["price"])
@@ -1641,7 +1595,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
     def slim(q):
         return {"price": q["price"], "change": q["change"], "source": q["source"]} if q else None
 
-    # 화면 상단 배지용: 이번 응답에서 실제로 사용된 출처 집계
     used = [q["source"] for q in quotes.values() if q]
     used += [x["source"] for x in (vwap, vp, rsi, cvd) if x]
     used.append(gex.get("source"))
@@ -1686,11 +1639,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "15m"
 
 # ─────────────────────────────────────────────────────────────
 # Schwab OAuth 콜백 (/api/callback)
-# Schwab 인증 페이지에서 승인하면 이 주소로 code 가 담겨 돌아옵니다.
-# 여기서 그 code 를 실제 refresh_token 으로 교환해서 화면에 보여줍니다.
-# Vercel 서버리스는 별도 저장소가 없어서, refresh_token 을 자동으로 환경변수에
-# 저장해주지는 못합니다 - 화면에 뜬 값을 복사해서 SCHWAB_REFRESH_TOKEN 에
-# 직접 넣고 재배포해야 합니다. (보통 7일마다 이 과정을 반복해야 합니다.)
 # ─────────────────────────────────────────────────────────────
 def render_callback_page(title, body_html, ok=True):
     color = "#10b981" if ok else "#f43f5e"
@@ -1729,8 +1677,6 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
 
     app_key = os.environ.get("SCHWAB_APP_KEY")
     app_secret = os.environ.get("SCHWAB_SECRET")
-    # 앱 등록 시 넣은 Redirect URI 와 정확히 같아야 합니다. 환경변수로 고정해두면
-    # 프리뷰/프로덕션 도메인이 달라져도 안전합니다.
     redirect_uri = os.environ.get("SCHWAB_REDIRECT_URI") or str(request.url).split("?")[0]
     if not app_key or not app_secret:
         return HTMLResponse(
@@ -1818,8 +1764,6 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
 
 # ─────────────────────────────────────────────────────────────
 # 자동 갱신용 크론 엔드포인트 (/api/refresh-token)
-# Vercel Cron 이 매일 한 번 이 주소를 호출해서, 아무도 앱을 안 열어봐도
-# refresh_token 이 7일 안에 최소 한 번은 갱신되도록 보장합니다.
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/refresh-token")
 def refresh_token_cron():
