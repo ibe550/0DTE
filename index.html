@@ -23,7 +23,21 @@
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
     <!-- Tailwind CDN 동적 클래스 등록 -->
-    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400"></div>
+    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-amber-500 bg-rose-900/40 bg-amber-900/40"></div>
+
+    <!-- 0. [신규] 앱 최상단 긴급 위험감지 경보 배너 (평소엔 숨김 / 급락 시 자동 팝업) -->
+    <div id="risk-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 border-rose-500 bg-rose-950/90 shadow-lg shadow-rose-950/60 transition-all duration-300">
+        <div class="flex items-center justify-between mb-1">
+            <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black text-rose-200">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping inline-block mr-1"></span>
+                <span id="risk-alert-title">🚨 [위험감지] 시장 급락 및 패닉 덤핑 경보</span>
+            </span>
+            <span id="risk-alert-time" class="text-[9px] font-mono text-rose-300 bg-rose-900/80 px-1.5 py-0.5 rounded">--</span>
+        </div>
+        <div class="text-[10px] text-rose-200 pl-4 border-l-2 border-rose-500/80 my-1 space-y-0.5" id="risk-alert-reasons">
+            <!-- 감지 사유들이 동적으로 추가됨 -->
+        </div>
+    </div>
 
     <!-- 1. 헤더 -->
     <div class="flex justify-between items-center px-1 mb-1">
@@ -32,7 +46,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.4</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.5</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -612,6 +626,28 @@
             if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
         }
 
+        // [신규] 최상단 긴급 위험감지 배너 렌더러
+        function renderRiskAlert(alert) {
+            const banner = $('risk-alert-banner');
+            if (!banner) return;
+            if (!alert || !alert.active) {
+                banner.classList.add('hidden');
+                return;
+            }
+            banner.classList.remove('hidden');
+            setText('risk-alert-title', alert.title || '🚨 [위험감지] 시장 급락 및 변동성 경보');
+            setText('risk-alert-time', alert.timestamp || '');
+
+            const isCritical = alert.level === 'CRITICAL';
+            banner.className = `card mb-2 p-2.5 md:p-3 border-2 ${isCritical ? 'border-rose-500 bg-rose-950/90 shadow-rose-950/60' : 'border-amber-500 bg-amber-950/90 shadow-amber-950/60'} shadow-lg transition-all duration-300`;
+
+            const list = $('risk-alert-reasons');
+            if (list) {
+                const details = alert.details || [];
+                list.innerHTML = details.map((d) => `<div class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full ${isCritical ? 'bg-rose-400' : 'bg-amber-400'} inline-block"></span><span class="font-bold">${d}</span></div>`).join('');
+            }
+        }
+
         function renderGex(g, spx) {
             const ok = g && g.available;
             const note = $('gex-note');
@@ -826,7 +862,6 @@
             const cx = (i) => AREA_X0 + i * slot + slot / 2;
             const strokeW = slot < 2.5 ? '0' : '0.7';
 
-            // 1. 볼륨 바 렌더링
             $('cvd-real-bars').innerHTML = bars.map((b, i) => {
                 const h = Math.max(1.5, (b.vol / maxVol) * 85);
                 const x = cx(i) - barW / 2, y = 110 - h;
@@ -842,13 +877,12 @@
                 </rect>`;
             }).join('');
 
-            // 2. CVD 라인 렌더링
             $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
                 const y = 65 - (b.cvd_line / maxCvd) * 40;
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            // 3. 30분 단위 초정밀 눈금선 & 시간 텍스트 렌더링 (09:30, 10:00, 10:30 ... 16:00 전 구간 표시)
+            // 매 30분 단위 초정밀 눈금선 & 16:00 마감 렌더링
             const gridGroup = $('cvd-vertical-grids');
             if (!bars.length) { 
                 gridGroup.innerHTML = '';
@@ -862,7 +896,6 @@
                     const etMin = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
                     const totalMinutes = etHour * 60 + etMin;
 
-                    // 매 30분 단위 (09:30, 10:00, 10:30, 11:00 ...) 를 건너뜀 없이 모두 등록
                     if (totalMinutes % 30 === 0 && !seenTicks.has(totalMinutes)) {
                         seenTicks.add(totalMinutes);
                         const gx = cx(i).toFixed(1);
@@ -872,7 +905,6 @@
                     }
                 });
 
-                // 16:00 정규장 마감선 (15:40 이후 캔들이 포함된 세션일 때 우측 끝단에 표시)
                 const lastBar = bars[bars.length - 1];
                 const lastD = new Date(lastBar.t * 1000);
                 const lastHour = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
@@ -897,7 +929,7 @@
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
                 $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
-                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
+                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); setTone(`tf-${k}-score`, 'text-slate-500'); });
                 list.innerHTML = '';
                 return;
             }
@@ -1017,6 +1049,7 @@
                 if (data.status !== 'success') throw new Error('API status ' + data.status);
 
                 const blocks = [
+                    () => renderRiskAlert(data.risk_alert),
                     () => renderStatus(data),
                     () => renderEconEvents(data.econ_events),
                     () => renderQuote('spx', data.spx, { pct: true }),
