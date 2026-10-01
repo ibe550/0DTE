@@ -558,10 +558,6 @@ def get_candles(token, inst, tf):
 
 
 def get_rth_session(candles, now_et=None):
-    """지능형 RTH 세션 셀렉터:
-    - 09:30 ET 이전 (새벽, 프리마켓, 주말): 직전 거래일의 정규장 완성 세션을 유지 반환 (is_prior=True)
-    - 09:30 ET 이후 (장중, 장마감후): 당일 정규장 실시간 세션을 반환 (is_prior=False)
-    """
     if not candles:
         return [], False, None
 
@@ -587,11 +583,9 @@ def get_rth_session(candles, now_et=None):
 
     all_dates = sorted(sessions_by_date.keys())
 
-    # 1. 09:30 이후이고 오늘 캔들이 들어오기 시작한 경우 -> 오늘 실시간 세션
     if is_rth_or_after and today in sessions_by_date and sessions_by_date[today]:
         return sessions_by_date[today], False, today.strftime("%m/%d")
 
-    # 2. 09:30 이전이거나 오늘 캔들이 아직 없는 경우 -> 가장 최근 완료된 직전 세션 (어제 등)
     prior_dates = [d for d in all_dates if d < today]
     if prior_dates:
         target_date = prior_dates[-1]
@@ -661,7 +655,84 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD (개장 전 전일 세션 유지 & 09:30 자동 리셋)
+# 긴급 위험 감지 (Crash / Flash Sell-Off / Put Wall Breakdown Alert)
+# ─────────────────────────────────────────────────────────────
+def detect_market_risk(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
+    """단기 급락, 풋월/감마플립 붕괴, CVD 매도 덤핑, VIX 급등을 종합 감시합니다."""
+    if not spx_p:
+        return {"active": False}
+
+    reasons = []
+    level = "NORMAL"
+
+    # 1. 단기 급락 속도 체크 (5분봉 및 15분 누적 하락폭)
+    if spy_5m_candles and len(spy_5m_candles) >= 1 and ratio:
+        last_c = spy_5m_candles[-1]
+        # 직전 5분봉 하락폭 (SPX 환산)
+        bar_5m_drop = (last_c["c"] - last_c["o"]) * ratio
+        bar_5m_drop_pct = ((last_c["c"] - last_c["o"]) / last_c["o"]) * 100
+
+        if bar_5m_drop <= -12.0 or bar_5m_drop_pct <= -0.22:
+            reasons.append(f"최근 5분간 SPX {bar_5m_drop:.1f}pt ({bar_5m_drop_pct:.2f}%) 단기 급락 발생")
+            level = "CRITICAL"
+
+        if len(spy_5m_candles) >= 3:
+            drop_15m = (spy_5m_candles[-1]["c"] - spy_5m_candles[-3]["o"]) * ratio
+            drop_15m_pct = ((spy_5m_candles[-1]["c"] - spy_5m_candles[-3]["o"]) / spy_5m_candles[-3]["o"]) * 100
+            if drop_15m <= -25.0 or drop_15m_pct <= -0.40:
+                reasons.append(f"최근 15분간 누적 {drop_15m:.1f}pt ({drop_15m_pct:.2f}%) 가속 하락 중")
+                level = "CRITICAL"
+
+    # 2. GEX 핵심 방어선 붕괴 체크
+    if gex and gex.get("available"):
+        pw = gex.get("put_wall")
+        flip = gex.get("gamma_flip")
+
+        if pw and spx_p < pw:
+            diff = spx_p - pw
+            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({diff:.1f}pt) - 딜러 방어선 무너짐")
+            level = "CRITICAL"
+        elif pw and (spx_p - pw) <= 6.0:
+            reasons.append(f"Put Wall 최대 지지선({pw:.1f}) 붕괴 임박 (현재가와 {spx_p - pw:.1f}pt 차이)")
+            if level != "CRITICAL":
+                level = "WARNING"
+
+        if flip and spx_p < flip:
+            reasons.append(f"Gamma Flip({flip:.1f}) 하회: 음(−) 감마 가속화 구간 진입 (변동성 증폭 위험)")
+            if level != "CRITICAL":
+                level = "WARNING"
+
+    # 3. CVD 패닉 매도 덤핑 체크
+    if cvd and cvd.get("sell_pct"):
+        sell_pct = cvd["sell_pct"]
+        if sell_pct >= 65 and cvd.get("tone") == "bear":
+            reasons.append(f"시장가 매도 압도적 폭발 (Sell 볼륨 {sell_pct}%, {cvd.get('sell_vol')})")
+            if level != "CRITICAL":
+                level = "WARNING"
+
+    # 4. VIX 급등 체크
+    if vix_q:
+        vix_p = vix_q.get("price")
+        vix_pct = vix_q.get("change_pct")
+        if vix_pct and vix_pct >= 5.0:
+            reasons.append(f"VIX 공포지수 급등세 (+{vix_pct:.1f}%, {vix_p:.2f})")
+            if level != "CRITICAL":
+                level = "WARNING"
+
+    is_active = len(reasons) > 0
+    title = "🚨 [위험감지] 시장 급락 및 딜러 방어선 붕괴 경보" if level == "CRITICAL" else "⚠️ [위험감지] 하방 변동성 및 매도 압력 주의보"
+
+    return {
+        "active": is_active,
+        "level": level,
+        "title": title,
+        "details": reasons,
+        "timestamp": now_et.strftime("%H:%M:%S ET")
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# VWAP / Volume Profile / CVD
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source, now_et=None):
     sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
@@ -1502,7 +1573,11 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 국채 금리 계산
+    # 6. 시장 급락 및 위험 감지 시스템
+    spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
+    risk_alert = guard("risk_alert", detect_market_risk, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
+
+    # 7. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
     def yield_level_and_change(q):
@@ -1569,6 +1644,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
         "source_summary": summary,
         "schwab_status": status_msg,
         "errors": errors,
+        "risk_alert": risk_alert,
         "spx": q_spx,
         "es": quotes.get("es"),
         "vix": slim(quotes.get("vix")),
