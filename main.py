@@ -12,8 +12,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import html as html_lib
-import xml.etree.ElementTree as XET
-from email.utils import parsedate_to_datetime
 from typing import Optional
 
 import pytz
@@ -369,7 +367,6 @@ HIGH_IMPACT_KEYWORDS = [
 
 
 def fetch_global_econ_calendar():
-    """ForexFactory / FairEconomy 주간 캘린더 피드에서 USD 고영향 지표를 수집합니다."""
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
     try:
         r = requests.get(url, headers=HEADERS, timeout=4.5)
@@ -384,7 +381,6 @@ def fetch_global_econ_calendar():
             impact = it.get("impact", "")
             t_lower = title.lower()
 
-            # High Impact이거나 주요 경제 키워드를 포함하는 지표 선별
             is_target = (impact == "High") or any(k in t_lower for k in HIGH_IMPACT_KEYWORDS)
             if not is_target:
                 continue
@@ -394,7 +390,6 @@ def fetch_global_econ_calendar():
                 continue
 
             try:
-                # ISO 타임존 문자열 파싱 후 미국 동부시(ET)로 변환
                 dt_obj = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(ET)
             except Exception:
                 continue
@@ -423,11 +418,9 @@ def get_today_econ_events(now_et):
     today = now_et.date()
     tomorrow = today + timedelta(days=1)
 
-    # 1. 오늘 일정 필터링
     today_items = [e for e in events if e["dt"].date() == today]
     target_items = today_items
 
-    # 2. 만약 오늘 일정이 없고 장 마감(16:00 ET) 이후라면, 내일 일정 미리 안내
     is_tomorrow = False
     if not today_items and now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
@@ -747,9 +740,14 @@ def compute_volume_profile(spy_candles, ratio, source):
             lo_i -= 1
             cur += dn
 
-    start_ts, end_ts = sess[0]["t"], sess[-1]["t"]
-    hours_covered = (end_ts - start_ts) / 3600.0
-    sess_date = datetime.fromtimestamp(end_ts, ET).strftime("%m/%d")
+    start_ts = sess[0]["t"]
+    last_bar_end_ts = sess[-1]["t"] + 5 * 60
+    hours_covered = (last_bar_end_ts - start_ts) / 3600.0
+    sess_date = datetime.fromtimestamp(start_ts, ET).strftime("%m/%d")
+
+    end_label = et_time_sec(last_bar_end_ts)
+    if end_label.startswith("16:00"):
+        end_label += " (마감)"
 
     return {
         "val": float(keys[lo_i]),
@@ -757,7 +755,7 @@ def compute_volume_profile(spy_candles, ratio, source):
         "vah": float(keys[hi_i]),
         "hours_covered": round(hours_covered, 1),
         "source": (
-            f"{source} x SPX/SPY 환산 · {sess_date} 정규장 (09:30~{et_time_sec(end_ts)}) · "
+            f"{source} x SPX/SPY 환산 · {sess_date} 정규장 (09:30~{end_label}) · "
             f"5pt 구간 · 70% Value Area · 몸통 가중치 프로파일"
         ),
     }
@@ -767,6 +765,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
+    tf_min = TF_MINUTES.get(tf_key, 10)
 
     bars = get_rth_session(candles)
     if not bars:
@@ -824,17 +823,29 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
         status, tone = "Selling Pressure", "bear"
         text = f"Strong selling pressure – {sell_pct}% sell volume in regular session."
 
-    start_ts, end_ts = bars[0]["t"], bars[-1]["t"]
-    sess_date = datetime.fromtimestamp(end_ts, ET).strftime("%m/%d")
-    aggregate_range = f"{sess_date} 정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉"
+    start_ts = bars[0]["t"]
+    last_bar_start_ts = bars[-1]["t"]
+    last_bar_end_ts = last_bar_start_ts + tf_min * 60
+
+    sess_date = datetime.fromtimestamp(start_ts, ET).strftime("%m/%d")
+    end_time_label = et_time_sec(last_bar_end_ts)
+    if end_time_label.startswith("16:00"):
+        end_time_label += " (마감)"
+
+    aggregate_range = f"{sess_date} 정규장 (09:30 ~ {end_time_label}) · {len(bars)}개 {tf_label} 봉"
     data_desc = (
         f"{symbol} 정규장(09:30~) · {source} · "
         f"A/D 체결 압력(고저-종가 가중) 기반 정밀 CVD"
     )
+
+    last_time_label = f"{datetime.fromtimestamp(last_bar_start_ts, ET).strftime('%H:%M')} ~ {datetime.fromtimestamp(last_bar_end_ts, ET).strftime('%H:%M ET')}"
+    if last_bar_end_ts >= ET.localize(datetime.fromtimestamp(last_bar_start_ts, ET).replace(hour=16, minute=0, second=0)).timestamp():
+        last_time_label += " (마감)"
+
     return {
         "source": source,
-        "data_time": et_label_sec(bars[-1]["t"]),
-        "last_bar_time": et_time_sec(bars[-1]["t"]),
+        "data_time": et_label_sec(last_bar_start_ts),
+        "last_bar_time": last_time_label,
         "status": status,
         "tone": tone,
         "aggregate_range": aggregate_range,
@@ -1435,20 +1446,16 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
             return spx_p / spy_data["candles"][-1]["c"]
         return None
 
-    # 1. 당일 정규장 VWAP 계산
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
 
-    # 2. 당일 정규장 Volume Profile (SPY 기반 환산 및 몸통 가중치)
     spy_vp = spy_dir_c.get("5m")
     vp = (
         guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"])
         if (spy_vp and ratio_for(spy_vp)) else None
     )
 
-    # 3. 당일 정규장 CVD 계산
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY") if spy_c else None
 
-    # 4. RSI 계산
     rsi = None
     if spx_r:
         rs = rsi_series([c["c"] for c in spx_r["candles"]])
@@ -1461,7 +1468,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
                 "source": f"{spx_r['source']} · Wilder RSI(14)",
             }
 
-    # 5. 실시간 방향 분석 계산
     tf_results, tf_sources = {}, {}
     for k in ("1h", "15m", "5m", "1m"):
         d = spy_dir_c.get(k)
@@ -1476,7 +1482,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
     def yield_level_and_change(q):
@@ -1681,7 +1686,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
         </button>
         <p style="margin-top:16px;">access_token 은 참고용입니다 (보통 30분만 유효, 따로 저장할 필요 없음 - 앱이 자동으로 갱신합니다):</p>
         <div class="box" style="color:#64748b;">{html_lib.escape(access_token[:40])}... (expires_in: {html_lib.escape(str(expires_in))}초)</div>
-        <p style="margin-top:16px;color:#f59e0b;">⚠️️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
+        <p style="margin-top:16px;color:#f59e0b;">⚠️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
         """,
     ))
 
