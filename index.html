@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.6</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.0</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -42,28 +42,13 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 1-1. 오늘의 중요 발표 (BLS 공식 일정) -->
+    <!-- 2. 오늘의 중요 발표 (BLS 공식 일정) -->
     <div id="econ-card" class="hidden card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표</span>
             <span class="text-[9px] text-slate-500" id="econ-source">--</span>
         </div>
         <div id="econ-list" class="space-y-1"></div>
-    </div>
-
-    <!-- 2. 뉴스 리스크 -->
-    <div class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-slate-800">
-        <div id="news-tags" class="flex items-center flex-wrap gap-1 mb-2">
-            <span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span>
-        </div>
-        <div class="flex justify-between items-center mb-1 text-[10px] text-slate-400">
-            <div class="flex items-center space-x-1 font-semibold">
-                <svg class="icon-sm text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                <span>HIGH-IMPACT HEADLINES</span>
-            </div>
-            <div class="text-[9px] text-slate-500" id="news-source-label">--</div>
-        </div>
-        <div id="news-list" class="divide-y divide-slate-800/80"></div>
     </div>
 
     <!-- 3. 메인 시세 4열 -->
@@ -202,7 +187,7 @@
 
         <div class="grid grid-cols-3 gap-1.5 text-center mb-3">
             <div class="bg-rose-950/20 border border-rose-900/40 p-1.5 rounded">
-                <div class="text-[8px] md:text-[10px] text-rose-400 font-semibold">PUT OPEN INTEREST WALL</div>
+                <div class="text-[8px] md:text-[10px] text-rose-400 font-semibold">PUT GAMMA WALL</div>
                 <div id="gex-put-wall" class="text-xs md:text-base font-bold text-rose-300">--</div>
             </div>
             <div class="bg-purple-950/20 border border-purple-900/40 p-1.5 rounded">
@@ -210,7 +195,7 @@
                 <div id="gex-flip" class="text-xs md:text-base font-bold text-purple-300">--</div>
             </div>
             <div class="bg-emerald-950/20 border border-emerald-900/40 p-1.5 rounded">
-                <div class="text-[8px] md:text-[10px] text-emerald-400 font-semibold">CALL OPEN INTEREST WALL</div>
+                <div class="text-[8px] md:text-[10px] text-emerald-400 font-semibold">CALL GAMMA WALL</div>
                 <div id="gex-call-wall" class="text-xs md:text-base font-bold text-emerald-300">--</div>
             </div>
         </div>
@@ -267,8 +252,8 @@
                         <th class="pr-2 py-0.5">Strike</th>
                         <th class="pr-2 py-0.5 text-right">Call OI</th>
                         <th class="pr-2 py-0.5 text-right">Put OI</th>
-                        <th class="pr-2 py-0.5 text-right">Call γ</th>
-                        <th class="pr-2 py-0.5 text-right">Put γ</th>
+                        <th class="pr-2 py-0.5 text-right">Call Vol</th>
+                        <th class="pr-2 py-0.5 text-right">Put Vol</th>
                         <th class="pr-2 py-0.5 text-right">Net GEX($M)</th>
                     </tr>
                 </thead>
@@ -655,7 +640,7 @@
                 notes.push(`0DTE 만기가 아니라 ${g.expiration} 만기 기준입니다`);
                 const d = g.chain_diag;
                 if (d && d.all_expirations_seen) {
-                    notes.push(`Schwab이 돌려준 만기 목록: ${d.all_expirations_seen.join(', ')}${d.single_day_query_had_today === false ? ' (오늘 날짜 없음)' : ''}`);
+                    notes.push(`Schwab이 돌려준 만기 목록: ${d.all_expirations_seen.join(', ')}`);
                 }
             }
             if (!isNum(g.gamma_flip) && g.gamma_flip_note) notes.push(g.gamma_flip_note);
@@ -678,8 +663,8 @@
                         <td class="pr-2 py-0.5 text-slate-200">${r.strike}</td>
                         <td class="pr-2 py-0.5 text-right text-slate-300">${r.call_oi.toLocaleString()}</td>
                         <td class="pr-2 py-0.5 text-right text-slate-300">${r.put_oi.toLocaleString()}</td>
-                        <td class="pr-2 py-0.5 text-right text-slate-500">${r.call_gamma ?? NA}</td>
-                        <td class="pr-2 py-0.5 text-right text-slate-500">${r.put_gamma ?? NA}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-400">${r.call_vol.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-400">${r.put_vol.toLocaleString()}</td>
                         <td class="pr-2 py-0.5 text-right font-bold ${netCls}">${r.net_gex_m}</td>
                     </tr>`;
                 }).join('');
@@ -967,33 +952,6 @@
             }).join('');
         }
 
-        function renderNews(n) {
-            const tagsWrap = $('news-tags');
-            const list = $('news-list');
-            const items = n && n.items ? n.items : [];
-            if (!items.length) {
-                tagsWrap.innerHTML = '<span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span> <span class="text-[9px] text-slate-500">N/A</span>';
-                setText('news-source-label', NA);
-                const why = (n && n.diag ? n.diag : []).filter((d) => !d.ok)
-                    .map((d) => `<div>· ${escapeHtml(d.source)}: ${escapeHtml(d.error || '실패')}</div>`).join('');
-                list.innerHTML = '<div class="text-[11px] text-slate-500 py-1.5">뉴스를 가져오지 못했습니다.' +
-                    (why ? `<div class="mt-1 text-[10px] text-slate-600 font-mono">${why}</div>` : '') + '</div>';
-                return;
-            }
-            const tagHtml = (n.tags || []).map((t) =>
-                `<span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1 rounded">${escapeHtml(t)}</span>`
-            ).join('');
-            tagsWrap.innerHTML = '<span class="text-[10px] text-rose-400 font-bold tracking-wider">⚡ NEWS RISKS:</span>' + (tagHtml || ' <span class="text-[9px] text-slate-500">없음</span>');
-            setText('news-source-label', n.source || NA);
-            list.innerHTML = items.map((it) => `
-                <div class="flex justify-between items-start text-xs py-1.5 first:pt-0 last:pb-0">
-                    <a href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline text-[11px] md:text-xs pr-2">
-                        ${escapeHtml(it.title)} <span class="text-slate-500">- ${escapeHtml(it.publisher)}</span>
-                    </a>
-                    <span class="text-[10px] text-slate-500 whitespace-nowrap">${escapeHtml(it.time_label || '')}</span>
-                </div>`).join('');
-        }
-
         function renderStatus(data) {
             const badge = $('global-source-badge');
             badge.innerText = `Source: ${data.source_summary}`;
@@ -1024,7 +982,6 @@
                 const blocks = [
                     () => renderStatus(data),
                     () => renderEconEvents(data.econ_events),
-                    () => renderNews(data.news),
                     () => renderQuote('spx', data.spx, { pct: true }),
                     () => renderQuote('es', data.es, { pct: true }),
                     () => renderQuote('vix', data.vix, { invert: true }),
