@@ -717,11 +717,34 @@ def get_candles(token, inst, tf):
     return cached(f"candles:{inst}:{key}", 10 if key in ("1m", "5m") else 30, load)
 
 
-def last_session(candles):
+def get_rth_session(candles):
+    """당일 미국 정규장(09:30 ET ~ 16:00 ET 또는 현재) 봉만 정밀 추출합니다.
+    장 시작 전(프리마켓)일 경우 가장 최근 거래일의 정규장 봉을 반환합니다.
+    """
     if not candles:
         return []
-    d = datetime.fromtimestamp(candles[-1]["t"], ET).date()
-    return [c for c in candles if datetime.fromtimestamp(c["t"], ET).date() == d]
+    last_dt = datetime.fromtimestamp(candles[-1]["t"], ET)
+    target_date = last_dt.date()
+    open_ts = int(ET.localize(datetime(target_date.year, target_date.month, target_date.day, 9, 30, 0)).timestamp())
+    close_ts = int(ET.localize(datetime(target_date.year, target_date.month, target_date.day, 16, 0, 0)).timestamp())
+
+    rth_bars = [c for c in candles if open_ts <= c["t"] <= close_ts]
+    if rth_bars:
+        return rth_bars
+
+    all_dates = sorted(list({datetime.fromtimestamp(c["t"], ET).date() for c in candles}), reverse=True)
+    for d in all_dates:
+        d_open = int(ET.localize(datetime(d.year, d.month, d.day, 9, 30, 0)).timestamp())
+        d_close = int(ET.localize(datetime(d.year, d.month, d.day, 16, 0, 0)).timestamp())
+        d_bars = [c for c in candles if d_open <= c["t"] <= d_close]
+        if d_bars:
+            return d_bars
+
+    return [c for c in candles if datetime.fromtimestamp(c["t"], ET).date() == target_date]
+
+
+def last_session(candles):
+    return get_rth_session(candles)
 
 
 def et_label(ts):
@@ -783,10 +806,10 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD (A/D Pressure Model)
+# VWAP / Volume Profile / CVD (A/D Pressure Model, 09:30~ Session)
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source):
-    sess = last_session(spy_candles)
+    sess = get_rth_session(spy_candles)
     if not sess or not ratio:
         return None
     cum_v = cum_tp = cum_tp2 = 0.0
@@ -818,7 +841,7 @@ def compute_vwap(spy_candles, ratio, source):
         "upper2": u2,
         "lower2": l2,
         "data_time": et_label(sess[-1]["t"]),
-        "source": f"{source} x SPX/SPY 환산 · 당일 VWAP · 밴드=거래량가중 표준편차",
+        "source": f"{source} x SPX/SPY 환산 · 당일 정규장 VWAP · 밴드=거래량가중 표준편차",
     }
 
 
@@ -892,23 +915,13 @@ def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
     }
 
 
-TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
-CVD_WINDOW_HOURS = 24
-CVD_MAX_BARS = 96
-
-
 def compute_cvd(candles, tf_key, source, symbol="SPY"):
-    """A/D (Accumulation/Distribution) 방식의 캔들 내 종가 압력(Volume Fraction) 가중 CVD 모델.
-    단순 양봉/음봉 판정 대신 (Close - Low)/(High - Low) 비율을 거래량에 가중하여
-    장 마감 10분 전 장대 음봉 및 매도 폭탄을 즉시 감지합니다.
-    """
+    """모든 타임프레임에서 당일 정규장(09:30 ET ~ 현재)을 온전히 집계하는 A/D 압력 CVD 모델."""
     if not candles:
         return None
-    tf_min = TF_MINUTES.get(tf_key, 5)
     tf_label = TF_LABEL.get(tf_key, tf_key)
-    max_by_window = max(1, int(CVD_WINDOW_HOURS * 60 // tf_min))
-    n = min(max_by_window, CVD_MAX_BARS, len(candles))
-    bars = candles[-n:]
+
+    bars = get_rth_session(candles)
     if not bars:
         return None
 
@@ -919,7 +932,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
         h, l, cl = c["h"], c["l"], c["c"]
         rng = h - l
         
-        # 캔들 내 매수/매도 세력 압력 분할
+        # 캔들 내 종가 압력(Volume Fraction) 분할
         if rng > 0:
             buy_ratio = (cl - l) / rng
             sell_ratio = (h - cl) / rng
@@ -951,25 +964,25 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
     
     if buy_pct >= 60:
         status, tone = "Buying Pressure", "bull"
-        text = f"Strong buying pressure – {buy_pct}% of session volume in buy pressure."
+        text = f"Strong buying pressure – {buy_pct}% buy volume in regular session."
     elif buy_pct >= 53:
         status, tone = "Buying Pressure", "bull"
-        text = f"Moderate buying pressure – {buy_pct}% of session volume in buy pressure."
+        text = f"Moderate buying pressure – {buy_pct}% buy volume in regular session."
     elif buy_pct > 47:
         status, tone = "Balanced", "flat"
-        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% of session volume."
+        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% in regular session."
     elif buy_pct > 40:
         status, tone = "Selling Pressure", "bear"
-        text = f"Moderate selling pressure – {sell_pct}% of session volume in sell pressure."
+        text = f"Moderate selling pressure – {sell_pct}% sell volume in regular session."
     else:
         status, tone = "Selling Pressure", "bear"
-        text = f"Strong selling pressure – {sell_pct}% of session volume in sell pressure."
+        text = f"Strong selling pressure – {sell_pct}% sell volume in regular session."
 
     start_ts, end_ts = bars[0]["t"], bars[-1]["t"]
-    covered_hours = (end_ts - start_ts) / 3600.0
-    aggregate_range = f"{et_label_sec(start_ts)} ~ {et_label_sec(end_ts)} ({len(bars)}개 {tf_label} 봉)"
+    sess_date = datetime.fromtimestamp(end_ts, ET).strftime("%m/%d")
+    aggregate_range = f"{sess_date} 정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉"
     data_desc = (
-        f"{symbol} 최근 {covered_hours:.1f}시간 · {source} · "
+        f"{symbol} 정규장(09:30~) · {source} · "
         f"A/D 체결 압력(고저-종가 가중) 기반 정밀 CVD"
     )
     return {
@@ -1496,8 +1509,8 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "5m")
     with ThreadPoolExecutor(max_workers=10) as ex:
         f_spx = {k: ex.submit(get_candles, token, "spx", k) for k in {"1h", "15m", "5m", "1m", r_key}}
         f_spy_v = ex.submit(get_candles, token, "spy", v_key)
-        f_spy_c = ex.submit(get_candles, token, "spy", c_key)  # CVD 전용 SPY 봉
-        f_es_5 = ex.submit(get_candles, token, "es", "5m")     # Volume Profile 용 ES 24H 봉
+        f_spy_c = ex.submit(get_candles, token, "spy", c_key)
+        f_es_5 = ex.submit(get_candles, token, "es", "5m")
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
         f_news = ex.submit(get_news, now_et)
         f_econ = ex.submit(get_today_econ_events, now_et)
