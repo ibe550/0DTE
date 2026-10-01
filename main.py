@@ -52,6 +52,7 @@ def num(x):
 
 
 def _parse_val(s):
+    """지표 문자열 (예: '0.3%', '215K', '-1.2%')을 float으로 변환."""
     if not s or not isinstance(s, str):
         return None
     cleaned = s.replace("%", "").replace("K", "").replace("M", "").replace("B", "").replace(",", "").strip()
@@ -337,7 +338,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 주요 경제 지표 캘린더 (PCE, CPI, GDP, FOMC 등 종합 + 호재/악재 평가)
+# 주요 경제 지표 캘린더 (PCE, CPI, GDP, FOMC 등 + 1시간 후 자동 소멸)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Core PCE Price Index m/m": "근원 PCE 물가지수 (MoM)",
@@ -513,10 +514,19 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
 
     today_items = [e for e in events if e["dt"].date() == today]
-    target_items = today_items
 
+    # [수정] 당일 발표된 지표는 발표 시각(ts)으로부터 1시간(3600초)이 지나면 자동 제외
+    # (미발표 일정이거나, 발표 후 1시간 이내인 지표만 화면에 유지)
+    active_today_items = [
+        e for e in today_items
+        if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)
+    ]
+
+    target_items = active_today_items
+
+    # 오늘 남은 일정이 없고 장 마감(16:00 ET) 이후라면 내일 일정 미리 안내
     is_tomorrow = False
-    if not today_items and now_et.hour >= 16:
+    if not active_today_items and now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
             target_items = tomorrow_items
@@ -553,14 +563,14 @@ def get_today_econ_events(now_et):
 
 
 # ─────────────────────────────────────────────────────────────
-# 봉(candle) 데이터 (endDate 현재시각 전달 + Yahoo 2중 안전망)
+# 봉(candle) 데이터 (1분봉 기반 롤업)
 # ─────────────────────────────────────────────────────────────
 TF_SPEC = {
-    "1m": ("1m", "2d", 1, 2, None),
-    "5m": ("5m", "2d", 5, 2, None),
-    "10m": ("5m", "2d", 5, 2, 10),
-    "15m": ("15m", "5d", 15, 5, None),
-    "30m": ("30m", "5d", 30, 5, None),
+    "1m": ("1m", "5d", 1, 5, None),
+    "5m": ("1m", "5d", 1, 5, 5),
+    "10m": ("1m", "5d", 1, 5, 10),
+    "15m": ("5m", "5d", 5, 5, 15),
+    "30m": ("5m", "5d", 5, 5, 30),
     "1h": ("60m", "1mo", 30, 10, 60),
 }
 TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
@@ -595,8 +605,6 @@ def yahoo_candles(symbol, interval, range_str):
 
 
 def schwab_candles(token, symbol, freq, days):
-    """현재 밀리초(endDate)를 전달하여 전일 종가 기본값 버그를 해결합니다."""
-    now_ms = int(time.time() * 1000)
     data = schwab_get(
         token,
         "/pricehistory",
@@ -606,7 +614,6 @@ def schwab_candles(token, symbol, freq, days):
             "period": days,
             "frequencyType": "minute",
             "frequency": freq,
-            "endDate": now_ms,
             "needExtendedHoursData": "false",
         },
         timeout=5,
@@ -663,25 +670,12 @@ def get_candles(token, inst, tf):
     def load():
         y_int, y_rng, s_freq, s_days, agg = TF_SPEC[key]
         ssym, ysym = INSTR[inst]
-        now_et = datetime.now(ET)
-        today = now_et.date()
-        is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
-
-        cs = None
         if token and ssym:
             cs = schwab_candles(token, ssym, s_freq, s_days)
-            # 장중(09:30~16:00)인데 Schwab 캔들에 오늘 날짜가 1개도 없다면 Yahoo로 즉시 폴백!
-            if is_rth and cs:
-                has_today = any(datetime.fromtimestamp(c["t"], ET).date() == today for c in cs)
-                if not has_today:
-                    cs = None
-
             if cs:
                 if agg:
                     cs = aggregate_candles(cs, agg)
                 return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
-
-        # Yahoo Finance 실시간 폴백
         cs = yahoo_candles(ysym, y_int, y_rng)
         if cs:
             if agg:
@@ -689,7 +683,7 @@ def get_candles(token, inst, tf):
             return {"candles": cs, "source": f"{SRC_YAHOO} ({ysym} {TF_LABEL[key]})"}
         return None
 
-    return cached(f"candles:{inst}:{key}", 5 if key in ("1m", "5m", "10m") else 15, load)
+    return cached(f"candles:{inst}:{key}", 6 if key in ("1m", "5m", "10m") else 20, load)
 
 
 def get_rth_session(candles, now_et=None):
@@ -717,16 +711,16 @@ def get_rth_session(candles, now_et=None):
 
     all_dates = sorted(sessions_by_date.keys())
 
-    # 1. 09:30~16:00 정규장 진행 중 -> 무조건 오늘 세션만 반환 (어제 캔들 유입 완전 차단)
+    # Case 1: 09:30~16:00 정규장 진행 중 -> 무조건 오늘 세션만 반환
     if is_rth:
         today_bars = sessions_by_date.get(today, [])
         return today_bars, False, today.strftime("%m/%d")
 
-    # 2. 16:00 이후 장 마감 후 -> 오늘 마감 세션 반환
+    # Case 2: 16:00 이후 장 마감 후 -> 오늘 마감된 세션 반환
     if is_after_market and today in sessions_by_date:
         return sessions_by_date[today], False, today.strftime("%m/%d")
 
-    # 3. 개장 전 (00:00 ~ 09:29) 또는 주말 -> 직전 거래일 완성 세션 반환
+    # Case 3: 00:00~09:29 개장 전 또는 주말 -> 직전 거래일 완성 세션 반환
     prior_dates = [d for d in all_dates if d < today]
     if prior_dates:
         target_date = prior_dates[-1]
@@ -799,7 +793,7 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# 실시간 변동성 쇼크 감지 (어제 기록 완전 차단 + 당일 30분 TTL)
+# 실시간 변동성 쇼크 감지
 # ─────────────────────────────────────────────────────────────
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
     if not spx_p:
@@ -809,17 +803,14 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
     is_weekday = (now_et.weekday() < 5)
     is_rth = is_weekday and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
 
-    # 정규장 시간 외(새벽/프리장/야간/주말)에는 쇼크 경보 완전 비활성화
     if not is_rth:
         return {"active": False}
 
-    # CVD가 전일 마감 데이터인 경우 쇼크 감지 차단
     if cvd and cvd.get("is_prior"):
         return {"active": False}
 
     today_open_ts = int(ET.localize(datetime(today.year, today.month, today.day, 9, 30, 0)).timestamp())
 
-    # 오늘 09:30 이후에 생성된 당일 캔들만 엄격 필터링
     today_bars = [c for c in (spy_5m_candles or []) if c["t"] >= today_open_ts]
     recent_bars = today_bars[-6:] if len(today_bars) >= 2 else []
 
@@ -843,7 +834,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         rally_from_low = curr_c - min_l
         rally_from_low_pct = (rally_from_low / min_l) * 100
 
-        # 급락 패턴 감지 (최근 30분 이내 발생분만)
         if drop_from_high <= -14.0 or drop_from_high_pct <= -0.25:
             start_ts = high_bar["t"]
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
@@ -859,7 +849,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
                 bounce_str = f" → 저점 대비 +{bounce:.1f}pt 반등 중" if bounce >= 5.0 else ""
                 reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생{bounce_str}")
 
-        # 급등 패턴 감지 (최근 30분 이내 발생분만)
         elif rally_from_low >= 14.0 or rally_from_low_pct >= 0.25:
             start_ts = low_bar["t"]
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
@@ -875,7 +864,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
                 pullback_str = f" → 고점 대비 {pullback:.1f}pt 눌림목" if pullback <= -5.0 else ""
                 reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생{pullback_str}")
 
-    # GEX 딜러 레벨 돌파/붕괴 (0DTE 체인에서만)
     if gex and gex.get("available") and gex.get("is_0dte"):
         pw = gex.get("put_wall")
         cw = gex.get("call_wall")
@@ -900,7 +888,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         elif shock_type == "SURGE" and flip and spx_p > flip:
             reasons.append(f"Gamma Flip({flip:.1f}) 상회: 양(+) 감마 안정 구간 진입")
 
-    # CVD 기관 매도/매수 폭발
     if cvd and not cvd.get("is_prior") and cvd.get("sell_pct"):
         sell_pct = cvd["sell_pct"]
         buy_pct = cvd["buy_pct"]
@@ -909,7 +896,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         elif buy_pct >= 65 and cvd.get("tone") == "bull" and shock_type == "SURGE":
             reasons.append(f"기관 매수 스퀴즈 압도적 유입 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
 
-    # VIX 급등
     if vix_q and shock_type == "DROP":
         vix_pct = vix_q.get("change_pct")
         if vix_pct and vix_pct >= 5.0:
@@ -937,7 +923,7 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD (09:30 개장 즉시 당일 모드 가동)
+# VWAP / Volume Profile / CVD
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source, now_et=None):
     sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
@@ -1071,7 +1057,6 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
 
     bars, is_prior, sess_date = get_rth_session(candles, now_et)
 
-    # 09:30 개장 직후 첫 봉 완성 전에도 N/A 대신 오늘 당일 리셋 상태 즉시 반환
     if not bars:
         if is_rth:
             return {
@@ -1776,7 +1761,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
         if (spy_vp and ratio_for(spy_vp)) else None
     )
 
-    # 3. CVD (오늘 캔들 실시간 롤업)
+    # 3. CVD (1분봉 롤업 기반 - 09:31부터 실시간 캔들 즉시 생성)
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
 
     # 4. RSI 계산
