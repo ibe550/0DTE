@@ -51,6 +51,17 @@ def num(x):
         return None
 
 
+def _parse_val(s):
+    """지표 문자열 (예: '0.3%', '215K', '-1.2%')을 float으로 변환."""
+    if not s or not isinstance(s, str):
+        return None
+    cleaned = s.replace("%", "").replace("K", "").replace("M", "").replace("B", "").replace(",", "").strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 _CACHE = {}
 
 
@@ -327,7 +338,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 주요 경제 지표 캘린더 (PCE, CPI, GDP, FOMC, 고용 종합 - ET 전용)
+# 주요 경제 지표 캘린더 (PCE, CPI, GDP, FOMC 등 종합 + 호재/악재 평가)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Core PCE Price Index m/m": "근원 PCE 물가지수 (MoM)",
@@ -366,6 +377,91 @@ HIGH_IMPACT_KEYWORDS = [
 ]
 
 
+def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
+    """지표 결과를 분석하여 호재(긍정) / 악재(부정) / 중립 판정 및 요약 문장 생성."""
+    if not actual_str:
+        if forecast_str:
+            return {
+                "tag": None,
+                "tone": "pending",
+                "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")
+            }
+        return {
+            "tag": None,
+            "tone": "pending",
+            "sentence": f"이전치: {previous_str}" if previous_str else "발표 대기중"
+        }
+
+    act_num = _parse_val(actual_str)
+    fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
+    cmp_label = "예상" if forecast_str else "이전"
+    cmp_str = forecast_str or previous_str
+
+    t_lower = title_en.lower()
+    is_inflation = any(k in t_lower for k in ["cpi", "pce", "ppi", "price index"])
+    is_unemployment = any(k in t_lower for k in ["unemployment rate", "unemployment claims", "jobless claims"])
+
+    if act_num is not None and fc_num is not None:
+        diff = act_num - fc_num
+        if abs(diff) < 1e-5:
+            return {
+                "tag": "⚪ 예상 부합 (중립)",
+                "tone": "flat",
+                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치에 부합 (중립적 흐름)"
+            }
+
+        # 1. 물가 지표: 예상 하회 = 물가 둔화 호재 / 예상 상회 = 물가 과열 악재
+        if is_inflation:
+            if diff > 0:
+                return {
+                    "tag": "🔴 물가 과열 (부정적)",
+                    "tone": "bear",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 물가 압력 상승/인플레 우려 (주가 악재)"
+                }
+            else:
+                return {
+                    "tag": "🟢 물가 둔화 (긍정적)",
+                    "tone": "bull",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 둔화/물가 안정 (주가 호재)"
+                }
+
+        # 2. 실업률/실업수당: 예상 상회 = 실업 증가 부정적 / 예상 하회 = 고용 견조 긍정적
+        elif is_unemployment:
+            if diff > 0:
+                return {
+                    "tag": "⚠️ 실업 증가 (부정적)",
+                    "tone": "bear",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업/실업수당 증가 (고용 둔화 우려)"
+                }
+            else:
+                return {
+                    "tag": "🟢 고용 견조 (긍정적)",
+                    "tone": "bull",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 및 고용 시장 안정 (호재)"
+                }
+
+        # 3. 경기/성장 지표 (GDP, NFP, ISM, 소매판매): 예상 상회 = 경기 호조 / 예상 하회 = 침체 우려
+        else:
+            if diff > 0:
+                return {
+                    "tag": "🟢 경기 호조 (긍정적)",
+                    "tone": "bull",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 지표 호조 및 경기 확장 (주가 호재)"
+                }
+            else:
+                return {
+                    "tag": "⚠️ 경기 둔화 (부정적)",
+                    "tone": "bear",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 지표 부진 및 경기 위축 우려 (주가 악재)"
+                }
+
+    return {
+        "tag": "발표 완료",
+        "tone": "flat",
+        "sentence": f"발표치: {actual_str}" + (f" ({cmp_label}: {cmp_str})" if cmp_str else "")
+    }
+
+
 def fetch_global_econ_calendar():
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
     try:
@@ -401,7 +497,10 @@ def fetch_global_econ_calendar():
                 "dt": dt_obj,
                 "ts": dt_obj.timestamp(),
                 "time": dt_obj.strftime("%H:%M ET"),
-                "impact": impact
+                "impact": impact,
+                "forecast": (it.get("forecast") or "").strip(),
+                "previous": (it.get("previous") or "").strip(),
+                "actual": (it.get("actual") or "").strip()
             })
         return parsed
     except Exception:
@@ -434,13 +533,22 @@ def get_today_econ_events(now_et):
     for it in target_items:
         passed = (it["ts"] <= now_ts)
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
+
+        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"])
+
         out_items.append({
             "title": f"{prefix}{it['title']}",
             "title_en": it["title_en"],
             "time": it["time"],
             "ts": it["ts"],
             "passed": passed,
-            "impact": it.get("impact", "High")
+            "impact": it.get("impact", "High"),
+            "actual": it["actual"],
+            "forecast": it["forecast"],
+            "previous": it["previous"],
+            "eval_tag": eval_res["tag"],
+            "eval_tone": eval_res["tone"],
+            "eval_sentence": eval_res["sentence"],
         })
 
     return {
@@ -655,66 +763,62 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# 양방향 변동성 충격 & 모멘텀 서지 감지 (Flash Move Alert Engine)
+# 실시간 변동성 쇼크 감지 (양방향 급등/급락 + 시작 시각 + 반등 추적)
 # ─────────────────────────────────────────────────────────────
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
-    """급락(Down Shock), 급등(Up Shock / Squeeze), V자 반등을 양방향으로 추적하고 시작 시각을 도출합니다."""
     if not spx_p:
         return {"active": False}
 
     reasons = []
-    direction = "NONE"      # DOWN, UP, REVERSAL
-    start_time_str = None
+    shock_type = "NORMAL"
     level = "NORMAL"
+    start_time_label = None
+    elapsed_text = ""
 
-    # 최근 30분 롤링 윈도우 (최근 6개 5분봉) 가격 스윙 추적
     if spy_5m_candles and len(spy_5m_candles) >= 2 and ratio:
-        window = spy_5m_candles[-6:]
-        high_bar = max(window, key=lambda c: c["h"])
-        low_bar = min(window, key=lambda c: c["l"])
-        last_bar = window[-1]
+        recent_bars = spy_5m_candles[-6:]
+        high_bar = max(recent_bars, key=lambda b: b["h"])
+        low_bar = min(recent_bars, key=lambda b: b["l"])
 
-        high_val = high_bar["h"] * ratio
-        low_val = low_bar["l"] * ratio
-        curr_val = last_bar["c"] * ratio
+        max_h = high_bar["h"] * ratio
+        min_l = low_bar["l"] * ratio
+        curr_c = recent_bars[-1]["c"] * ratio
 
-        # 1. 하방 급락 체크 (고점 대비 하락폭)
-        drop_from_high = curr_val - high_val
-        drop_from_high_pct = (drop_from_high / high_val) * 100
+        drop_from_high = curr_c - max_h
+        drop_from_high_pct = (drop_from_high / max_h) * 100
 
-        # 직전 5분봉 단일 급락
-        single_5m_change = (last_bar["c"] - last_bar["o"]) * ratio
+        rally_from_low = curr_c - min_l
+        rally_from_low_pct = (rally_from_low / min_l) * 100
 
-        # 2. 상방 급등/스퀴즈 체크 (저점 대비 상승폭)
-        rally_from_low = curr_val - low_val
-        rally_from_low_pct = (rally_from_low / low_val) * 100
+        # 급락 패턴 감지
+        if drop_from_high <= -14.0 or drop_from_high_pct <= -0.25:
+            shock_type = "DROP"
+            level = "CRITICAL" if (drop_from_high <= -24.0 or drop_from_high_pct <= -0.40) else "WARNING"
+            start_ts = high_bar["t"]
+            start_dt = datetime.fromtimestamp(start_ts, ET)
+            start_time_label = start_dt.strftime("%H:%M ET")
+            elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
+            elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
 
-        # 3. V자 반등 체크: 고점 대비 크게 떨어졌다가 저점 찍고 급반등 중인 경우
-        is_reversal = False
-        if (high_val - low_val) >= 20.0 and (curr_val - low_val) >= 12.0:
-            if low_bar["t"] < last_bar["t"] and high_bar["t"] < low_bar["t"]:
-                is_reversal = True
+            bounce = curr_c - min_l
+            bounce_str = f" → 저점 대비 +{bounce:.1f}pt 반등 중" if bounce >= 5.0 else ""
+            reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생{bounce_str}")
 
-        if is_reversal:
-            direction = "REVERSAL"
-            level = "CRITICAL"
-            low_time = datetime.fromtimestamp(low_bar["t"], ET).strftime("%H:%M ET")
-            start_time_str = low_time
-            reasons.append(f"{low_time} 저점({low_val:.1f}) 찍고 +{rally_from_low:.1f}pt 급격한 V자 반발 매수세 유입")
-        elif drop_from_high <= -15.0 or single_5m_change <= -12.0:
-            direction = "DOWN"
-            level = "CRITICAL"
-            h_time = datetime.fromtimestamp(high_bar["t"], ET).strftime("%H:%M ET")
-            start_time_str = h_time
-            reasons.append(f"{h_time} 고점({high_val:.1f}) 형성 후 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생")
-        elif rally_from_low >= 15.0 or single_5m_change >= 12.0:
-            direction = "UP"
-            level = "CRITICAL"
-            l_time = datetime.fromtimestamp(low_bar["t"], ET).strftime("%H:%M ET")
-            start_time_str = l_time
-            reasons.append(f"{l_time} 저점({low_val:.1f}) 돌파 후 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 숏스퀴즈성 급등 발생")
+        # 급등 패턴 감지
+        elif rally_from_low >= 14.0 or rally_from_low_pct >= 0.25:
+            shock_type = "SURGE"
+            level = "CRITICAL" if (rally_from_low >= 24.0 or rally_from_low_pct >= 0.40) else "WARNING"
+            start_ts = low_bar["t"]
+            start_dt = datetime.fromtimestamp(start_ts, ET)
+            start_time_label = start_dt.strftime("%H:%M ET")
+            elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
+            elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
 
-    # 4. GEX 핵심 딜러 벽 돌파/붕괴 체크
+            pullback = curr_c - max_h
+            pullback_str = f" → 고점 대비 {pullback:.1f}pt 눌림목" if pullback <= -5.0 else ""
+            reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생{pullback_str}")
+
+    # GEX 딜러 레벨 돌파/붕괴
     if gex and gex.get("available"):
         pw = gex.get("put_wall")
         cw = gex.get("call_wall")
@@ -722,77 +826,67 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
 
         if pw and spx_p < pw:
             diff = spx_p - pw
-            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 ({diff:.1f}pt) - 딜러 하방 방어선 무너짐")
-            if direction != "UP":
-                direction = "DOWN"
-                level = "CRITICAL"
-        elif cw and spx_p > cw:
+            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({diff:.1f}pt) - 딜러 방어선 파괴")
+            if shock_type == "NORMAL":
+                shock_type = "DROP"
+            level = "CRITICAL"
+
+        if cw and spx_p > cw:
             diff = spx_p - cw
-            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{diff:.1f}pt) - 딜러 상방 헤징 폭발")
-            if direction != "DOWN":
-                direction = "UP"
-                level = "CRITICAL"
+            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{diff:.1f}pt) - 딜러 숏스퀴즈 가속화")
+            if shock_type == "NORMAL":
+                shock_type = "SURGE"
+            level = "CRITICAL"
 
-        if flip:
-            if spx_p < flip and direction in ("DOWN", "NONE"):
-                reasons.append(f"Gamma Flip({flip:.1f}) 하회: 음(−) 감마 가속 구간 진입")
-                if level != "CRITICAL":
-                    level = "WARNING"
-            elif spx_p > flip and direction == "UP":
-                reasons.append(f"Gamma Flip({flip:.1f}) 상회 안착: 딜러 숏커버링 가속 구간")
-                if level != "CRITICAL":
-                    level = "WARNING"
+        if flip and spx_p < flip and shock_type == "DROP":
+            reasons.append(f"Gamma Flip({flip:.1f}) 하회: 음(−) 감마 가속화 구간 진입 (변동성 증폭)")
+        elif flip and spx_p > flip and shock_type == "SURGE":
+            reasons.append(f"Gamma Flip({flip:.1f}) 상회: 양(+) 감마 안정 구간 진입")
 
-    # 5. CVD 기관 체결 폭발 체크
+    # CVD 기관 체결 압력
     if cvd and cvd.get("sell_pct"):
         sell_pct = cvd["sell_pct"]
         buy_pct = cvd["buy_pct"]
-        if sell_pct >= 65 and direction in ("DOWN", "NONE"):
-            reasons.append(f"시장가 매도 압도적 폭발 (Sell {sell_pct}%, {cvd.get('sell_vol')})")
+        if sell_pct >= 65 and cvd.get("tone") == "bear":
+            reasons.append(f"기관 매도 덤핑 압도적 폭발 (Sell {sell_pct}%, {cvd.get('sell_vol')})")
+            if shock_type == "NORMAL":
+                shock_type = "DROP"
             if level != "CRITICAL":
                 level = "WARNING"
-            if direction == "NONE":
-                direction = "DOWN"
-        elif buy_pct >= 65 and direction in ("UP", "NONE"):
-            reasons.append(f"시장가 공격적 매수 폭발 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
+        elif buy_pct >= 65 and cvd.get("tone") == "bull":
+            reasons.append(f"기관 매수 스퀴즈 압도적 유입 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
+            if shock_type == "NORMAL":
+                shock_type = "SURGE"
             if level != "CRITICAL":
                 level = "WARNING"
-            if direction == "NONE":
-                direction = "UP"
 
-    # 6. VIX 충격 연동
+    # VIX 급등
     if vix_q:
-        vix_pct = vix_q.get("change_pct")
         vix_p = vix_q.get("price")
-        if vix_pct and vix_pct >= 5.0 and direction in ("DOWN", "NONE"):
-            reasons.append(f"VIX 공포지수 급등 (+{vix_pct:.1f}%, {vix_p:.2f})")
+        vix_pct = vix_q.get("change_pct")
+        if vix_pct and vix_pct >= 5.0:
+            reasons.append(f"VIX 공포지수 급등세 (+{vix_pct:.1f}%, {vix_p:.2f})")
+            if shock_type == "NORMAL":
+                shock_type = "VOLATILITY"
             if level != "CRITICAL":
                 level = "WARNING"
 
-    if not reasons:
-        return {"active": False}
+    is_active = len(reasons) > 0
 
-    # 양방향 명칭 및 테마 확정
-    if direction == "DOWN":
-        title = "🚨 [하방 충격] 시장 급락 및 지지선 붕괴 경보"
-        theme = "down"
-    elif direction == "UP":
-        title = "🚀 [상방 충격] 숏스퀴즈 및 저항선 돌파 경보"
-        theme = "up"
-    elif direction == "REVERSAL":
-        title = "⚡ [V자 반등] 급락 후 강력한 반발 매수세 감지"
-        theme = "reversal"
+    if shock_type == "DROP":
+        title = "🚨 [변동성 쇼크 · 급락 경보]" if level == "CRITICAL" else "⚠️ [변동성 쇼크 · 하방 주의보]"
+    elif shock_type == "SURGE":
+        title = "🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]"
     else:
-        title = "⚠️ [변동성 충격] 실시간 이상 변동성 감지"
-        theme = "neutral"
+        title = "⚡ [변동성 쇼크 · 시장 급변 경보]"
 
     return {
-        "active": True,
+        "active": is_active,
+        "type": shock_type,
         "level": level,
-        "direction": direction,
-        "theme": theme,
         "title": title,
-        "start_time": start_time_str or now_et.strftime("%H:%M ET"),
+        "start_time": start_time_label,
+        "elapsed_text": elapsed_text,
         "details": reasons,
         "timestamp": now_et.strftime("%H:%M:%S ET")
     }
@@ -1640,9 +1734,9 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. [신규] 양방향 변동성 충격 & 모멘텀 서지 감지
+    # 6. 실시간 변동성 쇼크 감지 시스템 (양방향 급등/급락 + 시작 시각 + 반등 추적)
     spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
-    risk_alert = guard("risk_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
+    shock_alert = guard("shock_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
 
     # 7. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
@@ -1711,7 +1805,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
         "source_summary": summary,
         "schwab_status": status_msg,
         "errors": errors,
-        "risk_alert": risk_alert,
+        "shock_alert": shock_alert,
         "spx": q_spx,
         "es": quotes.get("es"),
         "vix": slim(quotes.get("vix")),
