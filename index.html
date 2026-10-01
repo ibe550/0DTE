@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.2</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.3</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -189,7 +189,7 @@
         <div class="flex justify-between items-start mb-2 gap-2">
             <h2 class="text-[11px] md:text-xs font-bold text-slate-200">⚡ GEX · 옵션 체인 감마 레벨</h2>
             <div class="text-right max-w-[65%]">
-                <span class="text-[9px] bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span class="text-[9px] text-slate-400" id="gex-source">--</span>
+                <span class="text-[9px] bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="gex-source" class="text-[9px] text-slate-400">--</span>
                 <div class="text-[8px] text-slate-500 font-mono" id="gex-meta"></div>
             </div>
         </div>
@@ -396,7 +396,7 @@
                 <path id="cvd-line-path" d="" fill="none" stroke="#eab308" stroke-width="1.5"/>
             </svg>
             <div id="cvd-x-axis" class="flex justify-between text-[8px] text-slate-500 font-mono px-1 mt-1"><span>--</span></div>
-            <div class="text-center text-[8px] text-slate-500 mt-0.5">Time</div>
+            <div class="text-center text-[8px] text-slate-500 mt-0.5">Time (ET)</div>
         </div>
 
         <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1.5 px-1">
@@ -776,15 +776,16 @@
             const AREA_X0 = 40, AREA_W = 440;
             const n = Math.max(bars.length, 1);
             const slot = AREA_W / n;
-            const barW = Math.max(1, Math.min(24, slot * 0.68));
+            const barW = Math.max(0.8, Math.min(24, slot * 0.7));
             const cx = (i) => AREA_X0 + i * slot + slot / 2;
+            const strokeW = slot < 2.5 ? '0' : '0.7';
 
             $('cvd-real-bars').innerHTML = bars.map((b, i) => {
                 const h = Math.max(1.5, (b.vol / maxVol) * 85);
                 const x = cx(i) - barW / 2, y = 110 - h;
                 const fill = b.is_bull ? '#065f46' : '#881337';
                 const stroke = b.is_bull ? '#10b981' : '#f43f5e';
-                return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="0.7"/>`;
+                return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`;
             }).join('');
             $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
                 const y = 65 - (b.cvd_line / maxCvd) * 40;
