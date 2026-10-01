@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.2</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.4</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -337,7 +337,7 @@
         </div>
     </div>
 
-    <!-- 9. SPY VOLUME + CVD (고밀도 30분 단위 시간축 및 16:00 마감선 정밀 렌더링) -->
+    <!-- 9. SPY VOLUME + CVD (30분 단위 초정밀 눈금: 09:30, 10:00, 10:30 ... 16:00) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -351,7 +351,8 @@
             </div>
         </div>
 
-        <div class="flex justify-end mb-2">
+        <div class="flex justify-between items-center mb-2">
+            <span id="cvd-prior-badge" class="hidden text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">--</span>
             <span id="cvd-status-pill" class="text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1">
                 <span>--</span>
             </span>
@@ -381,7 +382,7 @@
                 <line x1="35" y1="65" x2="480" y2="65" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
                 <line x1="35" y1="110" x2="480" y2="110" stroke="#1e293b" stroke-width="1"/>
                 
-                <!-- 세로 격자 점선 및 30분 단위 시간 라벨 일체형 렌더링 -->
+                <!-- 30분 단위 초정밀 눈금선 & 시간 텍스트 -->
                 <g id="cvd-vertical-grids"></g>
 
                 <text id="cvd-y-max" x="30" y="23" fill="#64748b" font-size="8" text-anchor="end">--</text>
@@ -749,7 +750,6 @@
             const d = new Date(b.t * 1000);
             const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
             
-            // 마지막 캔들인 경우 마감 범위 상세 안내
             const isLast = (idx === cachedBars.length - 1);
             const rangeHint = isLast && currentCvdTf === '10m' ? ' (15:50~16:00 마감봉)' : (isLast ? ' (마감봉)' : '');
 
@@ -761,19 +761,32 @@
 
         function renderCvd(c) {
             const pill = $('cvd-status-pill');
+            const priorBadge = $('cvd-prior-badge');
             if (!c) {
                 cachedBars = [];
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
                 $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
+                if (priorBadge) priorBadge.classList.add('hidden');
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
                 return;
             }
             cachedBars = c.bars || [];
             
-            // 마지막 봉 라벨: 10분봉 15:50인 경우 명확히 마감봉 표기
+            // 세션 상태 배지 렌더링
+            if (priorBadge) {
+                priorBadge.classList.remove('hidden');
+                if (c.is_prior) {
+                    priorBadge.className = 'text-[9px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
+                    priorBadge.innerText = `🌙 전일(${c.session_date || '마감'}) 세션 · 09:30 ET 리셋`;
+                } else {
+                    priorBadge.className = 'text-[9px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
+                    priorBadge.innerText = '🟢 당일 정규장 실시간';
+                }
+            }
+
             const is10mLast = currentCvdTf === '10m' && (c.last_bar_time || '').startsWith('15:50');
             defaultCvdLastTime = is10mLast ? `${c.data_time} (15:50~16:00 마감)` : c.data_time;
             defaultCvdSub = `최근 봉 <span class="text-slate-200">${c.recent_vol}</span> · 합계 <span class="text-slate-200">${c.total_vol}</span>`;
@@ -813,7 +826,7 @@
             const cx = (i) => AREA_X0 + i * slot + slot / 2;
             const strokeW = slot < 2.5 ? '0' : '0.7';
 
-            // 1. 캔들 바 렌더링 + 호버/터치 이벤트 부착
+            // 1. 볼륨 바 렌더링
             $('cvd-real-bars').innerHTML = bars.map((b, i) => {
                 const h = Math.max(1.5, (b.vol / maxVol) * 85);
                 const x = cx(i) - barW / 2, y = 110 - h;
@@ -829,21 +842,19 @@
                 </rect>`;
             }).join('');
 
-            // 2. CVD 노란색 누적 라인
+            // 2. CVD 라인 렌더링
             $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
                 const y = 65 - (b.cvd_line / maxCvd) * 40;
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            // 3. 30분 단위 고밀도 시간축 및 16:00 마감선 SVG 일체형 정밀 렌더링
+            // 3. 30분 단위 초정밀 눈금선 & 시간 텍스트 렌더링 (09:30, 10:00, 10:30 ... 16:00 전 구간 표시)
             const gridGroup = $('cvd-vertical-grids');
             if (!bars.length) { 
                 gridGroup.innerHTML = '';
             } else {
-                const isMobile = window.innerWidth < 640;
-                const stepMin = isMobile ? 60 : 30; // 모바일 1시간 간격, PC 30분 간격
                 let gridHtml = '';
-                let lastTickMin = -999;
+                const seenTicks = new Set();
 
                 bars.forEach((b, i) => {
                     const d = new Date(b.t * 1000);
@@ -851,27 +862,25 @@
                     const etMin = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
                     const totalMinutes = etHour * 60 + etMin;
 
-                    // 개장봉(09:30)이거나, 매 30분(모바일은 60분) 정각 봉인 경우 눈금 생성
-                    const isTick = (i === 0) || (totalMinutes % stepMin === 0 && (totalMinutes - lastTickMin >= (stepMin - 5)));
-
-                    if (isTick) {
-                        lastTickMin = totalMinutes;
+                    // 매 30분 단위 (09:30, 10:00, 10:30, 11:00 ...) 를 건너뜀 없이 모두 등록
+                    if (totalMinutes % 30 === 0 && !seenTicks.has(totalMinutes)) {
+                        seenTicks.add(totalMinutes);
                         const gx = cx(i).toFixed(1);
                         const timeLabel = `${String(etHour).padStart(2, '0')}:${String(etMin).padStart(2, '0')}`;
                         gridHtml += `<line x1="${gx}" y1="18" x2="${gx}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
-                        gridHtml += `<text x="${gx}" y="125" fill="#64748b" font-size="7.5" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
+                        gridHtml += `<text x="${gx}" y="125" fill="#64748b" font-size="6.8" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
                     }
                 });
 
-                // 장 마감(16:00)까지 진행된 세션이면 우측 끝에 16:00 마감선 명시
+                // 16:00 정규장 마감선 (15:40 이후 캔들이 포함된 세션일 때 우측 끝단에 표시)
                 const lastBar = bars[bars.length - 1];
                 const lastD = new Date(lastBar.t * 1000);
                 const lastHour = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
                 const lastMin = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
 
-                if (lastHour === 15 && lastMin >= 45) {
+                if (lastHour === 15 && lastMin >= 40) {
                     gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>`;
-                    gridHtml += `<text x="480" y="125" fill="#94a3b8" font-size="7.5" text-anchor="middle" font-family="monospace" font-weight="bold">16:00</text>`;
+                    gridHtml += `<text x="478" y="125" fill="#94a3b8" font-size="6.8" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
                 }
 
                 gridGroup.innerHTML = gridHtml;
