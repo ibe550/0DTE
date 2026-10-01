@@ -22,7 +22,7 @@
 </head>
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
-    <!-- Tailwind CDN 이 동적 클래스를 놓치지 않도록 미리 등록 -->
+    <!-- Tailwind CDN 동적 클래스 등록 -->
     <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400"></div>
 
     <!-- 1. 헤더 -->
@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.5</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.6</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -436,7 +436,7 @@
         <div class="bg-slate-950 p-2 rounded border border-slate-800/80 text-[10px] text-slate-300 font-sans" id="cvd-summary-text">--</div>
     </div>
 
-    <!-- 10. SPX 방향분석 -->
+    <!-- 10. SPX 방향분석 (0DTE 최적화) -->
     <div class="card p-2 md:p-3 mb-3">
         <div class="flex justify-between items-center mb-1">
             <div class="flex items-center space-x-1.5 text-xs font-bold text-slate-300" id="dir-head">
@@ -459,46 +459,46 @@
         <div class="grid grid-cols-2 gap-1.5 text-xs mb-2">
             <div class="bg-slate-900 border border-slate-800 p-2 rounded">
                 <div class="flex justify-between items-center text-[10px]">
-                    <span class="font-bold text-slate-300" id="tf-1h-label">1H</span>
-                    <span class="text-[8px] text-slate-500">큰 방향</span>
-                </div>
-                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-1h-status">--</div>
-                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
-                    <span>이동평균·RSI·구조</span>
-                    <span class="text-slate-400 font-bold" id="tf-1h-score">--</span>
-                </div>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
-                <div class="flex justify-between items-center text-[10px]">
-                    <span class="font-bold text-slate-300" id="tf-15m-label">15m</span>
-                    <span class="text-[8px] text-slate-500">장중 구조</span>
-                </div>
-                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-15m-status">--</div>
-                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
-                    <span>이동평균·RSI·구조</span>
-                    <span class="text-slate-400 font-bold" id="tf-15m-score">--</span>
-                </div>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
-                <div class="flex justify-between items-center text-[10px]">
-                    <span class="font-bold text-slate-300" id="tf-5m-label">5m</span>
-                    <span class="text-[8px] text-slate-500">진입 확인</span>
+                    <span class="font-bold text-slate-300" id="tf-5m-label">5m (주도)</span>
+                    <span class="text-[8px] text-slate-500">핵심 흐름 (35%)</span>
                 </div>
                 <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-5m-status">--</div>
                 <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
-                    <span>이동평균·RSI·구조</span>
+                    <span>EMA(5/13/21)·압력</span>
                     <span class="text-slate-400 font-bold" id="tf-5m-score">--</span>
                 </div>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-2 rounded">
                 <div class="flex justify-between items-center text-[10px]">
-                    <span class="font-bold text-slate-300" id="tf-1m-label">1m</span>
-                    <span class="text-[8px] text-slate-500">미세 타이밍</span>
+                    <span class="font-bold text-slate-300" id="tf-1m-label">1m (타이밍)</span>
+                    <span class="text-[8px] text-slate-500">미세 반응 (25%)</span>
                 </div>
                 <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-1m-status">--</div>
                 <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
-                    <span>이동평균·RSI·구조</span>
+                    <span>즉각 모멘텀</span>
                     <span class="text-slate-400 font-bold" id="tf-1m-score">--</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="font-bold text-slate-300" id="tf-15m-label">15m (구조)</span>
+                    <span class="text-[8px] text-slate-500">장중 지지 (25%)</span>
+                </div>
+                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-15m-status">--</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
+                    <span>이평선 정/역배열</span>
+                    <span class="text-slate-400 font-bold" id="tf-15m-score">--</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="font-bold text-slate-300" id="tf-1h-label">1H (배경)</span>
+                    <span class="text-[8px] text-slate-500">상위 추세 (15%)</span>
+                </div>
+                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-1h-status">--</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
+                    <span>대세 방향</span>
+                    <span class="text-slate-400 font-bold" id="tf-1h-score">--</span>
                 </div>
             </div>
         </div>
@@ -510,13 +510,13 @@
         <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
             <span class="flex items-center space-x-1 font-semibold text-slate-300">
                 <svg id="evidence-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                <span>세부 근거 보기 · 1H</span>
+                <span>방향성 근거 상세 보기 (VWAP · CVD · 모멘텀)</span>
             </span>
             <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
 
         <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-2">
-            <div class="text-[9px] font-bold text-slate-400 tracking-wider">방향성 근거</div>
+            <div class="text-[9px] font-bold text-slate-400 tracking-wider">0DTE 종합 판정 근거</div>
             <div id="evidence-list" class="space-y-2"></div>
         </div>
     </div>
@@ -755,7 +755,6 @@
             $('rsi-dynamic-line').setAttribute('d', generatePath(r.history, 20, 80, 30, 20, 450, 60));
         }
 
-        // 마우스 오버 툴팁/상태 표시 함수
         function inspectCvdBar(idx) {
             if (idx === null || !cachedBars[idx]) {
                 $('cvd-inspect-label').innerText = '마지막 봉';
@@ -825,7 +824,6 @@
             const cx = (i) => AREA_X0 + i * slot + slot / 2;
             const strokeW = slot < 2.5 ? '0' : '0.7';
 
-            // 1. 캔들 바 렌더링 + 호버/터치 이벤트 부착
             $('cvd-real-bars').innerHTML = bars.map((b, i) => {
                 const h = Math.max(1.5, (b.vol / maxVol) * 85);
                 const x = cx(i) - barW / 2, y = 110 - h;
@@ -839,13 +837,11 @@
                 </rect>`;
             }).join('');
 
-            // 2. CVD 노란색 누적 라인
             $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
                 const y = 65 - (b.cvd_line / maxCvd) * 40;
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            // 3. 시간축 라벨 & 세로 격자선 (약 30분 단위, 11~14개로 촘촘하게 배치)
             const axis = $('cvd-x-axis');
             const gridGroup = $('cvd-vertical-grids');
             if (!bars.length) { 
@@ -858,13 +854,11 @@
                 const step = (bars.length - 1) / Math.max(1, tickCount - 1);
                 const idxs = [...new Set(Array.from({ length: tickCount }, (_, k) => Math.round(k * step)))];
                 
-                // SVG 내부 세로 점선 격자선
                 gridGroup.innerHTML = idxs.map((i) => {
                     const gx = cx(i).toFixed(1);
                     return `<line x1="${gx}" y1="18" x2="${gx}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
                 }).join('');
 
-                // 하단 텍스트 라벨
                 axis.innerHTML = idxs.map((i) => {
                     const d = new Date(bars[i].t * 1000);
                     const label = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
@@ -874,11 +868,11 @@
         }
 
         function renderDirection(d) {
-            const tfKeys = ['1h', '15m', '5m', '1m'];
+            const tfKeys = ['5m', '1m', '15m', '1h'];
             const list = $('evidence-list');
             if (!d || !d.available) {
                 setText('dir-main-status', NA); setText('dir-top-score', '종합 점수 N/A');
-                setText('dir-summary', (d && d.reason) ? d.reason : 'SPX 봉 데이터를 가져오지 못해 방향을 판단할 수 없습니다.');
+                setText('dir-summary', (d && d.reason) ? d.reason : '실시간 봉 데이터를 가져오지 못해 방향을 판단할 수 없습니다.');
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
@@ -909,7 +903,7 @@
                 }
                 const c = toneByName(t.tone);
                 setText(`tf-${k}-status`, t.status);
-                setText(`tf-${k}-score`, sgn(t.score, 0));
+                setText(`tf-${k}-score`, sgn(t.score, 1));
                 setTone(`tf-${k}-status`, c); setTone(`tf-${k}-label`, c); setTone(`tf-${k}-score`, c);
                 $(`tf-${k}-status`).title = t.source || '';
             });
