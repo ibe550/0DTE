@@ -655,77 +655,144 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# 긴급 위험 감지 (Crash / Flash Sell-Off / Put Wall Breakdown Alert)
+# 양방향 변동성 충격 & 모멘텀 서지 감지 (Flash Move Alert Engine)
 # ─────────────────────────────────────────────────────────────
-def detect_market_risk(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
-    """단기 급락, 풋월/감마플립 붕괴, CVD 매도 덤핑, VIX 급등을 종합 감시합니다."""
+def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
+    """급락(Down Shock), 급등(Up Shock / Squeeze), V자 반등을 양방향으로 추적하고 시작 시각을 도출합니다."""
     if not spx_p:
         return {"active": False}
 
     reasons = []
+    direction = "NONE"      # DOWN, UP, REVERSAL
+    start_time_str = None
     level = "NORMAL"
 
-    # 1. 단기 급락 속도 체크 (5분봉 및 15분 누적 하락폭)
-    if spy_5m_candles and len(spy_5m_candles) >= 1 and ratio:
-        last_c = spy_5m_candles[-1]
-        # 직전 5분봉 하락폭 (SPX 환산)
-        bar_5m_drop = (last_c["c"] - last_c["o"]) * ratio
-        bar_5m_drop_pct = ((last_c["c"] - last_c["o"]) / last_c["o"]) * 100
+    # 최근 30분 롤링 윈도우 (최근 6개 5분봉) 가격 스윙 추적
+    if spy_5m_candles and len(spy_5m_candles) >= 2 and ratio:
+        window = spy_5m_candles[-6:]
+        high_bar = max(window, key=lambda c: c["h"])
+        low_bar = min(window, key=lambda c: c["l"])
+        last_bar = window[-1]
 
-        if bar_5m_drop <= -12.0 or bar_5m_drop_pct <= -0.22:
-            reasons.append(f"최근 5분간 SPX {bar_5m_drop:.1f}pt ({bar_5m_drop_pct:.2f}%) 단기 급락 발생")
+        high_val = high_bar["h"] * ratio
+        low_val = low_bar["l"] * ratio
+        curr_val = last_bar["c"] * ratio
+
+        # 1. 하방 급락 체크 (고점 대비 하락폭)
+        drop_from_high = curr_val - high_val
+        drop_from_high_pct = (drop_from_high / high_val) * 100
+
+        # 직전 5분봉 단일 급락
+        single_5m_change = (last_bar["c"] - last_bar["o"]) * ratio
+
+        # 2. 상방 급등/스퀴즈 체크 (저점 대비 상승폭)
+        rally_from_low = curr_val - low_val
+        rally_from_low_pct = (rally_from_low / low_val) * 100
+
+        # 3. V자 반등 체크: 고점 대비 크게 떨어졌다가 저점 찍고 급반등 중인 경우
+        is_reversal = False
+        if (high_val - low_val) >= 20.0 and (curr_val - low_val) >= 12.0:
+            if low_bar["t"] < last_bar["t"] and high_bar["t"] < low_bar["t"]:
+                is_reversal = True
+
+        if is_reversal:
+            direction = "REVERSAL"
             level = "CRITICAL"
+            low_time = datetime.fromtimestamp(low_bar["t"], ET).strftime("%H:%M ET")
+            start_time_str = low_time
+            reasons.append(f"{low_time} 저점({low_val:.1f}) 찍고 +{rally_from_low:.1f}pt 급격한 V자 반발 매수세 유입")
+        elif drop_from_high <= -15.0 or single_5m_change <= -12.0:
+            direction = "DOWN"
+            level = "CRITICAL"
+            h_time = datetime.fromtimestamp(high_bar["t"], ET).strftime("%H:%M ET")
+            start_time_str = h_time
+            reasons.append(f"{h_time} 고점({high_val:.1f}) 형성 후 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생")
+        elif rally_from_low >= 15.0 or single_5m_change >= 12.0:
+            direction = "UP"
+            level = "CRITICAL"
+            l_time = datetime.fromtimestamp(low_bar["t"], ET).strftime("%H:%M ET")
+            start_time_str = l_time
+            reasons.append(f"{l_time} 저점({low_val:.1f}) 돌파 후 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 숏스퀴즈성 급등 발생")
 
-        if len(spy_5m_candles) >= 3:
-            drop_15m = (spy_5m_candles[-1]["c"] - spy_5m_candles[-3]["o"]) * ratio
-            drop_15m_pct = ((spy_5m_candles[-1]["c"] - spy_5m_candles[-3]["o"]) / spy_5m_candles[-3]["o"]) * 100
-            if drop_15m <= -25.0 or drop_15m_pct <= -0.40:
-                reasons.append(f"최근 15분간 누적 {drop_15m:.1f}pt ({drop_15m_pct:.2f}%) 가속 하락 중")
-                level = "CRITICAL"
-
-    # 2. GEX 핵심 방어선 붕괴 체크
+    # 4. GEX 핵심 딜러 벽 돌파/붕괴 체크
     if gex and gex.get("available"):
         pw = gex.get("put_wall")
+        cw = gex.get("call_wall")
         flip = gex.get("gamma_flip")
 
         if pw and spx_p < pw:
             diff = spx_p - pw
-            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({diff:.1f}pt) - 딜러 방어선 무너짐")
-            level = "CRITICAL"
-        elif pw and (spx_p - pw) <= 6.0:
-            reasons.append(f"Put Wall 최대 지지선({pw:.1f}) 붕괴 임박 (현재가와 {spx_p - pw:.1f}pt 차이)")
-            if level != "CRITICAL":
-                level = "WARNING"
+            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 ({diff:.1f}pt) - 딜러 하방 방어선 무너짐")
+            if direction != "UP":
+                direction = "DOWN"
+                level = "CRITICAL"
+        elif cw and spx_p > cw:
+            diff = spx_p - cw
+            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{diff:.1f}pt) - 딜러 상방 헤징 폭발")
+            if direction != "DOWN":
+                direction = "UP"
+                level = "CRITICAL"
 
-        if flip and spx_p < flip:
-            reasons.append(f"Gamma Flip({flip:.1f}) 하회: 음(−) 감마 가속화 구간 진입 (변동성 증폭 위험)")
-            if level != "CRITICAL":
-                level = "WARNING"
+        if flip:
+            if spx_p < flip and direction in ("DOWN", "NONE"):
+                reasons.append(f"Gamma Flip({flip:.1f}) 하회: 음(−) 감마 가속 구간 진입")
+                if level != "CRITICAL":
+                    level = "WARNING"
+            elif spx_p > flip and direction == "UP":
+                reasons.append(f"Gamma Flip({flip:.1f}) 상회 안착: 딜러 숏커버링 가속 구간")
+                if level != "CRITICAL":
+                    level = "WARNING"
 
-    # 3. CVD 패닉 매도 덤핑 체크
+    # 5. CVD 기관 체결 폭발 체크
     if cvd and cvd.get("sell_pct"):
         sell_pct = cvd["sell_pct"]
-        if sell_pct >= 65 and cvd.get("tone") == "bear":
-            reasons.append(f"시장가 매도 압도적 폭발 (Sell 볼륨 {sell_pct}%, {cvd.get('sell_vol')})")
+        buy_pct = cvd["buy_pct"]
+        if sell_pct >= 65 and direction in ("DOWN", "NONE"):
+            reasons.append(f"시장가 매도 압도적 폭발 (Sell {sell_pct}%, {cvd.get('sell_vol')})")
             if level != "CRITICAL":
                 level = "WARNING"
+            if direction == "NONE":
+                direction = "DOWN"
+        elif buy_pct >= 65 and direction in ("UP", "NONE"):
+            reasons.append(f"시장가 공격적 매수 폭발 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
+            if level != "CRITICAL":
+                level = "WARNING"
+            if direction == "NONE":
+                direction = "UP"
 
-    # 4. VIX 급등 체크
+    # 6. VIX 충격 연동
     if vix_q:
-        vix_p = vix_q.get("price")
         vix_pct = vix_q.get("change_pct")
-        if vix_pct and vix_pct >= 5.0:
-            reasons.append(f"VIX 공포지수 급등세 (+{vix_pct:.1f}%, {vix_p:.2f})")
+        vix_p = vix_q.get("price")
+        if vix_pct and vix_pct >= 5.0 and direction in ("DOWN", "NONE"):
+            reasons.append(f"VIX 공포지수 급등 (+{vix_pct:.1f}%, {vix_p:.2f})")
             if level != "CRITICAL":
                 level = "WARNING"
 
-    is_active = len(reasons) > 0
-    title = "🚨 [위험감지] 시장 급락 및 딜러 방어선 붕괴 경보" if level == "CRITICAL" else "⚠️ [위험감지] 하방 변동성 및 매도 압력 주의보"
+    if not reasons:
+        return {"active": False}
+
+    # 양방향 명칭 및 테마 확정
+    if direction == "DOWN":
+        title = "🚨 [하방 충격] 시장 급락 및 지지선 붕괴 경보"
+        theme = "down"
+    elif direction == "UP":
+        title = "🚀 [상방 충격] 숏스퀴즈 및 저항선 돌파 경보"
+        theme = "up"
+    elif direction == "REVERSAL":
+        title = "⚡ [V자 반등] 급락 후 강력한 반발 매수세 감지"
+        theme = "reversal"
+    else:
+        title = "⚠️ [변동성 충격] 실시간 이상 변동성 감지"
+        theme = "neutral"
 
     return {
-        "active": is_active,
+        "active": True,
         "level": level,
+        "direction": direction,
+        "theme": theme,
         "title": title,
+        "start_time": start_time_str or now_et.strftime("%H:%M ET"),
         "details": reasons,
         "timestamp": now_et.strftime("%H:%M:%S ET")
     }
@@ -1573,9 +1640,9 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 시장 급락 및 위험 감지 시스템
+    # 6. [신규] 양방향 변동성 충격 & 모멘텀 서지 감지
     spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
-    risk_alert = guard("risk_alert", detect_market_risk, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
+    risk_alert = guard("risk_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
 
     # 7. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
@@ -1765,7 +1832,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
                 "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
             )
         else:
-            kv_note = "<p style='color:#f59e0b;'>⚠ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
+            kv_note = "<p style='color:#f59e0b;'>⚠️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
 
     manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
         "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
@@ -1783,7 +1850,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
         </button>
         <p style="margin-top:16px;">access_token 은 참고용입니다 (보통 30분만 유효, 따로 저장할 필요 없음 - 앱이 자동으로 갱신합니다):</p>
         <div class="box" style="color:#64748b;">{html_lib.escape(access_token[:40])}... (expires_in: {html_lib.escape(str(expires_in))}초)</div>
-        <p style="margin-top:16px;color:#f59e0b;">⚠ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
+        <p style="margin-top:16px;color:#f59e0b;">⚠️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
         """,
     ))
 
