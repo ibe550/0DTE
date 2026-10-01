@@ -454,7 +454,7 @@ def get_today_econ_events(now_et):
 # 봉(candle) 데이터 (Schwab pricehistory 우선 -> Yahoo chart)
 # ─────────────────────────────────────────────────────────────
 TF_SPEC = {
-    "1m": ("1m", "2d", 1, 2, None),
+    "1m": ("1m", "5d", 1, 5, None),
     "5m": ("5m", "5d", 5, 5, None),
     "10m": ("5m", "5d", 5, 5, 10),
     "15m": ("15m", "5d", 15, 5, None),
@@ -557,27 +557,49 @@ def get_candles(token, inst, tf):
     return cached(f"candles:{inst}:{key}", 10 if key in ("1m", "5m", "10m") else 30, load)
 
 
-def get_rth_session(candles):
+def get_rth_session(candles, now_et=None):
+    """지능형 RTH 세션 셀렉터:
+    - 09:30 ET 이전 (새벽, 프리마켓, 주말): 직전 거래일의 정규장 완성 세션을 유지 반환 (is_prior=True)
+    - 09:30 ET 이후 (장중, 장마감후): 당일 정규장 실시간 세션을 반환 (is_prior=False)
+    """
     if not candles:
-        return []
-    last_dt = datetime.fromtimestamp(candles[-1]["t"], ET)
-    target_date = last_dt.date()
-    open_ts = int(ET.localize(datetime(target_date.year, target_date.month, target_date.day, 9, 30, 0)).timestamp())
-    close_ts = int(ET.localize(datetime(target_date.year, target_date.month, target_date.day, 16, 0, 0)).timestamp())
+        return [], False, None
 
-    rth_bars = [c for c in candles if open_ts <= c["t"] <= close_ts]
-    if rth_bars:
-        return rth_bars
+    if now_et is None:
+        now_et = datetime.now(ET)
 
-    all_dates = sorted(list({datetime.fromtimestamp(c["t"], ET).date() for c in candles}), reverse=True)
-    for d in all_dates:
+    today = now_et.date()
+    is_rth_or_after = (now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30))
+
+    sessions_by_date = OrderedDict()
+    for c in candles:
+        dt = datetime.fromtimestamp(c["t"], ET)
+        d = dt.date()
         d_open = int(ET.localize(datetime(d.year, d.month, d.day, 9, 30, 0)).timestamp())
         d_close = int(ET.localize(datetime(d.year, d.month, d.day, 16, 0, 0)).timestamp())
-        d_bars = [c for c in candles if d_open <= c["t"] <= d_close]
-        if d_bars:
-            return d_bars
+        if d_open <= c["t"] <= d_close:
+            if d not in sessions_by_date:
+                sessions_by_date[d] = []
+            sessions_by_date[d].append(c)
 
-    return [c for c in candles if datetime.fromtimestamp(c["t"], ET).date() == target_date]
+    if not sessions_by_date:
+        return [], False, None
+
+    all_dates = sorted(sessions_by_date.keys())
+
+    # 1. 09:30 이후이고 오늘 캔들이 들어오기 시작한 경우 -> 오늘 실시간 세션
+    if is_rth_or_after and today in sessions_by_date and sessions_by_date[today]:
+        return sessions_by_date[today], False, today.strftime("%m/%d")
+
+    # 2. 09:30 이전이거나 오늘 캔들이 아직 없는 경우 -> 가장 최근 완료된 직전 세션 (어제 등)
+    prior_dates = [d for d in all_dates if d < today]
+    if prior_dates:
+        target_date = prior_dates[-1]
+        return sessions_by_date[target_date], True, target_date.strftime("%m/%d")
+
+    target_date = all_dates[-1]
+    is_prior = (target_date < today) or (target_date == today and not is_rth_or_after)
+    return sessions_by_date[target_date], is_prior, target_date.strftime("%m/%d")
 
 
 def et_label(ts):
@@ -639,10 +661,10 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD (A/D Pressure Model, 09:30~ Session)
+# VWAP / Volume Profile / CVD (개장 전 전일 세션 유지 & 09:30 자동 리셋)
 # ─────────────────────────────────────────────────────────────
-def compute_vwap(spy_candles, ratio, source):
-    sess = get_rth_session(spy_candles)
+def compute_vwap(spy_candles, ratio, source, now_et=None):
+    sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
     if not sess or not ratio:
         return None
     cum_v = cum_tp = cum_tp2 = 0.0
@@ -665,6 +687,7 @@ def compute_vwap(spy_candles, ratio, source):
         l2.append(round(vwap - 2 * sd, 2))
     if not series:
         return None
+    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
     return {
         "val": series[-1],
         "sigma": round(sd, 2),
@@ -674,12 +697,13 @@ def compute_vwap(spy_candles, ratio, source):
         "upper2": u2,
         "lower2": l2,
         "data_time": et_label(sess[-1]["t"]),
-        "source": f"{source} x SPX/SPY 환산 · 당일 정규장 VWAP · 밴드=거래량가중 표준편차",
+        "is_prior": is_prior,
+        "source": f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 VWAP · 밴드=거래량가중 표준편차",
     }
 
 
-def compute_volume_profile(spy_candles, ratio, source):
-    sess = get_rth_session(spy_candles)
+def compute_volume_profile(spy_candles, ratio, source, now_et=None):
+    sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
     if not sess or not ratio:
         return None
 
@@ -740,34 +764,29 @@ def compute_volume_profile(spy_candles, ratio, source):
             lo_i -= 1
             cur += dn
 
-    start_ts = sess[0]["t"]
-    last_bar_end_ts = sess[-1]["t"] + 5 * 60
-    hours_covered = (last_bar_end_ts - start_ts) / 3600.0
-    sess_date = datetime.fromtimestamp(start_ts, ET).strftime("%m/%d")
-
-    end_label = et_time_sec(last_bar_end_ts)
-    if end_label.startswith("16:00"):
-        end_label += " (마감)"
+    start_ts, end_ts = sess[0]["t"], sess[-1]["t"]
+    hours_covered = (end_ts - start_ts) / 3600.0
+    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
 
     return {
         "val": float(keys[lo_i]),
         "poc": float(poc),
         "vah": float(keys[hi_i]),
         "hours_covered": round(hours_covered, 1),
+        "is_prior": is_prior,
         "source": (
-            f"{source} x SPX/SPY 환산 · {sess_date} 정규장 (09:30~{end_label}) · "
+            f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 (09:30~{et_time_sec(end_ts)}) · "
             f"5pt 구간 · 70% Value Area · 몸통 가중치 프로파일"
         ),
     }
 
 
-def compute_cvd(candles, tf_key, source, symbol="SPY"):
+def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
-    tf_min = TF_MINUTES.get(tf_key, 10)
 
-    bars = get_rth_session(candles)
+    bars, is_prior, sess_date = get_rth_session(candles, now_et)
     if not bars:
         return None
 
@@ -809,44 +828,40 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
 
     if buy_pct >= 60:
         status, tone = "Buying Pressure", "bull"
-        text = f"Strong buying pressure – {buy_pct}% buy volume in regular session."
+        text = f"Strong buying pressure – {buy_pct}% buy volume in session."
     elif buy_pct >= 53:
         status, tone = "Buying Pressure", "bull"
-        text = f"Moderate buying pressure – {buy_pct}% buy volume in regular session."
+        text = f"Moderate buying pressure – {buy_pct}% buy volume in session."
     elif buy_pct > 47:
         status, tone = "Balanced", "flat"
-        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% in regular session."
+        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% in session."
     elif buy_pct > 40:
         status, tone = "Selling Pressure", "bear"
-        text = f"Moderate selling pressure – {sell_pct}% sell volume in regular session."
+        text = f"Moderate selling pressure – {sell_pct}% sell volume in session."
     else:
         status, tone = "Selling Pressure", "bear"
-        text = f"Strong selling pressure – {sell_pct}% sell volume in regular session."
+        text = f"Strong selling pressure – {sell_pct}% sell volume in session."
 
-    start_ts = bars[0]["t"]
-    last_bar_start_ts = bars[-1]["t"]
-    last_bar_end_ts = last_bar_start_ts + tf_min * 60
+    start_ts, end_ts = bars[0]["t"], bars[-1]["t"]
+    if is_prior:
+        aggregate_range = f"{sess_date} 전일 정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉 · [09:30 ET 자동 리셋]"
+        status_suffix = " (전일 마감)"
+    else:
+        aggregate_range = f"{sess_date} 정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉"
+        status_suffix = ""
 
-    sess_date = datetime.fromtimestamp(start_ts, ET).strftime("%m/%d")
-    end_time_label = et_time_sec(last_bar_end_ts)
-    if end_time_label.startswith("16:00"):
-        end_time_label += " (마감)"
-
-    aggregate_range = f"{sess_date} 정규장 (09:30 ~ {end_time_label}) · {len(bars)}개 {tf_label} 봉"
+    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
     data_desc = (
-        f"{symbol} 정규장(09:30~) · {source} · "
+        f"{symbol} {prefix}정규장(09:30~) · {source} · "
         f"A/D 체결 압력(고저-종가 가중) 기반 정밀 CVD"
     )
-
-    last_time_label = f"{datetime.fromtimestamp(last_bar_start_ts, ET).strftime('%H:%M')} ~ {datetime.fromtimestamp(last_bar_end_ts, ET).strftime('%H:%M ET')}"
-    if last_bar_end_ts >= ET.localize(datetime.fromtimestamp(last_bar_start_ts, ET).replace(hour=16, minute=0, second=0)).timestamp():
-        last_time_label += " (마감)"
-
     return {
-        "source": source,
-        "data_time": et_label_sec(last_bar_start_ts),
-        "last_bar_time": last_time_label,
-        "status": status,
+        "source": f"{source} {'· [전일 마감 기준]' if is_prior else ''}",
+        "data_time": et_label_sec(bars[-1]["t"]),
+        "last_bar_time": et_time_sec(bars[-1]["t"]),
+        "is_prior": is_prior,
+        "session_date": sess_date,
+        "status": f"{status}{status_suffix}",
         "tone": tone,
         "aggregate_range": aggregate_range,
         "data_desc": data_desc,
@@ -857,7 +872,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
         "recent_vol": fmt_vol(bars[-1]["v"]),
         "total_vol": fmt_vol(total),
         "bars": out,
-        "summary_text": text,
+        "summary_text": text + (" (※ 09:30 ET 개장 전으로 전일 정규장 마감 데이터가 표시 중입니다)" if is_prior else ""),
     }
 
 
@@ -1446,16 +1461,20 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
             return spx_p / spy_data["candles"][-1]["c"]
         return None
 
-    vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
+    # 1. VWAP (개장 전 전일 마감 세션 유지 / 09:30 자동 리셋)
+    vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"], now_et) if spy_v else None
 
+    # 2. Volume Profile (개장 전 전일 마감 세션 유지 / 09:30 자동 리셋)
     spy_vp = spy_dir_c.get("5m")
     vp = (
-        guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"])
+        guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"], now_et)
         if (spy_vp and ratio_for(spy_vp)) else None
     )
 
-    cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY") if spy_c else None
+    # 3. CVD (개장 전 전일 마감 세션 유지 / 09:30 자동 리셋)
+    cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
 
+    # 4. RSI 계산
     rsi = None
     if spx_r:
         rs = rsi_series([c["c"] for c in spx_r["candles"]])
@@ -1468,6 +1487,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
                 "source": f"{spx_r['source']} · Wilder RSI(14)",
             }
 
+    # 5. 실시간 방향 분석 계산
     tf_results, tf_sources = {}, {}
     for k in ("1h", "15m", "5m", "1m"):
         d = spy_dir_c.get(k)
@@ -1482,6 +1502,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
+    # 6. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
     def yield_level_and_change(q):
@@ -1686,7 +1707,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
         </button>
         <p style="margin-top:16px;">access_token 은 참고용입니다 (보통 30분만 유효, 따로 저장할 필요 없음 - 앱이 자동으로 갱신합니다):</p>
         <div class="box" style="color:#64748b;">{html_lib.escape(access_token[:40])}... (expires_in: {html_lib.escape(str(expires_in))}초)</div>
-        <p style="margin-top:16px;color:#f59e0b;">⚠️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
+        <p style="margin-top:16px;color:#f59e0b;">⚠ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
         """,
     ))
 
