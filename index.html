@@ -23,20 +23,21 @@
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
     <!-- Tailwind CDN 동적 클래스 등록 -->
-    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-amber-500 bg-rose-900/40 bg-amber-900/40"></div>
+    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80"></div>
 
-    <!-- 0. [신규] 앱 최상단 긴급 위험감지 경보 배너 (평소엔 숨김 / 급락 시 자동 팝업) -->
-    <div id="risk-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 border-rose-500 bg-rose-950/90 shadow-lg shadow-rose-950/60 transition-all duration-300">
+    <!-- 0. [신규] 최상단 실시간 변동성 쇼크 (양방향 급등/급락 경보 배너) -->
+    <div id="shock-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 shadow-lg transition-all duration-300">
         <div class="flex items-center justify-between mb-1">
-            <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black text-rose-200">
-                <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping inline-block mr-1"></span>
-                <span id="risk-alert-title">🚨 [위험감지] 시장 급락 및 패닉 덤핑 경보</span>
+            <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight" id="shock-alert-head">
+                <span id="shock-alert-dot" class="w-2.5 h-2.5 rounded-full animate-ping inline-block mr-1"></span>
+                <span id="shock-alert-title">⚡ [변동성 쇼크] 실시간 급변동 감지</span>
             </span>
-            <span id="risk-alert-time" class="text-[9px] font-mono text-rose-300 bg-rose-900/80 px-1.5 py-0.5 rounded">--</span>
+            <div class="flex items-center space-x-1.5">
+                <span id="shock-alert-elapsed" class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded">--</span>
+                <span id="shock-alert-time" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-400">--</span>
+            </div>
         </div>
-        <div class="text-[10px] text-rose-200 pl-4 border-l-2 border-rose-500/80 my-1 space-y-0.5" id="risk-alert-reasons">
-            <!-- 감지 사유들이 동적으로 추가됨 -->
-        </div>
+        <div class="text-[10px] pl-3 border-l-2 my-1 space-y-0.5" id="shock-alert-reasons"></div>
     </div>
 
     <!-- 1. 헤더 -->
@@ -46,7 +47,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.5</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.6</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -351,7 +352,7 @@
         </div>
     </div>
 
-    <!-- 9. SPY VOLUME + CVD (30분 단위 초정밀 눈금: 09:30, 10:00, 10:30 ... 16:00) -->
+    <!-- 9. SPY VOLUME + CVD (30분 단위 초정밀 눈금) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -391,19 +392,16 @@
 
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-2">
             <svg id="cvd-bars-svg" class="w-full h-38 md:h-44" viewBox="0 0 500 134" preserveAspectRatio="none">
-                <!-- 가로 기준선 -->
                 <line x1="35" y1="20" x2="480" y2="20" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
                 <line x1="35" y1="65" x2="480" y2="65" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
                 <line x1="35" y1="110" x2="480" y2="110" stroke="#1e293b" stroke-width="1"/>
                 
-                <!-- 30분 단위 초정밀 눈금선 & 시간 텍스트 -->
                 <g id="cvd-vertical-grids"></g>
 
                 <text id="cvd-y-max" x="30" y="23" fill="#64748b" font-size="8" text-anchor="end">--</text>
                 <text id="cvd-y-mid" x="30" y="68" fill="#64748b" font-size="8" text-anchor="end">--</text>
                 <text x="30" y="113" fill="#64748b" font-size="8" text-anchor="end">0</text>
                 
-                <!-- 실제 캔들 바 그룹 -->
                 <g id="cvd-real-bars"></g>
                 <path id="cvd-line-path" d="" fill="none" stroke="#eab308" stroke-width="1.5"/>
             </svg>
@@ -626,25 +624,56 @@
             if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
         }
 
-        // [신규] 최상단 긴급 위험감지 배너 렌더러
-        function renderRiskAlert(alert) {
-            const banner = $('risk-alert-banner');
+        // [신규] 실시간 변동성 쇼크 렌더러 (양방향 급등/급락 + 시작 시간 + 경과)
+        function renderShockAlert(alert) {
+            const banner = $('shock-alert-banner');
             if (!banner) return;
             if (!alert || !alert.active) {
                 banner.classList.add('hidden');
                 return;
             }
             banner.classList.remove('hidden');
-            setText('risk-alert-title', alert.title || '🚨 [위험감지] 시장 급락 및 변동성 경보');
-            setText('risk-alert-time', alert.timestamp || '');
+            setText('shock-alert-title', alert.title || '⚡ [변동성 쇼크] 급변동 감지');
+            setText('shock-alert-time', alert.timestamp || '');
 
-            const isCritical = alert.level === 'CRITICAL';
-            banner.className = `card mb-2 p-2.5 md:p-3 border-2 ${isCritical ? 'border-rose-500 bg-rose-950/90 shadow-rose-950/60' : 'border-amber-500 bg-amber-950/90 shadow-amber-950/60'} shadow-lg transition-all duration-300`;
+            const isSurge = alert.type === 'SURGE';
+            const isDrop = alert.type === 'DROP';
 
-            const list = $('risk-alert-reasons');
+            // 색상 테마 분기: 급락(Rose) / 급등(Emerald) / 기타 변동성(Purple)
+            if (isSurge) {
+                banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-emerald-500 bg-emerald-950/90 shadow-lg shadow-emerald-950/60 transition-all duration-300';
+                $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping inline-block mr-1';
+                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-emerald-200';
+                $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-emerald-500/80 my-1 space-y-0.5 text-emerald-200';
+                if (alert.elapsed_text) {
+                    $('shock-alert-elapsed').className = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-900/80 text-emerald-200';
+                    setText('shock-alert-elapsed', alert.elapsed_text);
+                }
+            } else if (isDrop) {
+                banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-rose-500 bg-rose-950/90 shadow-lg shadow-rose-950/60 transition-all duration-300';
+                $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping inline-block mr-1';
+                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-rose-200';
+                $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-rose-500/80 my-1 space-y-0.5 text-rose-200';
+                if (alert.elapsed_text) {
+                    $('shock-alert-elapsed').className = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200';
+                    setText('shock-alert-elapsed', alert.elapsed_text);
+                }
+            } else {
+                banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-purple-500 bg-purple-950/90 shadow-lg shadow-purple-950/60 transition-all duration-300';
+                $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-purple-400 animate-ping inline-block mr-1';
+                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-purple-200';
+                $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-purple-500/80 my-1 space-y-0.5 text-purple-200';
+                if (alert.elapsed_text) {
+                    $('shock-alert-elapsed').className = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-900/80 text-purple-200';
+                    setText('shock-alert-elapsed', alert.elapsed_text);
+                }
+            }
+
+            const list = $('shock-alert-reasons');
             if (list) {
                 const details = alert.details || [];
-                list.innerHTML = details.map((d) => `<div class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full ${isCritical ? 'bg-rose-400' : 'bg-amber-400'} inline-block"></span><span class="font-bold">${d}</span></div>`).join('');
+                const dotColor = isSurge ? 'bg-emerald-400' : (isDrop ? 'bg-rose-400' : 'bg-purple-400');
+                list.innerHTML = details.map((d) => `<div class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full ${dotColor} inline-block"></span><span class="font-bold">${d}</span></div>`).join('');
             }
         }
 
@@ -803,7 +832,9 @@
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
+                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
+                $('cvd-vertical-grids').innerHTML = '';
                 if (priorBadge) priorBadge.classList.add('hidden');
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
@@ -811,7 +842,6 @@
             }
             cachedBars = c.bars || [];
             
-            // 세션 상태 배지 렌더링
             if (priorBadge) {
                 priorBadge.classList.remove('hidden');
                 if (c.is_prior) {
@@ -882,7 +912,7 @@
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            // 매 30분 단위 초정밀 눈금선 & 16:00 마감 렌더링
+            // 30분 단위 눈금 및 16:00 마감선
             const gridGroup = $('cvd-vertical-grids');
             if (!bars.length) { 
                 gridGroup.innerHTML = '';
@@ -1049,7 +1079,7 @@
                 if (data.status !== 'success') throw new Error('API status ' + data.status);
 
                 const blocks = [
-                    () => renderRiskAlert(data.risk_alert),
+                    () => renderShockAlert(data.shock_alert),
                     () => renderStatus(data),
                     () => renderEconEvents(data.econ_events),
                     () => renderQuote('spx', data.spx, { pct: true }),
