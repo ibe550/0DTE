@@ -802,7 +802,7 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile (개선: 당일 정규장 세션 + SPY 환산 + 몸통 가중치)
+# VWAP / Volume Profile / CVD (A/D Pressure Model, 09:30~ Session)
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source):
     sess = get_rth_session(spy_candles)
@@ -842,9 +842,6 @@ def compute_vwap(spy_candles, ratio, source):
 
 
 def compute_volume_profile(spy_candles, ratio, source):
-    """당일 정규장(09:30 ET ~ 현재) Schwab SPY 거래량을 SPX 가격으로 직접 환산하여 집계하는 세션 프로파일.
-    선물 베이시스 오차와 24시간 롤링 윈도우의 POC 급변 왜곡을 제거하고 캔들 몸통 가중치를 적용합니다.
-    """
     sess = get_rth_session(spy_candles)
     if not sess or not ratio:
         return None
@@ -857,7 +854,6 @@ def compute_volume_profile(spy_candles, ratio, source):
         if v <= 0:
             continue
 
-        # SPX 가격대로 1:1 환산
         lo = c["l"] * ratio
         hi = c["h"] * ratio
         op = c["o"] * ratio
@@ -866,21 +862,19 @@ def compute_volume_profile(spy_candles, ratio, source):
         if hi < lo:
             lo, hi = hi, lo
 
-        # 5pt 단위 버킷팅
         lo_b = int(round(lo / 5.0)) * 5
         hi_b = int(round(hi / 5.0)) * 5
         rng = list(range(lo_b, hi_b + 5, 5))
         if not rng:
             continue
 
-        # 캔들 몸통(Body) vs 꼬리(Wick) 가중치 분배 (꼬리 거절 자리의 가짜 POC 형성 방지)
         body_lo = min(op, cl)
         body_hi = max(op, cl)
 
         weights = []
         for b in rng:
             if body_lo - 2.5 <= b <= body_hi + 2.5:
-                weights.append(2.5)  # 몸통 구간 2.5배 가중치
+                weights.append(2.5)
             else:
                 weights.append(1.0)
 
@@ -1013,7 +1007,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
 
 
 # ─────────────────────────────────────────────────────────────
-# GEX (옵션 체인 기반)
+# GEX (0DTE 최적화: SPX/SPXW 실시간 Volume+OI 결합 & 진짜 Gamma Wall)
 # ─────────────────────────────────────────────────────────────
 def bs_gamma(S, K, T, sigma, r=0.0):
     if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
@@ -1063,10 +1057,13 @@ def parse_schwab_chain(data, exp_date):
                     if K is None:
                         continue
                     iv = num(o.get("volatility"))
+                    oi = num(o.get("openInterest")) or 0.0
+                    vol = num(o.get("totalVolume")) or num(o.get("volume")) or 0.0
                     contracts.append({
                         "K": K,
                         "side": side,
-                        "oi": num(o.get("openInterest")) or 0.0,
+                        "oi": oi,
+                        "vol": vol,
                         "iv": _valid_iv(iv / 100.0) if iv is not None else None,
                         "gamma": _valid_gamma(o.get("gamma")),
                         "bid": num(o.get("bid")),
@@ -1077,15 +1074,16 @@ def parse_schwab_chain(data, exp_date):
 
 
 def fetch_schwab_chain(token, today_date):
+    """0DTE 완벽 대응: 1차로 $SPX 조회 후, 오늘 만기가 누락되면 $SPXW 로 즉시 2차 조회."""
     if not token:
         return None, {"reason": "토큰 없음"}
 
-    def ask(from_date, to_date, strike_count):
+    def ask(sym, from_date, to_date, strike_count):
         return schwab_get(
             token,
             "/chains",
             {
-                "symbol": "$SPX",
+                "symbol": sym,
                 "contractType": "ALL",
                 "strikeCount": strike_count,
                 "includeUnderlyingQuote": "false",
@@ -1096,24 +1094,39 @@ def fetch_schwab_chain(token, today_date):
         )
 
     today_str = today_date.isoformat()
-    data = ask(today_date, today_date, 80)
+    # 1차: $SPX 로 160개 스트라이크 조회 (넓은 범위 확보)
+    data = ask("$SPX", today_date, today_date, 160)
     exps = _chain_exps(data)
+    used_sym = "$SPX"
+
+    # 2차: 만약 $SPX 에 오늘 만기가 없다면 $SPXW 로 재조회
+    if today_str not in exps:
+        data_spxw = ask("$SPXW", today_date, today_date, 160)
+        exps_spxw = _chain_exps(data_spxw)
+        if today_str in exps_spxw:
+            data = data_spxw
+            exps = exps_spxw
+            used_sym = "$SPXW"
+
     single_day_had_today = today_str in exps
     widened = False
     if not single_day_had_today:
         widened = True
-        wide = ask(today_date, today_date + timedelta(days=7), 30)
+        wide = ask("$SPX", today_date, today_date + timedelta(days=7), 40)
         wide_exps = _chain_exps(wide)
         if wide_exps:
             data, exps = wide, wide_exps
+
     diag = {
         "requested_date": today_str,
         "single_day_query_had_today": single_day_had_today,
+        "used_symbol": used_sym,
         "widened_to_7d": widened,
         "all_expirations_seen": exps[:10],
     }
     if not exps:
         return None, diag
+
     exp = today_str if today_str in exps else exps[0]
     contracts = parse_schwab_chain(data, exp)
     return (contracts, exp) if contracts else None, diag
@@ -1142,6 +1155,7 @@ def fetch_yahoo_chain(start_date):
                     "K": K,
                     "side": side,
                     "oi": num(row.get("openInterest")) or 0.0,
+                    "vol": num(row.get("volume")) or 0.0,
                     "iv": _valid_iv(row.get("impliedVolatility")),
                     "gamma": None,
                     "bid": num(row.get("bid")),
@@ -1176,18 +1190,21 @@ def atm_straddle(contracts, S):
 
 
 def gamma_flip_level(contracts, S, T):
-    prof = [c for c in contracts if c["iv"] and c["oi"] > 0 and abs(c["K"] / S - 1.0) <= 0.05]
+    """0DTE 장 후반에도 감마 특이점이 터지지 않도록 안정화된 Zero-Crossing 탐색."""
+    prof = [c for c in contracts if c["iv"] and (c["oi"] > 0 or c.get("vol", 0) > 0) and abs(c["K"] / S - 1.0) <= 0.06]
     if len(prof) < 6:
         return None, None
-    pts = 41
-    grid = [S * (0.97 + 0.06 * i / (pts - 1)) for i in range(pts)]
+    pts = 61
+    grid = [S * (0.96 + 0.08 * i / (pts - 1)) for i in range(pts)]
     vals = []
     for s in grid:
         tot = 0.0
         for c in prof:
-            d = bs_gamma(s, c["K"], T, c["iv"]) * c["oi"] * 100.0 * s * s * 0.01
+            eff_qty = max(c["oi"], c.get("vol", 0.0))
+            d = bs_gamma(s, c["K"], T, c["iv"]) * eff_qty * 100.0 * s * s * 0.01
             tot += d if c["side"] == "C" else -d
         vals.append(tot)
+
     crossings = []
     for i in range(len(grid) - 1):
         a, b = vals[i], vals[i + 1]
@@ -1195,9 +1212,10 @@ def gamma_flip_level(contracts, S, T):
             crossings.append(grid[i])
         elif a * b < 0:
             crossings.append(grid[i] + (grid[i + 1] - grid[i]) * (a / (a - b)))
+
     if crossings:
         return min(crossings, key=lambda x: abs(x - S)), None
-    return None, ("±3% 범위 안에 전환점 없음 - 전 구간 양(+) 감마" if vals[0] > 0 else "±3% 범위 안에 전환점 없음 - 전 구간 음(−) 감마")
+    return None, ("전 구간 양(+) 감마 우세" if vals[0] > 0 else "전 구간 음(−) 감마 우세")
 
 
 def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
@@ -1205,9 +1223,12 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     y, m, d = (int(x) for x in exp_date.split("-"))
     exp_dt = ET.localize(datetime(y, m, d, 16, 0))
     secs = (exp_dt - now_et).total_seconds()
-    T = max(secs, 300.0) / SECONDS_PER_YEAR
 
-    use = [c for c in contracts if 0.9 * S <= c["K"] <= 1.1 * S and c["oi"] > 0]
+    # 장 후반(15:30~) 블랙숄즈 감마 특이점 붕괴 방지: 최소 30분(1800초)의 스무딩 바닥값 적용
+    T = max(secs, 1800.0) / SECONDS_PER_YEAR
+
+    # 0DTE 실시간 반영: OI와 당일 거래량 중 큰 값을 유효 계약수로 선정
+    use = [c for c in contracts if 0.88 * S <= c["K"] <= 1.12 * S and (c["oi"] > 0 or c.get("vol", 0) > 0)]
     if len(use) < 6:
         return None
 
@@ -1219,34 +1240,51 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         if g:
             gamma_from_schwab += 1 if raw_g else 0
             gamma_from_calc += 0 if raw_g else 1
-        e = per.setdefault(c["K"], {"call_gex": 0.0, "put_gex": 0.0, "call_oi": 0.0, "put_oi": 0.0,
-                                     "call_gamma": None, "put_gamma": None, "call_iv": None, "put_iv": None})
+
+        e = per.setdefault(c["K"], {
+            "call_gex": 0.0, "put_gex": 0.0,
+            "call_oi": 0.0, "put_oi": 0.0,
+            "call_vol": 0.0, "put_vol": 0.0,
+            "call_gamma": None, "put_gamma": None,
+            "call_iv": None, "put_iv": None
+        })
+
+        eff_qty = max(c["oi"], c.get("vol", 0.0))
+
         if c["side"] == "C":
             e["call_oi"] += c["oi"]
+            e["call_vol"] += c.get("vol", 0.0)
             e["call_iv"] = c["iv"] if e["call_iv"] is None else e["call_iv"]
         else:
             e["put_oi"] += c["oi"]
+            e["put_vol"] += c.get("vol", 0.0)
             e["put_iv"] = c["iv"] if e["put_iv"] is None else e["put_iv"]
-        if not g:
+
+        if not g or eff_qty <= 0:
             continue
-        dg = g * c["oi"] * 100.0 * S * S * 0.01
+
+        dg = g * eff_qty * 100.0 * S * S * 0.01
         if c["side"] == "C":
             e["call_gex"] += dg
             e["call_gamma"] = g
         else:
             e["put_gex"] -= dg
             e["put_gamma"] = g
+
     if not per:
         return None
+
     gamma_source_note = (
-        f"감마 {gamma_from_schwab}개는 Schwab 제공값, {gamma_from_calc}개는 자체 계산(Black-Scholes)값"
+        f"감마 {gamma_from_schwab}개는 Schwab 제공값, {gamma_from_calc}개는 BS 실시간 계산값"
         if (gamma_from_schwab or gamma_from_calc) else None
     )
 
-    above = [k for k, e in per.items() if k >= S and e["call_oi"] > 0] or [k for k, e in per.items() if e["call_oi"] > 0]
-    below = [k for k, e in per.items() if k <= S and e["put_oi"] > 0] or [k for k, e in per.items() if e["put_oi"] > 0]
-    call_wall = max(above, key=lambda k: per[k]["call_oi"]) * scale if above else None
-    put_wall = max(below, key=lambda k: per[k]["put_oi"]) * scale if below else None
+    # 진짜 감마 벽(Gamma Wall): 단순 OI 가 아니라 실시간 Net GEX 의 크기가 최대인 핵심 방어선
+    calls_with_gex = [k for k, e in per.items() if e["call_gex"] > 0]
+    puts_with_gex = [k for k, e in per.items() if e["put_gex"] < 0]
+
+    call_wall = max(calls_with_gex, key=lambda k: per[k]["call_gex"]) * scale if calls_with_gex else None
+    put_wall = min(puts_with_gex, key=lambda k: per[k]["put_gex"]) * scale if puts_with_gex else None
 
     net_total = sum(e["call_gex"] + e["put_gex"] for e in per.values())
     flip, flip_note = gamma_flip_level(use, S, T)
@@ -1261,6 +1299,8 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
             "strike": round(K * scale, 1),
             "call_oi": int(e["call_oi"]),
             "put_oi": int(e["put_oi"]),
+            "call_vol": int(e["call_vol"]),
+            "put_vol": int(e["put_vol"]),
             "call_iv": round(e["call_iv"] * 100, 1) if e["call_iv"] else None,
             "put_iv": round(e["put_iv"] * 100, 1) if e["put_iv"] else None,
             "call_gamma": round(e["call_gamma"], 5) if e["call_gamma"] else None,
@@ -1269,6 +1309,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
             "put_gex_m": round(e["put_gex"] / 1e6, 1),
             "net_gex_m": round(net_m, 1),
         })
+
     oi_above_call = sum(e["call_oi"] for k, e in per.items() if k >= S)
     oi_above_put = sum(e["put_oi"] for k, e in per.items() if k >= S)
     oi_below_call = sum(e["call_oi"] for k, e in per.items() if k < S)
@@ -1287,8 +1328,8 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         "expected_move": f"±{em_pt:.1f}pt ({em_pt / spot * 100:.2f}%)" if em_pt else None,
         "net_gex": fmt_dollars(net_total),
         "regime": "positive" if net_total >= 0 else "negative",
-        "regime_text": ("양(+) 감마 우세 - 딜러 헤지가 변동성을 누르는 경향" if net_total >= 0
-                        else "음(−) 감마 우세 - 딜러 헤지가 움직임을 키우는 경향"),
+        "regime_text": ("양(+) 감마 우세 - 딜러 헤지가 변동성을 누르는 구간" if net_total >= 0
+                        else "음(−) 감마 우세 - 딜러 헤지가 변동성을 증폭시키는 구간"),
         "strike_count": len(per),
         "by_strike": by_strike,
         "gamma_source_note": gamma_source_note,
@@ -1314,7 +1355,8 @@ def get_gex(token, spx_p, ratio, now_et):
     def load():
         r, diag = fetch_schwab_chain(token, start)
         if r:
-            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} 옵션체인 (SPX/SPXW 단일 만기 {r[1]})", diag)
+            sym_tag = diag.get("used_symbol", "$SPX")
+            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {sym_tag} 체인 (실시간 Volume+OI 결합 GEX)", diag)
             if res:
                 return res
         if ratio:
@@ -1322,14 +1364,14 @@ def get_gex(token, spx_p, ratio, now_et):
             if ry:
                 res = analyze_gex(
                     ry[0], spx_p, ratio, ry[1], now_et,
-                    f"{SRC_YAHOO} SPY 옵션체인 (단일 만기 {ry[1]}) x SPX/SPY {ratio:.3f} 환산 · 근사치",
+                    f"{SRC_YAHOO} SPY 체인 (단일 만기 {ry[1]}) x SPX/SPY 환산 · 근사치",
                     diag,
                 )
                 if res:
                     return res
         return gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)", diag)
 
-    return cached("gex", 20, load) or gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)")
+    return cached("gex", 15, load) or gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1358,15 +1400,12 @@ def analyze_tf(candles):
     e13 = ema_series(closes, 13)
     e21 = ema_series(closes, 21)
 
-    # 1. 단기 이평선 정배열/역배열 (+3 ~ -3)
     p_vs_e5 = 1.0 if closes[-1] > e5[-1] else -1.0
     e5_vs_e13 = 1.0 if e5[-1] > e13[-1] else -1.0
     e13_vs_e21 = 1.0 if e13[-1] > e21[-1] else -1.0
 
-    # 2. EMA 5의 즉각적 기울기 (최근 2개 봉) (+1 ~ -1)
     e5_slope = 1.0 if (len(e5) >= 2 and e5[-1] > e5[-2]) else -1.0
 
-    # 3. 최근 캔들의 마감 압력 & 급락/급등 캔들 판정 (+1.5 ~ -1.5)
     last_c = candles[-1]
     rng = last_c["h"] - last_c["l"]
     body = last_c["c"] - last_c["o"]
@@ -1379,7 +1418,6 @@ def analyze_tf(candles):
         else:
             bar_imp = 0.5 if body > 0 else -0.5
 
-    # 4. 빠른 RSI (9) 모멘텀 (+1 ~ -1)
     rs = rsi_series(closes, period=9)
     rsi_val = rs[-1] if rs else 50.0
     rsi_score = 1.0 if rsi_val >= 55 else (-1.0 if rsi_val <= 45 else 0.0)
@@ -1412,8 +1450,8 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
         ev.append({"title": "CVD 볼륨 압력", "signal": "na", "text": "N/A"})
 
     if len(c1h) >= 6:
-        h3, h6 = max(c["h"] for c in c1h[-3:]), max(c["h"] for c in c1h[-6:-3])
-        l3, l6 = min(c["l"] for c in c1h[-3:]), min(c["l"] for c in c1h[-6:-3])
+        h3, h6 = max(c["h"] for c1h_bar in c1h[-3:] for c in [c1h_bar]), max(c["h"] for c1h_bar in c1h[-6:-3] for c in [c1h_bar])
+        l3, l6 = min(c["l"] for c1h_bar in c1h[-3:] for c in [c1h_bar]), min(c["l"] for c1h_bar in c1h[-6:-3] for c in [c1h_bar])
         if h3 > h6 and l3 > l6:
             sig, txt = "bull", "최근 고점과 저점이 함께 높아지는 상승 구조"
         elif h3 < h6 and l3 < l6:
@@ -1442,7 +1480,6 @@ def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=N
     wsum = sum(DIR_WEIGHTS[k] for k in avail)
     raw_score = sum(DIR_WEIGHTS[k] * avail[k]["score"] for k in avail) / wsum
 
-    # VWAP 및 CVD 페널티/부스트 직접 적용 (주가가 VWAP 밑에 있거나 CVD가 Sell일 때 상승 우세 차단)
     score = raw_score
     if vwap_diff is not None:
         if vwap_diff < -1.0:
@@ -1557,17 +1594,17 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
             return spx_p / spy_data["candles"][-1]["c"]
         return None
 
-    # 1. VWAP 계산
+    # 1. 당일 정규장 VWAP 계산
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
 
-    # 2. Volume Profile 계산 (당일 정규장 세션 + Schwab SPY 직접 스케일링)
+    # 2. 당일 정규장 Volume Profile (SPY 기반 환산 및 몸통 가중치)
     spy_vp = spy_dir_c.get("5m")
     vp = (
         guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"])
         if (spy_vp and ratio_for(spy_vp)) else None
     )
 
-    # 3. CVD 계산
+    # 3. 당일 정규장 CVD 계산
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY") if spy_c else None
 
     # 4. RSI 계산
