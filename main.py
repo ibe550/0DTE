@@ -617,20 +617,22 @@ def get_news(now_et):
 # ─────────────────────────────────────────────────────────────
 # 봉(candle) 데이터 (Schwab pricehistory 우선 -> Yahoo chart)
 # ─────────────────────────────────────────────────────────────
+# 10m은 5분봉 2개를 정규장(09:30) 기준으로 합쳐서 완벽히 산출합니다.
 TF_SPEC = {
     "1m": ("1m", "2d", 1, 2, None),
     "5m": ("5m", "5d", 5, 5, None),
+    "10m": ("5m", "5d", 5, 5, 10),
     "15m": ("15m", "5d", 15, 5, None),
     "30m": ("30m", "5d", 30, 5, None),
     "1h": ("60m", "1mo", 30, 10, 60),
 }
-TF_LABEL = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H"}
+TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
 INSTR = {"spx": ("$SPX", "^GSPC"), "spy": ("SPY", "SPY"), "es": (None, "ES=F")}
 
 
 def normalize_tf(tf):
     key = str(tf or "").strip().lower()
-    return key if key in TF_SPEC else "5m"
+    return key if key in TF_SPEC else "10m"
 
 
 def yahoo_candles(symbol, interval, range_str):
@@ -682,6 +684,9 @@ def schwab_candles(token, symbol, freq, days):
 
 
 def aggregate_candles(candles, minutes):
+    """분봉을 미국 정규장 시작(09:30 ET = 570분) 기준으로 minutes 단위 봉으로 정확히 합칩니다.
+    10분봉일 경우 15:50~16:00 이 단독 1개 봉으로 완벽히 분리됩니다.
+    """
     groups = OrderedDict()
     for cd in candles:
         dt = datetime.fromtimestamp(cd["t"], ET)
@@ -711,16 +716,16 @@ def get_candles(token, inst, tf):
                 return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
         cs = yahoo_candles(ysym, y_int, y_rng)
         if cs:
-            return {"candles": cs, "source": f"{SRC_YAHOO} ({ysym} {y_int})"}
+            if agg:
+                cs = aggregate_candles(cs, agg)
+            return {"candles": cs, "source": f"{SRC_YAHOO} ({ysym} {TF_LABEL[key]})"}
         return None
 
-    return cached(f"candles:{inst}:{key}", 10 if key in ("1m", "5m") else 30, load)
+    return cached(f"candles:{inst}:{key}", 10 if key in ("1m", "5m", "10m") else 30, load)
 
 
 def get_rth_session(candles):
-    """당일 미국 정규장(09:30 ET ~ 16:00 ET 또는 현재) 봉만 정밀 추출합니다.
-    장 시작 전(프리마켓)일 경우 가장 최근 거래일의 정규장 봉을 반환합니다.
-    """
+    """당일 미국 정규장(09:30 ET ~ 16:00 ET 또는 현재) 봉만 추출합니다."""
     if not candles:
         return []
     last_dt = datetime.fromtimestamp(candles[-1]["t"], ET)
@@ -916,7 +921,9 @@ def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
 
 
 def compute_cvd(candles, tf_key, source, symbol="SPY"):
-    """모든 타임프레임에서 당일 정규장(09:30 ET ~ 현재)을 온전히 집계하는 A/D 압력 CVD 모델."""
+    """모든 타임프레임(1m, 5m, 10m, 15m, 30m, 1H)에서 당일 정규장(09:30 ET ~ 현재)을
+    온전히 집계하는 A/D 압력 CVD 모델입니다.
+    """
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
@@ -1487,7 +1494,7 @@ def norm_yield(x, scale=None):
 # API
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/market-data")
-def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "5m"):
+def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"):
     now_et = datetime.now(ET)
     now_str = now_et.strftime("%m/%d %H:%M:%S ET")
     errors = []
