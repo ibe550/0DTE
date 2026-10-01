@@ -12,8 +12,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import html as html_lib
-import xml.etree.ElementTree as XET
-from email.utils import parsedate_to_datetime
 from typing import Optional
 
 import pytz
@@ -329,32 +327,8 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 뉴스 및 중요 발표
+# 오늘의 중요 발표 (BLS 공식 일정)
 # ─────────────────────────────────────────────────────────────
-NEWS_TAG_RULES = [
-    ("FED", ("federal reserve", "fomc", "powell", " fed ", "fed's", "fed rate", "rate cut", "rate hike",
-              "rate decision", "central bank", "quantitative", "interest rate")),
-    ("INFLATION", ("inflation", "cpi", "pce", "core prices", "consumer prices", "producer price")),
-    ("JOBS", ("jobs report", "payrolls", "unemployment", "nonfarm", "jobless claims", "jolts",
-               "job openings", "labor market", "hiring")),
-    ("MACRO", ("gdp", "ism ", "pmi ", "retail sales", "consumer confidence", "consumer sentiment",
-                "housing starts", "industrial production", "durable goods")),
-    ("EARNINGS", ("earnings", "guidance", "quarterly results", "profit warning", "beats estimates",
-                   "misses estimates")),
-    ("GEOPOLITICS", ("tariff", "sanctions", " war ", "conflict", "geopolit", "opec", " china ", "trade deal")),
-    ("YIELDS", ("treasury yield", "bond yield", "yields ", "10-year", "2-year")),
-    ("VOLATILITY", ("volatility", "vix", "selloff", "sell-off", "plunge", "rally", "swings", "record high",
-                     "correction", "crash", "circuit breaker")),
-    ("POLICY", ("sec ", "antitrust", "shutdown", "debt ceiling", "stimulus", "regulation", "white house",
-                 "executive order")),
-]
-
-
-def tag_news(title):
-    t = f" {title.lower()} "
-    return [name for name, kws in NEWS_TAG_RULES if any(k in t for k in kws)]
-
-
 BLS_TITLE_KR = {
     "Employment Situation": "고용보고서 (비농업고용, NFP)",
     "Consumer Price Index": "소비자물가지수 (CPI)",
@@ -431,186 +405,6 @@ def get_today_econ_events(now_et):
         })
     items.sort(key=lambda x: x["ts"])
     return {"items": items, "source": "BLS 공식 일정 (bls.gov)", "error": None}
-
-
-def relative_time_label(ts, now_ts):
-    if not ts:
-        return None
-    delta = now_ts - ts
-    if delta < 0:
-        delta = 0
-    if delta < 60:
-        return "방금"
-    if delta < 3600:
-        return f"{int(delta // 60)}m ago"
-    if delta < 86400:
-        return f"{int(delta // 3600)}h ago"
-    return f"{int(delta // 86400)}d ago"
-
-
-NEWS_MAX_CHARS = 1_500_000
-NEWS_MAX_AGE_SEC = 48 * 3600
-_NEWS_CACHE = {"ts": 0.0, "items": [], "diag": []}
-
-
-def _news_http(url, params=None):
-    r = requests.get(
-        url,
-        headers={**HEADERS, "Accept": "application/rss+xml, application/xml, text/xml, application/json, */*"},
-        params=params,
-        timeout=3.5,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}")
-    if len(r.text) > NEWS_MAX_CHARS:
-        raise RuntimeError("응답이 너무 큼")
-    return r
-
-
-def _parse_rss(text, default_publisher, split_publisher=False):
-    root = XET.fromstring(text)
-    out = []
-    for item in root.iter("item"):
-        title = (item.findtext("title") or "").strip()
-        link = (item.findtext("link") or "").strip()
-        ts = None
-        pub = item.findtext("pubDate")
-        if pub:
-            try:
-                ts = parsedate_to_datetime(pub).timestamp()
-            except Exception:
-                ts = None
-        publisher = default_publisher
-        src_el = item.find("source")
-        if src_el is not None and (src_el.text or "").strip():
-            publisher = src_el.text.strip()
-        if split_publisher and " - " in title:
-            head, _, tail = title.rpartition(" - ")
-            if head and 0 < len(tail) <= 40:
-                title, publisher = head.strip(), tail.strip()
-        if title and link.lower().startswith(("http://", "https://")):
-            out.append({"title": title, "link": link, "publisher": publisher, "ts": ts})
-    return out
-
-
-def _news_yahoo_search():
-    last_err = None
-    for host in ("query2", "query1"):
-        try:
-            r = _news_http(
-                f"https://{host}.finance.yahoo.com/v1/finance/search",
-                {"q": "S&P 500 stock market", "newsCount": 10, "quotesCount": 0, "lang": "en-US"},
-            )
-            out = []
-            for n in r.json().get("news") or []:
-                title, link = n.get("title"), n.get("link")
-                if title and link and str(link).lower().startswith(("http://", "https://")):
-                    out.append({"title": title, "link": link, "publisher": n.get("publisher") or "Yahoo Finance",
-                                "ts": num(n.get("providerPublishTime"))})
-            if out:
-                return out
-            last_err = "뉴스 0건"
-        except Exception as e:
-            last_err = str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}"
-    raise RuntimeError(last_err or "실패")
-
-
-def _news_yahoo_rss():
-    r = _news_http("https://feeds.finance.yahoo.com/rss/2.0/headline",
-                   {"s": "^GSPC,SPY,^VIX", "region": "US", "lang": "en-US"})
-    return _parse_rss(r.text, "Yahoo Finance")
-
-
-def _news_google_rss():
-    r = _news_http("https://news.google.com/rss/search",
-                   {"q": "(S&P 500 OR Wall Street OR Federal Reserve OR inflation) when:1d",
-                    "hl": "en-US", "gl": "US", "ceid": "US:en"})
-    return _parse_rss(r.text, "Google News", split_publisher=True)
-
-
-def _news_cnbc_rss():
-    r = _news_http("https://search.cnbc.com/rs/search/combinedcms/view.xml",
-                   {"partnerId": "wrss01", "id": "10000664"})
-    return _parse_rss(r.text, "CNBC")
-
-
-NEWS_SOURCES = [
-    ("Yahoo 검색", _news_yahoo_search),
-    ("Yahoo RSS", _news_yahoo_rss),
-    ("Google News", _news_google_rss),
-    ("CNBC", _news_cnbc_rss),
-]
-
-
-def _norm_title(t):
-    return "".join(ch for ch in t.lower() if ch.isalnum())[:60]
-
-
-def fetch_market_news(now_ts=None):
-    now = time.time()
-    ttl = 60 if _NEWS_CACHE["items"] else 20
-    if _NEWS_CACHE["ts"] and now - _NEWS_CACHE["ts"] < ttl:
-        return _NEWS_CACHE["items"], _NEWS_CACHE["diag"]
-
-    def run(src):
-        name, fn = src
-        try:
-            items = fn()
-            return name, items, None
-        except Exception as e:
-            return name, None, (str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}")[:120]
-
-    with ThreadPoolExecutor(max_workers=len(NEWS_SOURCES)) as ex:
-        results = list(ex.map(run, NEWS_SOURCES))
-
-    diag, merged, seen = [], [], set()
-    for name, items, err in results:
-        if err:
-            diag.append({"source": name, "ok": False, "error": err})
-            continue
-        diag.append({"source": name, "ok": True, "count": len(items)})
-        for it in items:
-            key = _norm_title(it["title"])
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            it["from"] = name
-            it["tags"] = tag_news(it["title"])
-            merged.append(it)
-
-    important = [x for x in merged if x["tags"]]
-    pool = important if len(important) >= 3 else merged
-
-    pool.sort(key=lambda x: x["ts"] or 0, reverse=True)
-    ref_ts = now_ts if now_ts is not None else now
-    fresh = [x for x in pool if x["ts"] and ref_ts - x["ts"] <= NEWS_MAX_AGE_SEC]
-    items = fresh if len(fresh) >= 3 else pool
-    _NEWS_CACHE.update(ts=now, items=items[:10], diag=diag)
-    return _NEWS_CACHE["items"], diag
-
-
-def get_news(now_et):
-    now_ts = now_et.timestamp()
-    items, diag = fetch_market_news(now_ts)
-    out_items = [{
-        "title": it["title"],
-        "link": it["link"],
-        "publisher": it["publisher"],
-        "time_label": relative_time_label(it["ts"], now_ts),
-        "tags": it["tags"],
-    } for it in items[:6]]
-    all_tags = []
-    for it in out_items:
-        for tag in it["tags"]:
-            if tag not in all_tags:
-                all_tags.append(tag)
-    used = [d["source"] for d in diag if d["ok"] and d.get("count")]
-    return {
-        "items": out_items,
-        "tags": all_tags[:5],
-        "source": " + ".join(used) if used else "N/A",
-        "diag": diag,
-    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1074,7 +868,6 @@ def parse_schwab_chain(data, exp_date):
 
 
 def fetch_schwab_chain(token, today_date):
-    """0DTE 완벽 대응: 1차로 $SPX 조회 후, 오늘 만기가 누락되면 $SPXW 로 즉시 2차 조회."""
     if not token:
         return None, {"reason": "토큰 없음"}
 
@@ -1221,10 +1014,8 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     exp_dt = ET.localize(datetime(y, m, d, 16, 0))
     secs = (exp_dt - now_et).total_seconds()
 
-    # 장 후반(15:30~) 블랙숄즈 감마 특이점 붕괴 방지: 최소 30분(1800초) 스무딩 바닥값 적용
     T = max(secs, 1800.0) / SECONDS_PER_YEAR
 
-    # 0DTE 실시간 반영: OI와 당일 거래량 중 큰 값을 유효 계약수로 선정
     use = [c for c in contracts if 0.88 * S <= c["K"] <= 1.12 * S and (c["oi"] > 0 or c.get("vol", 0) > 0)]
     if len(use) < 6:
         return None
@@ -1276,7 +1067,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         if (gamma_from_schwab or gamma_from_calc) else None
     )
 
-    # 진짜 감마 벽(Gamma Wall): 단순 OI 가 아니라 실시간 Net GEX 의 크기가 최대인 핵심 방어선
     calls_with_gex = [k for k, e in per.items() if e["call_gex"] > 0]
     puts_with_gex = [k for k, e in per.items() if e["put_gex"] < 0]
 
@@ -1312,7 +1102,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     oi_below_call = sum(e["call_oi"] for k, e in per.items() if k < S)
     oi_below_put = sum(e["put_oi"] for k, e in per.items() if k < S)
 
-    # [수정] 16:00 ET 이전에는 오늘 날짜를, 16:00 ET 이후에는 다음 거래일 만기를 정상 0DTE 세션으로 인정
     target_date = now_et.date() if now_et.hour < 16 else (now_et.date() + timedelta(days=1))
     is_0dte_session = bool(
         (now_et.hour < 16 and exp_date == now_et.date().isoformat() and secs > 0) or
@@ -1454,8 +1243,8 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
         ev.append({"title": "CVD 볼륨 압력", "signal": "na", "text": "N/A"})
 
     if len(c1h) >= 6:
-        h3, h6 = max(c["h"] for c1h_bar in c1h[-3:] for c in [c1h_bar]), max(c["h"] for c1h_bar in c1h[-6:-3] for c in [c1h_bar])
-        l3, l6 = min(c["l"] for c1h_bar in c1h[-3:] for c in [c1h_bar]), min(c["l"] for c1h_bar in c1h[-6:-3] for c in [c1h_bar])
+        h3, h6 = max(c["h"] for c in c1h[-3:]), max(c["h"] for c in c1h[-6:-3])
+        l3, l6 = min(c["l"] for c in c1h[-3:]), min(c["l"] for c in c1h[-6:-3])
         if h3 > h6 and l3 > l6:
             sig, txt = "bull", "최근 고점과 저점이 함께 높아지는 상승 구조"
         elif h3 < h6 and l3 < l6:
@@ -1571,13 +1360,12 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     ratio_q = (spx_p / q_spy["price"]) if (spx_p and q_spy and q_spy["price"]) else None
 
     v_key, r_key, c_key = normalize_tf(vwap_tf), normalize_tf(rsi_tf), normalize_tf(cvd_tf)
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    with ThreadPoolExecutor(max_workers=9) as ex:
         f_spy_dir = {k: ex.submit(get_candles, token, "spy", k) for k in {"1h", "15m", "5m", "1m"}}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
         f_spy_v = ex.submit(get_candles, token, "spy", v_key)
         f_spy_c = ex.submit(get_candles, token, "spy", c_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
-        f_news = ex.submit(get_news, now_et)
         f_econ = ex.submit(get_today_econ_events, now_et)
 
     def result(name, fut):
@@ -1588,7 +1376,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     spy_v = result("candles spy vwap", f_spy_v)
     spy_c = result("candles spy cvd", f_spy_c)
     gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
-    news = result("news", f_news)
     econ_events = result("econ_events", f_econ) or {"items": [], "source": "N/A", "error": "계산 오류"}
 
     def ratio_for(spy_data):
@@ -1624,7 +1411,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
                 "source": f"{spx_r['source']} · Wilder RSI(14)",
             }
 
-    # 5. 방향 분석 계산
+    # 5. 실시간 방향 분석 계산
     tf_results, tf_sources = {}, {}
     for k in ("1h", "15m", "5m", "1m"):
         d = spy_dir_c.get(k)
@@ -1639,7 +1426,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 금리 계산
+    # 6. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
     def yield_level_and_change(q):
@@ -1711,7 +1498,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
         "vix": slim(quotes.get("vix")),
         "vix9d": slim(quotes.get("vix9d")),
         "mag7": quotes.get("mag7"),
-        "news": news,
         "econ_events": econ_events,
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
@@ -1827,7 +1613,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
                 "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
             )
         else:
-            kv_note = "<p style='color:#f59e0b;'>⚠️️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
+            kv_note = "<p style='color:#f59e0b;'>⚠ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
 
     manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
         "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
