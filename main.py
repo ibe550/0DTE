@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import html as html_lib
+import xml.etree.ElementTree as XET
 from typing import Optional
 
 import pytz
@@ -327,33 +328,148 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 오늘의 중요 발표 (BLS 공식 일정)
+# 오늘의 중요 경제 발표 (Fed · BEA · ISM · BLS 통합 수집)
 # ─────────────────────────────────────────────────────────────
-BLS_TITLE_KR = {
-    "Employment Situation": "고용보고서 (비농업고용, NFP)",
-    "Consumer Price Index": "소비자물가지수 (CPI)",
-    "Producer Price Index": "생산자물가지수 (PPI)",
-    "Job Openings and Labor Turnover Survey": "구인이직보고서 (JOLTS)",
-    "Employment Cost Index": "고용비용지수 (ECI)",
-    "Productivity and Costs": "생산성 및 단위노동비용",
-    "U.S. Import and Export Price Indexes": "수출입물가지수",
-}
-HIGH_IMPACT_BLS_TITLES = set(BLS_TITLE_KR)
-BLS_ICS_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
-_BLS_CAL_CACHE = {"attempt_ts": 0.0, "events": None, "error": None}
-BLS_CAL_RETRY_SEC = 300
-BLS_CAL_REFRESH_SEC = 6 * 3600
+ECON_TRANSLATIONS = [
+    ("FOMC Statement", "FOMC 성명서 및 기준금리 결정"),
+    ("Federal Funds Rate", "FOMC 기준금리 결정"),
+    ("FOMC Press Conference", "파월 의장 FOMC 기자회견"),
+    ("Fed Chair Powell Speaks", "파월 연준의장 연설"),
+    ("Powell Speaks", "파월 연준의장 연설"),
+    ("Non-Farm Employment Change", "비농업 고용보고서 (NFP)"),
+    ("Unemployment Rate", "실업률 발표"),
+    ("Core PCE Price Index", "근원 개인소비지출 물가지수 (Core PCE)"),
+    ("PCE Price Index", "개인소비지출 물가지수 (PCE)"),
+    ("CPI", "소비자물가지수 (CPI)"),
+    ("Core CPI", "근원 소비자물가지수 (Core CPI)"),
+    ("Advance GDP", "GDP 성장률 (속보치)"),
+    ("Final GDP", "GDP 성장률 (확정치)"),
+    ("Prelim GDP", "GDP 성장률 (수정치)"),
+    ("GDP", "GDP 경제성장률"),
+    ("ISM Manufacturing PMI", "ISM 제조업 구매관리자지수 (PMI)"),
+    ("ISM Services PMI", "ISM 서비스업 구매관리자지수 (PMI)"),
+    ("JOLTS Job Openings", "구인이직보고서 (JOLTS)"),
+    ("Unemployment Claims", "신규 실업수당 청구건수"),
+    ("PPI", "생산자물가지수 (PPI)"),
+    ("Retail Sales", "소매판매 지표"),
+    ("Consumer Confidence", "CB 소비자신뢰지수"),
+    ("Employment Cost Index", "고용비용지수 (ECI)"),
+]
+
+BLS_TITLE_RULES = [
+    ("Employment Situation", "고용보고서 (비농업고용, NFP)"),
+    ("Consumer Price Index", "소비자물가지수 (CPI)"),
+    ("Producer Price Index", "생산자물가지수 (PPI)"),
+    ("Job Openings", "구인이직보고서 (JOLTS)"),
+    ("Employment Cost", "고용비용지수 (ECI)"),
+    ("Productivity and Costs", "생산성 및 단위노동비용"),
+    ("Import and Export Price", "수출입물가지수"),
+]
+
+_ECON_CACHE = {"attempt_ts": 0.0, "data": None}
 
 
-def _parse_ics_events(text):
-    events, cur = [], {}
-    for raw in text.splitlines():
+def _parse_event_time_et(date_str, time_str, now_et):
+    """'8:30am', '2:00pm' 등의 문자열을 파싱하여 오늘 ET 타임스탬프 생성."""
+    t_clean = time_str.strip().lower()
+    if not ("am" in t_clean or "pm" in t_clean):
+        dt = ET.localize(datetime(now_et.year, now_et.month, now_et.day, 10, 0))
+        return dt.timestamp(), "장중 발표"
+    try:
+        is_pm = "pm" in t_clean
+        raw = t_clean.replace("am", "").replace("pm", "").strip()
+        parts = raw.split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        if is_pm and h < 12:
+            h += 12
+        elif not is_pm and h == 12:
+            h = 0
+        dt = ET.localize(datetime(now_et.year, now_et.month, now_et.day, h, m))
+        return dt.timestamp(), f"{h:02d}:{m:02d} ET"
+    except Exception:
+        dt = ET.localize(datetime(now_et.year, now_et.month, now_et.day, 9, 30))
+        return dt.timestamp(), time_str
+
+
+def fetch_forexfactory_calendar(now_et):
+    """주요 글로벌 경제 캘린더 XML 수집 (Fed, BEA, ISM, BLS 지표 통합)."""
+    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
+    r = requests.get(url, headers=HEADERS, timeout=3.5)
+    if r.status_code != 200:
+        return []
+    root = XET.fromstring(r.text)
+    today_ff = now_et.strftime("%m-%d-%Y")
+    items = []
+    now_ts = now_et.timestamp()
+
+    for ev in root.findall("event"):
+        country = (ev.findtext("country") or "").strip()
+        date_str = (ev.findtext("date") or "").strip()
+        if country != "USD" or date_str != today_ff:
+            continue
+
+        impact = (ev.findtext("impact") or "").strip()
+        title = (ev.findtext("title") or "").strip()
+        t_low = title.lower()
+
+        # 고영향 지표 또는 핵심 지표 필터링
+        is_high = impact.lower() == "high"
+        is_key = any(k in t_low for k in ("cpi", "pce", "fomc", "powell", "non-farm", "unemployment claims", "gdp", "ism", "jolts", "ppi"))
+        if not (is_high or is_key):
+            continue
+
+        time_str = (ev.findtext("time") or "").strip()
+        ts, fmt_time = _parse_event_time_et(date_str, time_str, now_et)
+
+        kr_title = title
+        for eng, kr in ECON_TRANSLATIONS:
+            if eng.lower() in t_low:
+                kr_title = kr
+                break
+
+        items.append({
+            "title": kr_title,
+            "title_en": title,
+            "time": fmt_time,
+            "ts": ts,
+            "passed": ts < now_ts,
+        })
+    return items
+
+
+def fetch_bls_calendar_partial(now_et):
+    """부분 일치(in) 검색을 적용한 BLS 캘린더 수집 (2차 백업)."""
+    url = "https://www.bls.gov/schedule/news_release/bls.ics"
+    r = requests.get(url, headers=HEADERS, timeout=3.5)
+    if r.status_code != 200:
+        return []
+    today = now_et.date()
+    now_ts = now_et.timestamp()
+    items = []
+    cur = {}
+
+    for raw in r.text.splitlines():
         line = raw.strip()
         if line == "BEGIN:VEVENT":
             cur = {}
         elif line == "END:VEVENT":
-            if "summary" in cur and "dt" in cur:
-                events.append(cur)
+            if "summary" in cur and "dt" in cur and cur["dt"].date() == today:
+                summary = cur["summary"]
+                matched_kr = None
+                for kw, kr in BLS_TITLE_RULES:
+                    if kw.lower() in summary.lower():
+                        matched_kr = kr
+                        break
+                if matched_kr:
+                    ts = cur["dt"].timestamp()
+                    items.append({
+                        "title": matched_kr,
+                        "title_en": summary,
+                        "time": cur["dt"].strftime("%H:%M ET"),
+                        "ts": ts,
+                        "passed": ts < now_ts,
+                    })
             cur = {}
         elif line.startswith("SUMMARY:"):
             cur["summary"] = line[len("SUMMARY:"):].strip()
@@ -364,47 +480,45 @@ def _parse_ics_events(text):
                 cur["dt"] = naive.replace(tzinfo=pytz.UTC).astimezone(ET) if val.endswith("Z") else ET.localize(naive)
             except Exception:
                 pass
-    return events
-
-
-def fetch_bls_calendar():
-    now = time.time()
-    stale_after = BLS_CAL_RETRY_SEC if _BLS_CAL_CACHE["events"] is None else BLS_CAL_REFRESH_SEC
-    if now - _BLS_CAL_CACHE["attempt_ts"] < stale_after:
-        return _BLS_CAL_CACHE["events"], _BLS_CAL_CACHE["error"]
-    _BLS_CAL_CACHE["attempt_ts"] = now
-    try:
-        r = requests.get(BLS_ICS_URL, headers=HEADERS, timeout=4)
-        if r.status_code != 200:
-            raise RuntimeError(f"HTTP {r.status_code}")
-        if len(r.text) > 3_000_000:
-            raise RuntimeError("응답이 너무 큼")
-        _BLS_CAL_CACHE["events"] = _parse_ics_events(r.text)
-        _BLS_CAL_CACHE["error"] = None
-    except Exception as e:
-        _BLS_CAL_CACHE["error"] = f"{type(e).__name__}: {e}"
-    return _BLS_CAL_CACHE["events"], _BLS_CAL_CACHE["error"]
+    return items
 
 
 def get_today_econ_events(now_et):
-    events, err = fetch_bls_calendar()
-    if events is None:
-        return {"items": [], "source": "N/A", "error": err or "BLS 캘린더를 가져오지 못했습니다"}
-    today = now_et.date()
-    now_ts = now_et.timestamp()
+    now = time.time()
+    if _ECON_CACHE["data"] and now - _ECON_CACHE["attempt_ts"] < 600:
+        return _ECON_CACHE["data"]
+
+    _ECON_CACHE["attempt_ts"] = now
     items = []
-    for e in events:
-        if e["dt"].date() != today or e["summary"] not in HIGH_IMPACT_BLS_TITLES:
-            continue
-        items.append({
-            "title": BLS_TITLE_KR.get(e["summary"], e["summary"]),
-            "title_en": e["summary"],
-            "time": e["dt"].strftime("%H:%M ET"),
-            "ts": e["dt"].timestamp(),
-            "passed": e["dt"].timestamp() < now_ts,
-        })
-    items.sort(key=lambda x: x["ts"])
-    return {"items": items, "source": "BLS 공식 일정 (bls.gov)", "error": None}
+    source = "공식 경제 캘린더 (Fed · BEA · ISM · BLS)"
+
+    # 1차: 글로벌 경제 캘린더 (Fed, BEA, ISM, ETA, BLS 전체 커버)
+    try:
+        items = fetch_forexfactory_calendar(now_et)
+    except Exception:
+        items = []
+
+    # 2차: 비어있을 경우 BLS 캘린더 부분 일치(in) 검색 백업
+    if not items:
+        try:
+            items = fetch_bls_calendar_partial(now_et)
+            if items:
+                source = "BLS 공식 일정 (bls.gov)"
+        except Exception:
+            pass
+
+    # 시간순 정렬 및 중복 제거
+    unique = []
+    seen = set()
+    for it in sorted(items, key=lambda x: x["ts"]):
+        k = f"{it['time']}_{it['title']}"
+        if k not in seen:
+            seen.add(k)
+            unique.append(it)
+
+    res = {"items": unique, "source": source, "error": None}
+    _ECON_CACHE["data"] = res
+    return res
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1243,8 +1357,10 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
         ev.append({"title": "CVD 볼륨 압력", "signal": "na", "text": "N/A"})
 
     if len(c1h) >= 6:
-        h3, h6 = max(c["h"] for c in c1h[-3:]), max(c["h"] for c in c1h[-6:-3])
-        l3, l6 = min(c["l"] for c in c1h[-3:]), min(c["l"] for c in c1h[-6:-3])
+        h3 = max(c["h"] for c in c1h[-3:])
+        h6 = max(c["h"] for c in c1h[-6:-3])
+        l3 = min(c["l"] for c in c1h[-3:])
+        l6 = min(c["l"] for c in c1h[-6:-3])
         if h3 > h6 and l3 > l6:
             sig, txt = "bull", "최근 고점과 저점이 함께 높아지는 상승 구조"
         elif h3 < h6 and l3 < l6:
