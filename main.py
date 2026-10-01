@@ -99,7 +99,6 @@ def _kv_config():
 
 
 def kv_cmd(*args):
-    """Upstash/Vercel KV REST 단일 명령 실행. 연결 안 돼 있거나 실패하면 None."""
     url, token = _kv_config()
     if not url:
         return None
@@ -617,7 +616,6 @@ def get_news(now_et):
 # ─────────────────────────────────────────────────────────────
 # 봉(candle) 데이터 (Schwab pricehistory 우선 -> Yahoo chart)
 # ─────────────────────────────────────────────────────────────
-# 10m은 5분봉 2개를 정규장(09:30) 기준으로 합쳐서 완벽히 산출합니다.
 TF_SPEC = {
     "1m": ("1m", "2d", 1, 2, None),
     "5m": ("5m", "5d", 5, 5, None),
@@ -627,6 +625,7 @@ TF_SPEC = {
     "1h": ("60m", "1mo", 30, 10, 60),
 }
 TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
+TF_MINUTES = {"1m": 1, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "1h": 60}
 INSTR = {"spx": ("$SPX", "^GSPC"), "spy": ("SPY", "SPY"), "es": (None, "ES=F")}
 
 
@@ -684,9 +683,6 @@ def schwab_candles(token, symbol, freq, days):
 
 
 def aggregate_candles(candles, minutes):
-    """분봉을 미국 정규장 시작(09:30 ET = 570분) 기준으로 minutes 단위 봉으로 정확히 합칩니다.
-    10분봉일 경우 15:50~16:00 이 단독 1개 봉으로 완벽히 분리됩니다.
-    """
     groups = OrderedDict()
     for cd in candles:
         dt = datetime.fromtimestamp(cd["t"], ET)
@@ -725,7 +721,6 @@ def get_candles(token, inst, tf):
 
 
 def get_rth_session(candles):
-    """당일 미국 정규장(09:30 ET ~ 16:00 ET 또는 현재) 봉만 추출합니다."""
     if not candles:
         return []
     last_dt = datetime.fromtimestamp(candles[-1]["t"], ET)
@@ -746,10 +741,6 @@ def get_rth_session(candles):
             return d_bars
 
     return [c for c in candles if datetime.fromtimestamp(c["t"], ET).date() == target_date]
-
-
-def last_session(candles):
-    return get_rth_session(candles)
 
 
 def et_label(ts):
@@ -921,9 +912,6 @@ def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
 
 
 def compute_cvd(candles, tf_key, source, symbol="SPY"):
-    """모든 타임프레임(1m, 5m, 10m, 15m, 30m, 1H)에서 당일 정규장(09:30 ET ~ 현재)을
-    온전히 집계하는 A/D 압력 CVD 모델입니다.
-    """
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
@@ -939,7 +927,6 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
         h, l, cl = c["h"], c["l"], c["c"]
         rng = h - l
         
-        # 캔들 내 종가 압력(Volume Fraction) 분할
         if rng > 0:
             buy_ratio = (cl - l) / rng
             sell_ratio = (h - cl) / rng
@@ -1332,67 +1319,88 @@ def get_gex(token, spx_p, ratio, now_et):
 
 
 # ─────────────────────────────────────────────────────────────
-# 방향 분석 (SPX 봉 기반 규칙 계산)
+# 방향 분석 (0DTE 최적화: 초단타 EMA 5/13/21 + 캔들 모멘텀 + VWAP/CVD 연동)
 # ─────────────────────────────────────────────────────────────
-DIR_WEIGHTS = {"1h": 0.35, "15m": 0.30, "5m": 0.20, "1m": 0.15}
-
-
-def sgn(x):
-    return 1 if x > 0 else (-1 if x < 0 else 0)
+DIR_WEIGHTS = {"5m": 0.35, "1m": 0.25, "15m": 0.25, "1h": 0.15}
 
 
 def status_of(score):
-    if score >= 3.5:
+    if score >= 3.0:
         return "상승 우세", "bull"
-    if score >= 1.5:
+    if score >= 1.2:
         return "상승 편향", "bull"
-    if score > -1.5:
+    if score > -1.2:
         return "중립", "flat"
-    if score > -3.5:
+    if score > -3.0:
         return "하락 편향", "bear"
     return "하락 우세", "bear"
 
 
 def analyze_tf(candles):
+    """0DTE 실전에 맞게 빠른 EMA(5/13/21), 캔들 바의 종가 마감 압력, 모멘텀을 계산합니다."""
     closes = [c["c"] for c in candles]
-    if len(closes) < 22:
+    if len(closes) < 15:
         return None
-    e9, e21 = ema_series(closes, 9), ema_series(closes, 21)
-    comps = [
-        sgn(closes[-1] - e9[-1]),
-        sgn(e9[-1] - e21[-1]),
-    ]
-    if len(closes) >= 50:
-        e50 = ema_series(closes, 50)
-        comps.append(sgn(e21[-1] - e50[-1]))
-    else:
-        comps.append(0)
-    comps.append(sgn(e21[-1] - e21[-4]))
-    rs = rsi_series(closes)
-    comps.append(0 if not rs else (1 if rs[-1] >= 55 else (-1 if rs[-1] <= 45 else 0)))
-    if len(candles) >= 6:
-        h3, h6 = max(c["h"] for c in candles[-3:]), max(c["h"] for c in candles[-6:-3])
-        l3, l6 = min(c["l"] for c in candles[-3:]), min(c["l"] for c in candles[-6:-3])
-        comps.append(1 if (h3 > h6 and l3 > l6) else (-1 if (h3 < h6 and l3 < l6) else 0))
-    else:
-        comps.append(0)
-    score = sum(comps)
+    e5 = ema_series(closes, 5)
+    e13 = ema_series(closes, 13)
+    e21 = ema_series(closes, 21)
+
+    # 1. 단기 이평선 정배열/역배열 (+3 ~ -3)
+    p_vs_e5 = 1.0 if closes[-1] > e5[-1] else -1.0
+    e5_vs_e13 = 1.0 if e5[-1] > e13[-1] else -1.0
+    e13_vs_e21 = 1.0 if e13[-1] > e21[-1] else -1.0
+
+    # 2. EMA 5의 즉각적 기울기 (최근 2개 봉) (+1 ~ -1)
+    e5_slope = 1.0 if (len(e5) >= 2 and e5[-1] > e5[-2]) else -1.0
+
+    # 3. 최근 캔들의 마감 압력 & 급락/급등 캔들 판정 (+1.5 ~ -1.5)
+    last_c = candles[-1]
+    rng = last_c["h"] - last_c["l"]
+    body = last_c["c"] - last_c["o"]
+    bar_imp = 0.0
+    if rng > 0:
+        if body < 0 and (last_c["h"] - last_c["c"]) / rng >= 0.75:
+            bar_imp = -1.5  # 저가 마감 장대 음봉 (패닉 셀)
+        elif body > 0 and (last_c["c"] - last_c["l"]) / rng >= 0.75:
+            bar_imp = 1.5   # 고가 마감 장대 양봉
+        else:
+            bar_imp = 0.5 if body > 0 else -0.5
+
+    # 4. 빠른 RSI (9) 모멘텀 (+1 ~ -1)
+    rs = rsi_series(closes, period=9)
+    rsi_val = rs[-1] if rs else 50.0
+    rsi_score = 1.0 if rsi_val >= 55 else (-1.0 if rsi_val <= 45 else 0.0)
+
+    raw_score = p_vs_e5 + e5_vs_e13 + e13_vs_e21 + e5_slope + bar_imp + rsi_score
+    score = max(-6.0, min(6.0, raw_score))
     label, tone = status_of(score)
-    return {"score": score, "status": label, "tone": tone}
+    return {"score": round(score, 1), "status": label, "tone": tone}
 
 
-def build_evidence(spx_p, vwap_val, c1h, rsi_1h):
+def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
     ev = []
+    # 1. VWAP 판정
     if spx_p is not None and vwap_val is not None:
         diff = spx_p - vwap_val
         ev.append({
             "title": "VWAP 위치",
             "signal": "bull" if diff > 0 else ("bear" if diff < 0 else "flat"),
-            "text": f"가격이 VWAP {'위' if diff > 0 else ('아래' if diff < 0 else '와 동일')} ({diff:+.2f}pt)",
+            "text": f"현재가가 당일 VWAP {'위' if diff > 0 else ('아래' if diff < 0 else '와 동일')} ({diff:+.2f}pt)",
         })
     else:
-        ev.append({"title": "VWAP 위치", "signal": "na", "text": "N/A (SPX 현재가 또는 VWAP 데이터 없음)"})
+        ev.append({"title": "VWAP 위치", "signal": "na", "text": "N/A (VWAP 데이터 없음)"})
 
+    # 2. CVD 매수/매도 압력 연동
+    if cvd_data:
+        ev.append({
+            "title": "CVD 볼륨 압력",
+            "signal": cvd_data["tone"],
+            "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)",
+        })
+    else:
+        ev.append({"title": "CVD 볼륨 압력", "signal": "na", "text": "N/A"})
+
+    # 3. 1H 큰 방향 구조
     if len(c1h) >= 6:
         h3, h6 = max(c["h"] for c in c1h[-3:]), max(c["h"] for c in c1h[-6:-3])
         l3, l6 = min(c["l"] for c in c1h[-3:]), min(c["l"] for c in c1h[-6:-3])
@@ -1402,64 +1410,64 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h):
             sig, txt = "bear", "최근 고점과 저점이 함께 낮아지는 하락 구조"
         else:
             sig, txt = "flat", "고점·저점이 엇갈려 뚜렷한 구조가 없음"
-        ev.append({"title": "고점·저점 구조", "signal": sig, "text": txt})
+        ev.append({"title": "상위(1H) 구조", "signal": sig, "text": txt})
     else:
-        ev.append({"title": "고점·저점 구조", "signal": "na", "text": "N/A (1H 봉 부족)"})
+        ev.append({"title": "상위(1H) 구조", "signal": "na", "text": "N/A"})
 
-    if rsi_1h is not None:
-        if rsi_1h >= 70:
-            sig, txt = "bull", f"RSI {rsi_1h} – 과매수 구간 (상승 모멘텀 강함, 과열 주의)"
-        elif rsi_1h >= 55:
-            sig, txt = "bull", f"RSI {rsi_1h} – 상승 모멘텀"
-        elif rsi_1h <= 30:
-            sig, txt = "bear", f"RSI {rsi_1h} – 과매도 구간 (하락 모멘텀 강함, 반등 가능성 주의)"
-        elif rsi_1h <= 45:
-            sig, txt = "bear", f"RSI {rsi_1h} – 하락 모멘텀"
-        else:
-            sig, txt = "flat", f"RSI {rsi_1h} – 중립"
-        ev.append({"title": "RSI(14)", "signal": sig, "text": txt})
-    else:
-        ev.append({"title": "RSI(14)", "signal": "na", "text": "N/A (1H 봉 부족)"})
-
-    if len(c1h) >= 4:
-        mom = c1h[-1]["c"] - c1h[-4]["c"]
+    # 4. 모멘텀
+    if len(c1h) >= 3:
+        mom = c1h[-1]["c"] - c1h[-3]["c"]
         ev.append({
-            "title": "최근 모멘텀",
+            "title": "단기 모멘텀",
             "signal": "bull" if mom > 0 else ("bear" if mom < 0 else "flat"),
-            "text": f"최근 3개 봉 기준 {'상승' if mom > 0 else ('하락' if mom < 0 else '보합')} ({abs(mom):.2f}pt)",
+            "text": f"최근 2개 봉 기준 {'상승' if mom > 0 else ('하락' if mom < 0 else '보합')} ({abs(mom):.2f}pt)",
         })
-    else:
-        ev.append({"title": "최근 모멘텀", "signal": "na", "text": "N/A (1H 봉 부족)"})
     return ev
 
 
-def build_direction(tf_results, tf_sources, evidence):
+def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=None):
     avail = {k: v for k, v in tf_results.items() if v}
     if not avail:
-        return {"available": False, "source": "N/A", "reason": "SPX 봉 데이터를 가져오지 못했습니다"}
+        return {"available": False, "source": "N/A", "reason": "SPY 실시간 봉 데이터를 가져오지 못했습니다"}
+    
     wsum = sum(DIR_WEIGHTS[k] for k in avail)
-    score = sum(DIR_WEIGHTS[k] * avail[k]["score"] for k in avail) / wsum
+    raw_score = sum(DIR_WEIGHTS[k] * avail[k]["score"] for k in avail) / wsum
+
+    # VWAP 및 CVD 페널티/부스트 직접 적용 (주가가 VWAP 밑에 있거나 CVD가 Sell일 때 상승 우세 차단)
+    score = raw_score
+    if vwap_diff is not None:
+        if vwap_diff < -1.0:
+            score -= 1.5  # VWAP 하회 강력 감점
+        elif vwap_diff > 1.0:
+            score += 1.0
+            
+    if cvd_data:
+        if cvd_data.get("tone") == "bear":
+            score -= 1.5  # 매도 덤핑 강력 감점
+        elif cvd_data.get("tone") == "bull":
+            score += 1.0
+
+    score = max(-6.0, min(6.0, score))
     label, tone = status_of(score)
     match = sum(1 for v in avail.values() if v["tone"] == tone)
     match_pct = int(round(match / len(avail) * 100))
 
     if tone == "bull":
-        summary = f"큰 방향과 장중 흐름이 상승 쪽으로 기울었습니다. {match_pct}%의 시간봉이 상승 또는 상승 편향을 보입니다."
+        summary = f"단기 모멘텀과 체결 압력이 상승 쪽으로 기울었습니다. {match_pct}%의 시간봉이 상승 편향을 보입니다."
     elif tone == "bear":
-        summary = f"큰 방향과 장중 흐름이 하락 쪽으로 기울었습니다. {match_pct}%의 시간봉이 하락 또는 하락 편향을 보입니다."
+        summary = f"단기 모멘텀과 매도 덤핑 압력이 우세합니다. {match_pct}%의 시간봉이 하락 편향을 보입니다."
     else:
-        summary = f"시간봉 간 방향이 엇갈려 뚜렷한 우세가 없습니다. {match_pct}%의 시간봉이 중립입니다."
-    one_h = avail.get("1h")
-    if one_h and one_h["tone"] != tone:
-        summary += f" 다만 1H(큰 방향)는 {one_h['status']}입니다."
+        summary = f"시간봉 및 VWAP 간 방향이 엇갈려 박스권 중립 흐름입니다."
 
     kinds = {src_kind(tf_sources.get(k)) for k in avail}
     names = {"schwab": "Charles Schwab", "yahoo": "Yahoo Finance"}
     src = " + ".join(names[x] for x in ("schwab", "yahoo") if x in kinds) or "N/A"
+    
     tfs = {}
     for k in ("1h", "15m", "5m", "1m"):
         v = avail.get(k)
         tfs[k] = {**v, "source": tf_sources.get(k)} if v else None
+        
     return {
         "available": True,
         "score": round(score, 1),
@@ -1470,7 +1478,7 @@ def build_direction(tf_results, tf_sources, evidence):
         "summary": summary,
         "tfs": tfs,
         "evidence": evidence,
-        "source": f"{src} · SPX 봉 EMA(9/21/50)·RSI·고저점 구조 규칙 계산",
+        "source": f"{src} (SPY 실시간) · 0DTE EMA(5/13/21)·VWAP·CVD 결합 판정",
     }
 
 
@@ -1491,7 +1499,7 @@ def norm_yield(x, scale=None):
 
 
 # ─────────────────────────────────────────────────────────────
-# API
+# API 엔드포인트
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/market-data")
 def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"):
@@ -1514,7 +1522,10 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
 
     v_key, r_key, c_key = normalize_tf(vwap_tf), normalize_tf(rsi_tf), normalize_tf(cvd_tf)
     with ThreadPoolExecutor(max_workers=10) as ex:
-        f_spx = {k: ex.submit(get_candles, token, "spx", k) for k in {"1h", "15m", "5m", "1m", r_key}}
+        # 방향 분석 전용: 지연 없는 Schwab 실시간 SPY 캔들 풀가동
+        f_spy_dir = {k: ex.submit(get_candles, token, "spy", k) for k in {"1h", "15m", "5m", "1m"}}
+        f_spx_r = ex.submit(get_candles, token, "spx", r_key)
+        f_spx_5 = ex.submit(get_candles, token, "spx", "5m")
         f_spy_v = ex.submit(get_candles, token, "spy", v_key)
         f_spy_c = ex.submit(get_candles, token, "spy", c_key)
         f_es_5 = ex.submit(get_candles, token, "es", "5m")
@@ -1525,7 +1536,9 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     def result(name, fut):
         return guard(name, fut.result)
 
-    spx_c = {k: result(f"candles spx {k}", f) for k, f in f_spx.items()}
+    spy_dir_c = {k: result(f"candles spy dir {k}", f) for k, f in f_spy_dir.items()}
+    spx_r = result("candles spx rsi", f_spx_r)
+    spx_5 = result("candles spx 5m", f_spx_5)
     spy_v = result("candles spy vwap", f_spy_v)
     spy_c = result("candles spy cvd", f_spy_c)
     es_5 = result("candles es 5m", f_es_5)
@@ -1541,7 +1554,6 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
         return None
 
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
-    spx_5 = spx_c.get("5m")
     vp = (
         guard("volume_profile", compute_volume_profile, es_5["candles"], spx_5["candles"], es_5["source"], spx_5["source"])
         if es_5 and spx_5 else None
@@ -1549,27 +1561,30 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY") if spy_c else None
 
     rsi = None
-    rc = spx_c.get(r_key)
-    if rc:
-        rs = rsi_series([c["c"] for c in rc["candles"]])
+    if spx_r:
+        rs = rsi_series([c["c"] for c in spx_r["candles"]])
         if rs:
             cur = rs[-1]
             rsi = {
                 "val": cur,
                 "status": "Overbought" if cur >= 70 else ("Oversold" if cur <= 30 else ("Bullish" if cur >= 55 else ("Bearish" if cur <= 45 else "Neutral"))),
                 "history": rs[-20:],
-                "source": f"{rc['source']} · Wilder RSI(14)",
+                "source": f"{spx_r['source']} · Wilder RSI(14)",
             }
 
+    # 개선된 실시간 방향 분석
     tf_results, tf_sources = {}, {}
     for k in ("1h", "15m", "5m", "1m"):
-        d = spx_c.get(k)
+        d = spy_dir_c.get(k)
         tf_results[k] = guard(f"direction {k}", analyze_tf, d["candles"]) if d else None
         tf_sources[k] = d["source"] if d else None
-    c1h = spx_c["1h"]["candles"] if spx_c.get("1h") else []
+        
+    c1h = spy_dir_c["1h"]["candles"] if spy_dir_c.get("1h") else []
     rs_1h = rsi_series([c["c"] for c in c1h])
-    evidence = build_evidence(spx_p, vwap["val"] if vwap else None, c1h, rs_1h[-1] if rs_1h else None)
-    direction = guard("direction", build_direction, tf_results, tf_sources, evidence) or {
+    vwap_diff = (spx_p - vwap["val"]) if (spx_p and vwap and vwap.get("val")) else None
+    evidence = build_evidence(spx_p, vwap["val"] if vwap else None, c1h, rs_1h[-1] if rs_1h else None, cvd)
+    
+    direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
