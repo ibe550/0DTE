@@ -25,7 +25,7 @@
     <!-- Tailwind CDN 동적 클래스 등록 -->
     <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80"></div>
 
-    <!-- 0. [신규] 최상단 실시간 변동성 쇼크 (양방향 급등/급락 경보 배너) -->
+    <!-- 0. 최상단 실시간 변동성 쇼크 (양방향 급등/급락 경보 배너) -->
     <div id="shock-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 shadow-lg transition-all duration-300">
         <div class="flex items-center justify-between mb-1">
             <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight" id="shock-alert-head">
@@ -47,7 +47,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.6</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.7</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -57,13 +57,13 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (PCE, CPI, FOMC 등 종합 - ET 전용 상시 표시) -->
+    <!-- 2. 오늘의 중요 발표 (호재/악재 평가 배지 & 비교 요약문 포함) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
             <span class="text-[9px] text-slate-500" id="econ-source">--</span>
         </div>
-        <div id="econ-list" class="space-y-1">
+        <div id="econ-list" class="space-y-1.5">
             <div class="text-[11px] text-slate-500 py-0.5">일정을 불러오는 중입니다...</div>
         </div>
     </div>
@@ -624,7 +624,7 @@
             if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
         }
 
-        // [신규] 실시간 변동성 쇼크 렌더러 (양방향 급등/급락 + 시작 시간 + 경과)
+        // 실시간 변동성 쇼크 렌더러
         function renderShockAlert(alert) {
             const banner = $('shock-alert-banner');
             if (!banner) return;
@@ -639,7 +639,6 @@
             const isSurge = alert.type === 'SURGE';
             const isDrop = alert.type === 'DROP';
 
-            // 색상 테마 분기: 급락(Rose) / 급등(Emerald) / 기타 변동성(Purple)
             if (isSurge) {
                 banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-emerald-500 bg-emerald-950/90 shadow-lg shadow-emerald-950/60 transition-all duration-300';
                 $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping inline-block mr-1';
@@ -912,7 +911,6 @@
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            // 30분 단위 눈금 및 16:00 마감선
             const gridGroup = $('cvd-vertical-grids');
             if (!bars.length) { 
                 gridGroup.innerHTML = '';
@@ -958,8 +956,8 @@
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
-                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); setTone(`tf-${k}-score`, 'text-slate-500'); });
+                $('dir-gauge-pin').style.left = '50%'; $('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
                 list.innerHTML = '';
                 return;
             }
@@ -1027,6 +1025,7 @@
             return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
+        // [개선] 지표 발표 호재/악재 평가 배지 & 상세 요약 문장 렌더러
         function renderEconEvents(e) {
             const card = $('econ-card');
             card.classList.remove('hidden');
@@ -1039,14 +1038,39 @@
             }
 
             $('econ-list').innerHTML = items.map((it) => {
-                const cls = it.passed ? 'text-slate-500' : 'text-amber-300 font-semibold';
-                const dot = it.passed ? 'bg-slate-600' : 'bg-amber-400 animate-pulse';
-                return `<div class="flex items-center justify-between text-[11px] ${cls}">
-                    <span class="flex items-center space-x-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full ${dot} inline-block"></span>
-                        <span>${escapeHtml(it.title)}</span>
-                    </span>
-                    <span class="font-mono text-[10px]">${escapeHtml(it.time)}${it.passed ? ' · 발표완료' : ' · 발표 예정'}</span>
+                const isPassed = it.passed;
+                const dot = isPassed ? 'bg-slate-600' : 'bg-amber-400 animate-pulse';
+
+                // 호재/악재 평가 배지 렌더링
+                let badgeHtml = '';
+                let sentenceColor = 'text-slate-400';
+                if (it.eval_tag && it.actual) {
+                    if (it.eval_tone === 'bull') {
+                        badgeHtml = `<span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-1.5 py-0.2 rounded font-bold">${escapeHtml(it.eval_tag)}</span>`;
+                        sentenceColor = 'text-emerald-300 font-medium';
+                    } else if (it.eval_tone === 'bear') {
+                        badgeHtml = `<span class="text-[9px] bg-rose-950 text-rose-300 border border-rose-800/80 px-1.5 py-0.2 rounded font-bold">${escapeHtml(it.eval_tag)}</span>`;
+                        sentenceColor = 'text-rose-300 font-medium';
+                    } else {
+                        badgeHtml = `<span class="text-[9px] bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.2 rounded font-bold">${escapeHtml(it.eval_tag)}</span>`;
+                        sentenceColor = 'text-slate-300';
+                    }
+                } else if (!isPassed && it.forecast) {
+                    badgeHtml = `<span class="text-[9px] bg-slate-800/90 text-amber-300/90 border border-slate-700 px-1 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                }
+
+                const titleCls = isPassed ? 'text-slate-300' : 'text-amber-300 font-bold';
+
+                return `<div class="py-1.5 border-b border-slate-800/60 last:border-0">
+                    <div class="flex items-center justify-between text-[11px]">
+                        <span class="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                            <span class="w-1.5 h-1.5 rounded-full ${dot} inline-block"></span>
+                            <span class="${titleCls}">${escapeHtml(it.title)}</span>
+                            ${badgeHtml}
+                        </span>
+                        <span class="font-mono text-[10px] text-slate-400 shrink-0 ml-2">${escapeHtml(it.time)}${isPassed ? ' · 발표완료' : ' · 발표예정'}</span>
+                    </div>
+                    ${it.eval_sentence ? `<div class="text-[10px] pl-3 mt-0.5 ${sentenceColor}">↳ ${escapeHtml(it.eval_sentence)}</div>` : ''}
                 </div>`;
             }).join('');
         }
