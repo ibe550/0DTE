@@ -1094,12 +1094,10 @@ def fetch_schwab_chain(token, today_date):
         )
 
     today_str = today_date.isoformat()
-    # 1차: $SPX 로 160개 스트라이크 조회 (넓은 범위 확보)
     data = ask("$SPX", today_date, today_date, 160)
     exps = _chain_exps(data)
     used_sym = "$SPX"
 
-    # 2차: 만약 $SPX 에 오늘 만기가 없다면 $SPXW 로 재조회
     if today_str not in exps:
         data_spxw = ask("$SPXW", today_date, today_date, 160)
         exps_spxw = _chain_exps(data_spxw)
@@ -1190,7 +1188,6 @@ def atm_straddle(contracts, S):
 
 
 def gamma_flip_level(contracts, S, T):
-    """0DTE 장 후반에도 감마 특이점이 터지지 않도록 안정화된 Zero-Crossing 탐색."""
     prof = [c for c in contracts if c["iv"] and (c["oi"] > 0 or c.get("vol", 0) > 0) and abs(c["K"] / S - 1.0) <= 0.06]
     if len(prof) < 6:
         return None, None
@@ -1224,7 +1221,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     exp_dt = ET.localize(datetime(y, m, d, 16, 0))
     secs = (exp_dt - now_et).total_seconds()
 
-    # 장 후반(15:30~) 블랙숄즈 감마 특이점 붕괴 방지: 최소 30분(1800초)의 스무딩 바닥값 적용
+    # 장 후반(15:30~) 블랙숄즈 감마 특이점 붕괴 방지: 최소 30분(1800초) 스무딩 바닥값 적용
     T = max(secs, 1800.0) / SECONDS_PER_YEAR
 
     # 0DTE 실시간 반영: OI와 당일 거래량 중 큰 값을 유효 계약수로 선정
@@ -1315,11 +1312,18 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     oi_below_call = sum(e["call_oi"] for k, e in per.items() if k < S)
     oi_below_put = sum(e["put_oi"] for k, e in per.items() if k < S)
 
+    # [수정] 16:00 ET 이전에는 오늘 날짜를, 16:00 ET 이후에는 다음 거래일 만기를 정상 0DTE 세션으로 인정
+    target_date = now_et.date() if now_et.hour < 16 else (now_et.date() + timedelta(days=1))
+    is_0dte_session = bool(
+        (now_et.hour < 16 and exp_date == now_et.date().isoformat() and secs > 0) or
+        (now_et.hour >= 16 and exp_date >= target_date.isoformat())
+    )
+
     return {
         "available": True,
         "source": source,
         "expiration": exp_date,
-        "is_0dte": bool(exp_date == now_et.date().isoformat() and secs > 0),
+        "is_0dte": is_0dte_session,
         "call_wall": round(call_wall, 1) if call_wall is not None else None,
         "put_wall": round(put_wall, 1) if put_wall is not None else None,
         "gamma_flip": round(flip * scale, 1) if flip is not None else None,
@@ -1823,7 +1827,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
                 "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
             )
         else:
-            kv_note = "<p style='color:#f59e0b;'>⚠️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
+            kv_note = "<p style='color:#f59e0b;'>⚠️️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
 
     manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
         "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
