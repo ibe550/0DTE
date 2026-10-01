@@ -47,7 +47,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.7</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.8</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -57,7 +57,7 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (호재/악재 평가 배지 & 비교 요약문 포함) -->
+    <!-- 2. 오늘의 중요 발표 (1시간 경과 후 자동 닫힘 + 호재/악재 평가 배지) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
@@ -624,7 +624,6 @@
             if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
         }
 
-        // 실시간 변동성 쇼크 렌더러
         function renderShockAlert(alert) {
             const banner = $('shock-alert-banner');
             if (!banner) return;
@@ -957,7 +956,7 @@
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
                 $('dir-gauge-pin').style.left = '50%'; $('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
-                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
+                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); setTone(`tf-${k}-score`, 'text-slate-500'); });
                 list.innerHTML = '';
                 return;
             }
@@ -1025,7 +1024,6 @@
             return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
-        // [개선] 지표 발표 호재/악재 평가 배지 & 상세 요약 문장 렌더러
         function renderEconEvents(e) {
             const card = $('econ-card');
             card.classList.remove('hidden');
@@ -1033,7 +1031,7 @@
 
             const items = (e && e.items) ? e.items : [];
             if (!items.length) {
-                $('econ-list').innerHTML = '<div class="text-[11px] text-slate-500 py-0.5">오늘 예정된 핵심 경제 지표 발표가 없습니다.</div>';
+                $('econ-list').innerHTML = '<div class="text-[11px] text-slate-500 py-0.5">현재 예정되거나 진행 중인 핵심 경제 지표 발표가 없습니다.</div>';
                 return;
             }
 
@@ -1041,7 +1039,6 @@
                 const isPassed = it.passed;
                 const dot = isPassed ? 'bg-slate-600' : 'bg-amber-400 animate-pulse';
 
-                // 호재/악재 평가 배지 렌더링
                 let badgeHtml = '';
                 let sentenceColor = 'text-slate-400';
                 if (it.eval_tag && it.actual) {
