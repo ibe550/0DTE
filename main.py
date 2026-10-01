@@ -410,7 +410,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
                 "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치에 부합 (중립적 흐름)"
             }
 
-        # 1. 물가 지표: 예상 하회 = 물가 둔화 호재 / 예상 상회 = 물가 과열 악재
         if is_inflation:
             if diff > 0:
                 return {
@@ -425,7 +424,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
                     "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 둔화/물가 안정 (주가 호재)"
                 }
 
-        # 2. 실업률/실업수당: 예상 상회 = 실업 증가 부정적 / 예상 하회 = 고용 견조 긍정적
         elif is_unemployment:
             if diff > 0:
                 return {
@@ -440,7 +438,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
                     "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 및 고용 시장 안정 (호재)"
                 }
 
-        # 3. 경기/성장 지표 (GDP, NFP, ISM, 소매판매): 예상 상회 = 경기 호조 / 예상 하회 = 침체 우려
         else:
             if diff > 0:
                 return {
@@ -763,10 +760,18 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# 실시간 변동성 쇼크 감지 (양방향 급등/급락 + 시작 시각 + 반등 추적)
+# 실시간 변동성 쇼크 감지 (당일 세션 엄격 필터링 + 30분 TTL)
 # ─────────────────────────────────────────────────────────────
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
+    """급락(Flash Drop) 및 급등(Flash Surge), 시작 시각, 딜러 레벨 돌파를 종합 감시합니다."""
     if not spx_p:
+        return {"active": False}
+
+    today = now_et.date()
+    is_rth = (now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and (now_et.hour < 16)
+
+    # 1. 정규장 시간 외(새벽/프리마켓/장마감후)에는 변동성 쇼크 배너 완전 차단 (어제 기록 오작동 방지)
+    if not is_rth:
         return {"active": False}
 
     reasons = []
@@ -775,8 +780,13 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
     start_time_label = None
     elapsed_text = ""
 
-    if spy_5m_candles and len(spy_5m_candles) >= 2 and ratio:
-        recent_bars = spy_5m_candles[-6:]
+    today_open_ts = int(ET.localize(datetime(today.year, today.month, today.day, 9, 30, 0)).timestamp())
+
+    # 2. 반드시 오늘 09:30 이후에 생성된 당일 캔들만 추출 (어제 오후 캔들 유입 방지)
+    today_bars = [c for c in (spy_5m_candles or []) if c["t"] >= today_open_ts]
+    recent_bars = today_bars[-6:] if len(today_bars) >= 2 else []
+
+    if recent_bars and ratio:
         high_bar = max(recent_bars, key=lambda b: b["h"])
         low_bar = min(recent_bars, key=lambda b: b["l"])
 
@@ -790,36 +800,40 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         rally_from_low = curr_c - min_l
         rally_from_low_pct = (rally_from_low / min_l) * 100
 
-        # 급락 패턴 감지
+        # 급락 패턴 감지 (발생 시각 기준 30분 이내만 유효)
         if drop_from_high <= -14.0 or drop_from_high_pct <= -0.25:
-            shock_type = "DROP"
-            level = "CRITICAL" if (drop_from_high <= -24.0 or drop_from_high_pct <= -0.40) else "WARNING"
             start_ts = high_bar["t"]
-            start_dt = datetime.fromtimestamp(start_ts, ET)
-            start_time_label = start_dt.strftime("%H:%M ET")
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
-            elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
 
-            bounce = curr_c - min_l
-            bounce_str = f" → 저점 대비 +{bounce:.1f}pt 반등 중" if bounce >= 5.0 else ""
-            reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생{bounce_str}")
+            if elapsed_min <= 30:  # 30분 TTL
+                shock_type = "DROP"
+                level = "CRITICAL" if (drop_from_high <= -24.0 or drop_from_high_pct <= -0.40) else "WARNING"
+                start_dt = datetime.fromtimestamp(start_ts, ET)
+                start_time_label = start_dt.strftime("%H:%M ET")
+                elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
 
-        # 급등 패턴 감지
+                bounce = curr_c - min_l
+                bounce_str = f" → 저점 대비 +{bounce:.1f}pt 반등 중" if bounce >= 5.0 else ""
+                reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생{bounce_str}")
+
+        # 급등 패턴 감지 (발생 시각 기준 30분 이내만 유효)
         elif rally_from_low >= 14.0 or rally_from_low_pct >= 0.25:
-            shock_type = "SURGE"
-            level = "CRITICAL" if (rally_from_low >= 24.0 or rally_from_low_pct >= 0.40) else "WARNING"
             start_ts = low_bar["t"]
-            start_dt = datetime.fromtimestamp(start_ts, ET)
-            start_time_label = start_dt.strftime("%H:%M ET")
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
-            elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
 
-            pullback = curr_c - max_h
-            pullback_str = f" → 고점 대비 {pullback:.1f}pt 눌림목" if pullback <= -5.0 else ""
-            reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생{pullback_str}")
+            if elapsed_min <= 30:  # 30분 TTL
+                shock_type = "SURGE"
+                level = "CRITICAL" if (rally_from_low >= 24.0 or rally_from_low_pct >= 0.40) else "WARNING"
+                start_dt = datetime.fromtimestamp(start_ts, ET)
+                start_time_label = start_dt.strftime("%H:%M ET")
+                elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
 
-    # GEX 딜러 레벨 돌파/붕괴
-    if gex and gex.get("available"):
+                pullback = curr_c - max_h
+                pullback_str = f" → 고점 대비 {pullback:.1f}pt 눌림목" if pullback <= -5.0 else ""
+                reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생{pullback_str}")
+
+    # 3. GEX 딜러 레벨 돌파/붕괴 (당일 실시간 0DTE 체인에서만)
+    if gex and gex.get("available") and gex.get("is_0dte"):
         pw = gex.get("put_wall")
         cw = gex.get("call_wall")
         flip = gex.get("gamma_flip")
@@ -843,24 +857,24 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         elif flip and spx_p > flip and shock_type == "SURGE":
             reasons.append(f"Gamma Flip({flip:.1f}) 상회: 양(+) 감마 안정 구간 진입")
 
-    # CVD 기관 체결 압력
-    if cvd and cvd.get("sell_pct"):
+    # 4. CVD 기관 체결 압력 (전일 마감 데이터가 아닌 당일 실시간일 때만)
+    if cvd and not cvd.get("is_prior") and cvd.get("sell_pct"):
         sell_pct = cvd["sell_pct"]
         buy_pct = cvd["buy_pct"]
         if sell_pct >= 65 and cvd.get("tone") == "bear":
-            reasons.append(f"기관 매도 덤핑 압도적 폭발 (Sell {sell_pct}%, {cvd.get('sell_vol')})")
+            reasons.append(f"당일 기관 매도 덤핑 압도적 폭발 (Sell {sell_pct}%, {cvd.get('sell_vol')})")
             if shock_type == "NORMAL":
                 shock_type = "DROP"
             if level != "CRITICAL":
                 level = "WARNING"
         elif buy_pct >= 65 and cvd.get("tone") == "bull":
-            reasons.append(f"기관 매수 스퀴즈 압도적 유입 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
+            reasons.append(f"당일 기관 매수 스퀴즈 압도적 유입 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
             if shock_type == "NORMAL":
                 shock_type = "SURGE"
             if level != "CRITICAL":
                 level = "WARNING"
 
-    # VIX 급등
+    # 5. VIX 급등
     if vix_q:
         vix_p = vix_q.get("price")
         vix_pct = vix_q.get("change_pct")
@@ -1734,7 +1748,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 실시간 변동성 쇼크 감지 시스템 (양방향 급등/급락 + 시작 시각 + 반등 추적)
+    # 6. 실시간 변동성 쇼크 감지 시스템 (당일 세션 엄격 필터링 + 30분 TTL)
     spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
     shock_alert = guard("shock_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
 
