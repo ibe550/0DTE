@@ -802,7 +802,7 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD (A/D Pressure Model, 09:30~ Session)
+# VWAP / Volume Profile (개선: 당일 정규장 세션 + SPY 환산 + 몸통 가중치)
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source):
     sess = get_rth_session(spy_candles)
@@ -841,53 +841,64 @@ def compute_vwap(spy_candles, ratio, source):
     }
 
 
-def last_rth_close(spx_candles):
-    if not spx_candles:
-        return None
-    last_date = datetime.fromtimestamp(spx_candles[-1]["t"], ET).date()
-    today = datetime.now(ET).date()
-    if last_date < today:
-        return spx_candles[-1]
-    prior = [c for c in spx_candles if datetime.fromtimestamp(c["t"], ET).date() < today]
-    return prior[-1] if prior else None
-
-
-VP_WINDOW_HOURS = 24
-BASIS_MAX_GAP_SEC = 20 * 60
-
-
-def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
-    anchor = last_rth_close(spx_candles)
-    if not anchor or not es_candles:
-        return None
-    es_at_anchor = min(es_candles, key=lambda c: abs(c["t"] - anchor["t"]))
-    if abs(es_at_anchor["t"] - anchor["t"]) > BASIS_MAX_GAP_SEC:
-        return None
-    basis = anchor["c"] - es_at_anchor["c"]
-
-    cutoff = es_candles[-1]["t"] - VP_WINDOW_HOURS * 3600
-    window = [c for c in es_candles if c["t"] >= cutoff and c["v"] > 0]
-    if not window:
+def compute_volume_profile(spy_candles, ratio, source):
+    """당일 정규장(09:30 ET ~ 현재) Schwab SPY 거래량을 SPX 가격으로 직접 환산하여 집계하는 세션 프로파일.
+    선물 베이시스 오차와 24시간 롤링 윈도우의 POC 급변 왜곡을 제거하고 캔들 몸통 가중치를 적용합니다.
+    """
+    sess = get_rth_session(spy_candles)
+    if not sess or not ratio:
         return None
 
-    bins, total = {}, 0.0
-    for c in window:
-        lo, hi = c["l"] + basis, c["h"] + basis
+    bins = {}
+    total = 0.0
+
+    for c in sess:
+        v = c["v"]
+        if v <= 0:
+            continue
+
+        # SPX 가격대로 1:1 환산
+        lo = c["l"] * ratio
+        hi = c["h"] * ratio
+        op = c["o"] * ratio
+        cl = c["c"] * ratio
+
         if hi < lo:
             lo, hi = hi, lo
-        lo_b, hi_b = int(round(lo / 5.0)) * 5, int(round(hi / 5.0)) * 5
+
+        # 5pt 단위 버킷팅
+        lo_b = int(round(lo / 5.0)) * 5
+        hi_b = int(round(hi / 5.0)) * 5
         rng = list(range(lo_b, hi_b + 5, 5))
-        each = c["v"] / len(rng)
+        if not rng:
+            continue
+
+        # 캔들 몸통(Body) vs 꼬리(Wick) 가중치 분배 (꼬리 거절 자리의 가짜 POC 형성 방지)
+        body_lo = min(op, cl)
+        body_hi = max(op, cl)
+
+        weights = []
         for b in rng:
+            if body_lo - 2.5 <= b <= body_hi + 2.5:
+                weights.append(2.5)  # 몸통 구간 2.5배 가중치
+            else:
+                weights.append(1.0)
+
+        w_sum = sum(weights)
+        for b, w in zip(rng, weights):
+            each = v * (w / w_sum)
             bins[b] = bins.get(b, 0.0) + each
             total += each
-    if not bins:
+
+    if not bins or total <= 0:
         return None
+
     keys = sorted(bins)
     poc = max(bins, key=bins.get)
     target = total * 0.70
     cur = bins[poc]
     lo_i = hi_i = keys.index(poc)
+
     while cur < target and (lo_i > 0 or hi_i < len(keys) - 1):
         up = bins[keys[hi_i + 1]] if hi_i + 1 < len(keys) else -1.0
         dn = bins[keys[lo_i - 1]] if lo_i > 0 else -1.0
@@ -897,16 +908,19 @@ def compute_volume_profile(es_candles, spx_candles, es_source, spx_source):
         else:
             lo_i -= 1
             cur += dn
-    hours_covered = (window[-1]["t"] - window[0]["t"]) / 3600.0
+
+    start_ts, end_ts = sess[0]["t"], sess[-1]["t"]
+    hours_covered = (end_ts - start_ts) / 3600.0
+    sess_date = datetime.fromtimestamp(end_ts, ET).strftime("%m/%d")
+
     return {
         "val": float(keys[lo_i]),
         "poc": float(poc),
         "vah": float(keys[hi_i]),
-        "basis": round(basis, 2),
         "hours_covered": round(hours_covered, 1),
         "source": (
-            f"{es_source} · 마지막 정규장 베이시스({basis:+.2f}pt, 기준 {spx_source}) 적용 · "
-            f"5pt 구간 · 70% Value Area · 최근 {hours_covered:.1f}시간(정규장+프리/애프터)"
+            f"{source} x SPX/SPY 환산 · {sess_date} 정규장 (09:30~{et_time_sec(end_ts)}) · "
+            f"5pt 구간 · 70% Value Area · 몸통 가중치 프로파일"
         ),
     }
 
@@ -926,22 +940,22 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
         v = c["v"]
         h, l, cl = c["h"], c["l"], c["c"]
         rng = h - l
-        
+
         if rng > 0:
             buy_ratio = (cl - l) / rng
             sell_ratio = (h - cl) / rng
         else:
             buy_ratio = 0.5
             sell_ratio = 0.5
-            
+
         bar_buy = v * buy_ratio
         bar_sell = v * sell_ratio
         bar_delta = bar_buy - bar_sell
-        
+
         buy += bar_buy
         sell += bar_sell
         running += bar_delta
-        
+
         out.append({
             "t": c["t"],
             "vol": round(v / 1000.0, 2),
@@ -952,10 +966,10 @@ def compute_cvd(candles, tf_key, source, symbol="SPY"):
     total = buy + sell
     if total <= 0:
         return None
-        
+
     buy_pct = int(round(buy / total * 100))
     sell_pct = 100 - buy_pct
-    
+
     if buy_pct >= 60:
         status, tone = "Buying Pressure", "bull"
         text = f"Strong buying pressure – {buy_pct}% buy volume in regular session."
@@ -1337,7 +1351,6 @@ def status_of(score):
 
 
 def analyze_tf(candles):
-    """0DTE 실전에 맞게 빠른 EMA(5/13/21), 캔들 바의 종가 마감 압력, 모멘텀을 계산합니다."""
     closes = [c["c"] for c in candles]
     if len(closes) < 15:
         return None
@@ -1360,9 +1373,9 @@ def analyze_tf(candles):
     bar_imp = 0.0
     if rng > 0:
         if body < 0 and (last_c["h"] - last_c["c"]) / rng >= 0.75:
-            bar_imp = -1.5  # 저가 마감 장대 음봉 (패닉 셀)
+            bar_imp = -1.5
         elif body > 0 and (last_c["c"] - last_c["l"]) / rng >= 0.75:
-            bar_imp = 1.5   # 고가 마감 장대 양봉
+            bar_imp = 1.5
         else:
             bar_imp = 0.5 if body > 0 else -0.5
 
@@ -1379,7 +1392,6 @@ def analyze_tf(candles):
 
 def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
     ev = []
-    # 1. VWAP 판정
     if spx_p is not None and vwap_val is not None:
         diff = spx_p - vwap_val
         ev.append({
@@ -1390,7 +1402,6 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
     else:
         ev.append({"title": "VWAP 위치", "signal": "na", "text": "N/A (VWAP 데이터 없음)"})
 
-    # 2. CVD 매수/매도 압력 연동
     if cvd_data:
         ev.append({
             "title": "CVD 볼륨 압력",
@@ -1400,7 +1411,6 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
     else:
         ev.append({"title": "CVD 볼륨 압력", "signal": "na", "text": "N/A"})
 
-    # 3. 1H 큰 방향 구조
     if len(c1h) >= 6:
         h3, h6 = max(c["h"] for c in c1h[-3:]), max(c["h"] for c in c1h[-6:-3])
         l3, l6 = min(c["l"] for c in c1h[-3:]), min(c["l"] for c in c1h[-6:-3])
@@ -1414,7 +1424,6 @@ def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
     else:
         ev.append({"title": "상위(1H) 구조", "signal": "na", "text": "N/A"})
 
-    # 4. 모멘텀
     if len(c1h) >= 3:
         mom = c1h[-1]["c"] - c1h[-3]["c"]
         ev.append({
@@ -1429,7 +1438,7 @@ def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=N
     avail = {k: v for k, v in tf_results.items() if v}
     if not avail:
         return {"available": False, "source": "N/A", "reason": "SPY 실시간 봉 데이터를 가져오지 못했습니다"}
-    
+
     wsum = sum(DIR_WEIGHTS[k] for k in avail)
     raw_score = sum(DIR_WEIGHTS[k] * avail[k]["score"] for k in avail) / wsum
 
@@ -1437,13 +1446,13 @@ def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=N
     score = raw_score
     if vwap_diff is not None:
         if vwap_diff < -1.0:
-            score -= 1.5  # VWAP 하회 강력 감점
+            score -= 1.5
         elif vwap_diff > 1.0:
             score += 1.0
-            
+
     if cvd_data:
         if cvd_data.get("tone") == "bear":
-            score -= 1.5  # 매도 덤핑 강력 감점
+            score -= 1.5
         elif cvd_data.get("tone") == "bull":
             score += 1.0
 
@@ -1462,12 +1471,12 @@ def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=N
     kinds = {src_kind(tf_sources.get(k)) for k in avail}
     names = {"schwab": "Charles Schwab", "yahoo": "Yahoo Finance"}
     src = " + ".join(names[x] for x in ("schwab", "yahoo") if x in kinds) or "N/A"
-    
+
     tfs = {}
     for k in ("1h", "15m", "5m", "1m"):
         v = avail.get(k)
         tfs[k] = {**v, "source": tf_sources.get(k)} if v else None
-        
+
     return {
         "available": True,
         "score": round(score, 1),
@@ -1522,13 +1531,10 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
 
     v_key, r_key, c_key = normalize_tf(vwap_tf), normalize_tf(rsi_tf), normalize_tf(cvd_tf)
     with ThreadPoolExecutor(max_workers=10) as ex:
-        # 방향 분석 전용: 지연 없는 Schwab 실시간 SPY 캔들 풀가동
         f_spy_dir = {k: ex.submit(get_candles, token, "spy", k) for k in {"1h", "15m", "5m", "1m"}}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
-        f_spx_5 = ex.submit(get_candles, token, "spx", "5m")
         f_spy_v = ex.submit(get_candles, token, "spy", v_key)
         f_spy_c = ex.submit(get_candles, token, "spy", c_key)
-        f_es_5 = ex.submit(get_candles, token, "es", "5m")
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
         f_news = ex.submit(get_news, now_et)
         f_econ = ex.submit(get_today_econ_events, now_et)
@@ -1538,10 +1544,8 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
 
     spy_dir_c = {k: result(f"candles spy dir {k}", f) for k, f in f_spy_dir.items()}
     spx_r = result("candles spx rsi", f_spx_r)
-    spx_5 = result("candles spx 5m", f_spx_5)
     spy_v = result("candles spy vwap", f_spy_v)
     spy_c = result("candles spy cvd", f_spy_c)
-    es_5 = result("candles es 5m", f_es_5)
     gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
     news = result("news", f_news)
     econ_events = result("econ_events", f_econ) or {"items": [], "source": "N/A", "error": "계산 오류"}
@@ -1553,13 +1557,20 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
             return spx_p / spy_data["candles"][-1]["c"]
         return None
 
+    # 1. VWAP 계산
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"]) if spy_v else None
+
+    # 2. Volume Profile 계산 (당일 정규장 세션 + Schwab SPY 직접 스케일링)
+    spy_vp = spy_dir_c.get("5m")
     vp = (
-        guard("volume_profile", compute_volume_profile, es_5["candles"], spx_5["candles"], es_5["source"], spx_5["source"])
-        if es_5 and spx_5 else None
+        guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"])
+        if (spy_vp and ratio_for(spy_vp)) else None
     )
+
+    # 3. CVD 계산
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY") if spy_c else None
 
+    # 4. RSI 계산
     rsi = None
     if spx_r:
         rs = rsi_series([c["c"] for c in spx_r["candles"]])
@@ -1572,21 +1583,22 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
                 "source": f"{spx_r['source']} · Wilder RSI(14)",
             }
 
-    # 개선된 실시간 방향 분석
+    # 5. 방향 분석 계산
     tf_results, tf_sources = {}, {}
     for k in ("1h", "15m", "5m", "1m"):
         d = spy_dir_c.get(k)
         tf_results[k] = guard(f"direction {k}", analyze_tf, d["candles"]) if d else None
         tf_sources[k] = d["source"] if d else None
-        
+
     c1h = spy_dir_c["1h"]["candles"] if spy_dir_c.get("1h") else []
     rs_1h = rsi_series([c["c"] for c in c1h])
     vwap_diff = (spx_p - vwap["val"]) if (spx_p and vwap and vwap.get("val")) else None
     evidence = build_evidence(spx_p, vwap["val"] if vwap else None, c1h, rs_1h[-1] if rs_1h else None, cvd)
-    
+
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
+    # 6. 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
     def yield_level_and_change(q):
