@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.0</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.2</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -42,13 +42,15 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (BLS 공식 일정) -->
-    <div id="econ-card" class="hidden card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
+    <!-- 2. 오늘의 중요 발표 (PCE, CPI, FOMC 등 종합 - ET 전용 상시 표시) -->
+    <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
-            <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표</span>
+            <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
             <span class="text-[9px] text-slate-500" id="econ-source">--</span>
         </div>
-        <div id="econ-list" class="space-y-1"></div>
+        <div id="econ-list" class="space-y-1">
+            <div class="text-[11px] text-slate-500 py-0.5">일정을 불러오는 중입니다...</div>
+        </div>
     </div>
 
     <!-- 3. 메인 시세 4열 -->
@@ -335,7 +337,7 @@
         </div>
     </div>
 
-    <!-- 9. SPY VOLUME + CVD -->
+    <!-- 9. SPY VOLUME + CVD (고밀도 30분 단위 시간축 및 16:00 마감선 정밀 렌더링) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -373,13 +375,13 @@
         </div>
 
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-2">
-            <svg id="cvd-bars-svg" class="w-full h-36 md:h-40" viewBox="0 0 500 130" preserveAspectRatio="none">
+            <svg id="cvd-bars-svg" class="w-full h-38 md:h-44" viewBox="0 0 500 134" preserveAspectRatio="none">
                 <!-- 가로 기준선 -->
                 <line x1="35" y1="20" x2="480" y2="20" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
                 <line x1="35" y1="65" x2="480" y2="65" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
                 <line x1="35" y1="110" x2="480" y2="110" stroke="#1e293b" stroke-width="1"/>
                 
-                <!-- 세로 격자 점선 그룹 -->
+                <!-- 세로 격자 점선 및 30분 단위 시간 라벨 일체형 렌더링 -->
                 <g id="cvd-vertical-grids"></g>
 
                 <text id="cvd-y-max" x="30" y="23" fill="#64748b" font-size="8" text-anchor="end">--</text>
@@ -390,15 +392,11 @@
                 <g id="cvd-real-bars"></g>
                 <path id="cvd-line-path" d="" fill="none" stroke="#eab308" stroke-width="1.5"/>
             </svg>
-            <!-- 촘촘한 시간축 라벨 -->
-            <div id="cvd-x-axis" class="flex justify-between text-[7px] md:text-[8px] text-slate-500 font-mono pl-[34px] pr-[16px] mt-1 overflow-hidden select-none">
-                <span>--</span>
-            </div>
-            <div class="text-center text-[8px] text-slate-500 mt-0.5">Time (ET)</div>
+            <div class="text-center text-[8px] text-slate-500 mt-0.5 font-mono">Time (Eastern Time, ET) · 30m Intervals</div>
         </div>
 
         <!-- 봉 정보 / 마우스 오버 실시간 인스펙터 -->
-        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1.5 px-1 bg-slate-900/60 p-1 rounded border border-slate-800/60">
+        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1.5 px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
             <div class="truncate">
                 <span id="cvd-inspect-label" class="text-slate-400">마지막 봉</span>
                 <span id="cvd-last-time" class="text-amber-300 font-bold ml-1">--</span>
@@ -750,8 +748,13 @@
             const b = cachedBars[idx];
             const d = new Date(b.t * 1000);
             const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
+            
+            // 마지막 캔들인 경우 마감 범위 상세 안내
+            const isLast = (idx === cachedBars.length - 1);
+            const rangeHint = isLast && currentCvdTf === '10m' ? ' (15:50~16:00 마감봉)' : (isLast ? ' (마감봉)' : '');
+
             $('cvd-inspect-label').innerText = '선택 봉';
-            $('cvd-last-time').innerText = timeStr;
+            $('cvd-last-time').innerText = `${timeStr}${rangeHint}`;
             const flowTag = b.is_bull ? '<span class="text-emerald-400 font-bold">Buy 우세</span>' : '<span class="text-rose-400 font-bold">Sell 우세</span>';
             $('cvd-inspect-sub').innerHTML = `볼륨 <span class="text-slate-100 font-bold">${b.vol}K</span> · CVD <span class="${b.cvd_line >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${b.cvd_line > 0 ? '+' : ''}${b.cvd_line}K</span> · ${flowTag}`;
         }
@@ -763,15 +766,16 @@
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0\%';$('cvd-sell-fill').style.width = '0%';
-                $('cvd-real-bars').innerHTML = '';$('cvd-line-path').setAttribute('d', '');
-                $('cvd-vertical-grids').innerHTML = '';$('cvd-x-axis').innerHTML = '<span>--</span>';
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
                 return;
             }
             cachedBars = c.bars || [];
-            defaultCvdLastTime = c.data_time;
+            
+            // 마지막 봉 라벨: 10분봉 15:50인 경우 명확히 마감봉 표기
+            const is10mLast = currentCvdTf === '10m' && (c.last_bar_time || '').startsWith('15:50');
+            defaultCvdLastTime = is10mLast ? `${c.data_time} (15:50~16:00 마감)` : c.data_time;
             defaultCvdSub = `최근 봉 <span class="text-slate-200">${c.recent_vol}</span> · 합계 <span class="text-slate-200">${c.total_vol}</span>`;
             
             inspectCvdBar(null);
@@ -809,6 +813,7 @@
             const cx = (i) => AREA_X0 + i * slot + slot / 2;
             const strokeW = slot < 2.5 ? '0' : '0.7';
 
+            // 1. 캔들 바 렌더링 + 호버/터치 이벤트 부착
             $('cvd-real-bars').innerHTML = bars.map((b, i) => {
                 const h = Math.max(1.5, (b.vol / maxVol) * 85);
                 const x = cx(i) - barW / 2, y = 110 - h;
@@ -816,39 +821,60 @@
                 const stroke = b.is_bull ? '#10b981' : '#f43f5e';
                 const d = new Date(b.t * 1000);
                 const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-                const tip = `[${timeStr}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K (${b.is_bull ? 'Buy 우세' : 'Sell 우세'})`;
+                const isLast = (i === bars.length - 1);
+                const tipRange = isLast && currentCvdTf === '10m' ? ' [15:50~16:00 마감봉]' : '';
+                const tip = `[${timeStr}${tipRange}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K (${b.is_bull ? 'Buy 우세' : 'Sell 우세'})`;
                 return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}" class="cursor-pointer transition-opacity hover:opacity-75" onmouseover="inspectCvdBar(${i})" onmouseout="inspectCvdBar(null)" ontouchstart="inspectCvdBar(${i})">
                     <title>${tip}</title>
                 </rect>`;
             }).join('');
 
+            // 2. CVD 노란색 누적 라인
             $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
                 const y = 65 - (b.cvd_line / maxCvd) * 40;
                 return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
             }).join(' '));
 
-            const axis = $('cvd-x-axis');
+            // 3. 30분 단위 고밀도 시간축 및 16:00 마감선 SVG 일체형 정밀 렌더링
             const gridGroup = $('cvd-vertical-grids');
             if (!bars.length) { 
-                axis.innerHTML = '<span>--</span>'; 
                 gridGroup.innerHTML = '';
             } else {
                 const isMobile = window.innerWidth < 640;
-                const targetTicks = isMobile ? 7 : 13;
-                const tickCount = Math.min(targetTicks, bars.length);
-                const step = (bars.length - 1) / Math.max(1, tickCount - 1);
-                const idxs = [...new Set(Array.from({ length: tickCount }, (_, k) => Math.round(k * step)))];
-                
-                gridGroup.innerHTML = idxs.map((i) => {
-                    const gx = cx(i).toFixed(1);
-                    return `<line x1="${gx}" y1="18" x2="${gx}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
-                }).join('');
+                const stepMin = isMobile ? 60 : 30; // 모바일 1시간 간격, PC 30분 간격
+                let gridHtml = '';
+                let lastTickMin = -999;
 
-                axis.innerHTML = idxs.map((i) => {
-                    const d = new Date(bars[i].t * 1000);
-                    const label = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
-                    return `<span>${label}</span>`;
-                }).join('');
+                bars.forEach((b, i) => {
+                    const d = new Date(b.t * 1000);
+                    const etHour = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
+                    const etMin = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
+                    const totalMinutes = etHour * 60 + etMin;
+
+                    // 개장봉(09:30)이거나, 매 30분(모바일은 60분) 정각 봉인 경우 눈금 생성
+                    const isTick = (i === 0) || (totalMinutes % stepMin === 0 && (totalMinutes - lastTickMin >= (stepMin - 5)));
+
+                    if (isTick) {
+                        lastTickMin = totalMinutes;
+                        const gx = cx(i).toFixed(1);
+                        const timeLabel = `${String(etHour).padStart(2, '0')}:${String(etMin).padStart(2, '0')}`;
+                        gridHtml += `<line x1="${gx}" y1="18" x2="${gx}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
+                        gridHtml += `<text x="${gx}" y="125" fill="#64748b" font-size="7.5" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
+                    }
+                });
+
+                // 장 마감(16:00)까지 진행된 세션이면 우측 끝에 16:00 마감선 명시
+                const lastBar = bars[bars.length - 1];
+                const lastD = new Date(lastBar.t * 1000);
+                const lastHour = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
+                const lastMin = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
+
+                if (lastHour === 15 && lastMin >= 45) {
+                    gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>`;
+                    gridHtml += `<text x="480" y="125" fill="#94a3b8" font-size="7.5" text-anchor="middle" font-family="monospace" font-weight="bold">16:00</text>`;
+                }
+
+                gridGroup.innerHTML = gridHtml;
             }
         }
 
@@ -932,13 +958,15 @@
 
         function renderEconEvents(e) {
             const card = $('econ-card');
-            const items = e && e.items ? e.items : [];
+            card.classList.remove('hidden');
+            setText('econ-source', (e && e.source) ? e.source : '공식 경제 캘린더 (ET 전용)');
+
+            const items = (e && e.items) ? e.items : [];
             if (!items.length) {
-                card.classList.add('hidden');
+                $('econ-list').innerHTML = '<div class="text-[11px] text-slate-500 py-0.5">오늘 예정된 핵심 경제 지표 발표가 없습니다.</div>';
                 return;
             }
-            card.classList.remove('hidden');
-            setText('econ-source', e.source || NA);
+
             $('econ-list').innerHTML = items.map((it) => {
                 const cls = it.passed ? 'text-slate-500' : 'text-amber-300 font-semibold';
                 const dot = it.passed ? 'bg-slate-600' : 'bg-amber-400 animate-pulse';
@@ -947,7 +975,7 @@
                         <span class="w-1.5 h-1.5 rounded-full ${dot} inline-block"></span>
                         <span>${escapeHtml(it.title)}</span>
                     </span>
-                    <span class="font-mono text-[10px]">${escapeHtml(it.time)}${it.passed ? ' · 발표완료' : ''}</span>
+                    <span class="font-mono text-[10px]">${escapeHtml(it.time)}${it.passed ? ' · 발표완료' : ' · 발표 예정'}</span>
                 </div>`;
             }).join('');
         }
