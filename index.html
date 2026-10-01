@@ -32,7 +32,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.3</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v13.4</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -284,6 +284,7 @@
             <div class="flex space-x-1" id="vwap-tf-group">
                 <button onclick="changeVwapTimeframe('1m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
                 <button onclick="changeVwapTimeframe('5m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeVwapTimeframe('10m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="10m">10m</button>
                 <button onclick="changeVwapTimeframe('15m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
                 <button onclick="changeVwapTimeframe('30m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
                 <button onclick="changeVwapTimeframe('1H')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
@@ -330,6 +331,7 @@
         <div class="flex space-x-1 mb-2" id="rsi-tf-group">
             <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
             <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+            <button onclick="changeRsiTimeframe('10m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="10m">10m</button>
             <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
             <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
             <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
@@ -353,7 +355,7 @@
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
                 <div class="flex items-center space-x-2">
-                    <span class="text-xs font-bold text-slate-200">📊 SPY VOLUME + CVD — <span id="cvd-title-tf">5M</span></span>
+                    <span class="text-xs font-bold text-slate-200">📊 SPY VOLUME + CVD — <span id="cvd-title-tf">10M</span></span>
                 </div>
             </div>
             <div class="text-right max-w-[60%]">
@@ -371,7 +373,8 @@
         <div class="flex justify-between items-center mb-2">
             <div class="flex space-x-1" id="cvd-tf-group">
                 <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
-                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="5m">5m</button>
+                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeCvdTimeframe('10m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="10m">10m</button>
                 <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
                 <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
                 <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
@@ -508,7 +511,7 @@
         const NA = 'N/A';
         let currentVwapTf = '1H';
         let currentRsiTf = '1H';
-        let currentCvdTf = '5m';
+        let currentCvdTf = '10m';
         let inFlight = false;
         let reqSeq = 0;
 
