@@ -37,7 +37,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.3</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.4</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] text-slate-400">
@@ -60,7 +60,7 @@
         </div>
     </div>
 
-    <!-- 3. 메인 시세 4열 -->
+    <!-- 3. 메인 시세 4열 (VIX 1D 상단 + VIX 하단 조합) -->
     <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="flex justify-between items-start">
@@ -70,20 +70,23 @@
             <div id="spx-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
             <div id="spx-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
         </div>
+
+        <!-- VIX1D (0DTE) + VIX (30D) 2중 비교 카드 -->
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="flex justify-between items-center">
-                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">VIX</span>
-                <span id="vix-price" class="text-[10px] md:text-sm font-bold text-slate-500">--</span>
+                <span class="text-[9px] md:text-[11px] text-purple-400 font-bold">VIX 1D (0DTE)</span>
+                <span id="vix1d-price" class="text-[10px] md:text-sm font-bold text-slate-500">--</span>
             </div>
-            <div id="vix-change" class="text-[8px] md:text-[10px] text-slate-500 text-right -mt-0.5">--</div>
-            <div id="vix-source" class="text-[7px] text-slate-500 text-right truncate">--</div>
+            <div id="vix1d-change" class="text-[8px] md:text-[10px] text-slate-500 text-right -mt-0.5">--</div>
+            <div id="vix1d-source" class="text-[7px] text-slate-500 text-right truncate">--</div>
             <div class="border-t border-slate-800 pt-1 mt-0.5 flex justify-between items-center">
-                <span class="text-[8px] md:text-[10px] text-slate-400 font-medium">VIX 9D</span>
-                <span id="vix9d-price" class="text-[9px] md:text-xs font-bold text-slate-500">--</span>
+                <span class="text-[8px] md:text-[10px] text-slate-400 font-medium">VIX (30D)</span>
+                <span id="vix-price" class="text-[9px] md:text-xs font-bold text-slate-500">--</span>
             </div>
-            <div id="vix9d-change" class="text-[8px] md:text-[10px] text-slate-500 text-right">--</div>
-            <div id="vix9d-source" class="text-[7px] text-slate-500 text-right truncate">--</div>
+            <div id="vix-change" class="text-[8px] md:text-[10px] text-slate-500 text-right">--</div>
+            <div id="vix-source" class="text-[7px] text-slate-500 text-right truncate">--</div>
         </div>
+
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">ES FUTURES</span>
@@ -92,6 +95,7 @@
             <div id="es-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
             <div id="es-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
         </div>
+
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">MAG7 (MAGS)</span>
@@ -644,7 +648,7 @@
             });
         }
 
-        // [컴팩트] 상단 헤더 전용 실시간 RSI 배지 렌더러
+        // 상단 헤더 전용 실시간 컴팩트 RSI 배지 렌더러
         function renderRsi(r) {
             const badge = $('header-rsi-badge');
             if (!badge) return;
@@ -823,7 +827,7 @@
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                $('dir-gauge-pin').style.left = '50%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
                 tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
                 list.innerHTML = '';
                 return;
@@ -972,8 +976,16 @@
                     () => renderRsi(data.rsi),
                     () => renderQuote('spx', data.spx, { pct: true }),
                     () => renderQuote('es', data.es, { pct: true }),
-                    () => renderQuote('vix', data.vix, { invert: true }),
-                    () => renderQuote('vix9d', data.vix9d, { invert: true }),
+                    () => {
+                        renderQuote('vix1d', data.vix1d, { invert: true });
+                        renderQuote('vix', data.vix, { invert: true });
+                        const p1d = data.vix1d && data.vix1d.price;
+                        const p30 = data.vix && data.vix.price;
+                        if (isNum(p1d) && isNum(p30) && p1d > p30) {
+                            const v1dEl = $('vix1d-price');
+                            if (v1dEl) v1dEl.title = '경고: VIX1D > VIX (0DTE 기간구조 역전 발생 · 변동성 확대 주의)';
+                        }
+                    },
                     () => renderQuote('mag7', data.mag7, { pct: true }),
                     () => renderQuote('wti', data.wti, { pct: true }),
                     () => renderQuote('brent', data.brent, { pct: true }),
