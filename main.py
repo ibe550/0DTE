@@ -63,7 +63,10 @@ def cached(key, ttl, fn):
     val = fn()
     if val is not None:
         _CACHE[key] = (now, val)
-    return val
+        return val
+    if hit:
+        return hit[1]
+    return None
 
 
 def fmt_dollars(x):
@@ -333,7 +336,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 경제 캘린더 (실시간 발표치 분석 + 지수 영향 판정)
+# 경제 캘린더 (실시간 발표치 분석 + 장중 100% 보존)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -397,12 +400,12 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
         if is_inflation:
             if diff > 0:
                 return {
-                    "tag": "🔴 임금/물가 과열 (하락)",
+                    "tag": "🔴 임금/물가 과열 (하락 편향)",
                     "tone": "bear",
                     "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 압력 가중 (지수 악재)"
                 }
             return {
-                "tag": "🟢 임금/물가 안정 (상승)",
+                "tag": "🟢 임금/물가 안정 (상승 편향)",
                 "tone": "bull",
                 "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 둔화 및 물가 안정 (지수 호재)"
             }
@@ -410,12 +413,12 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
         elif is_unemployment:
             if diff > 0:
                 return {
-                    "tag": "⚠️ 실업 증가 (하락)",
+                    "tag": "⚠️ 실업 증가 (하락 편향)",
                     "tone": "bear",
                     "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업률/실업수당 증가 (경기 둔화 악재)"
                 }
             return {
-                "tag": "🟢 실업 감소 (상승)",
+                "tag": "🟢 실업 감소 (상승 편향)",
                 "tone": "bull",
                 "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 및 고용 안정 (지수 호재)"
             }
@@ -423,12 +426,12 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
         elif is_nfp:
             if diff > 0:
                 return {
-                    "tag": "🟢 고용 서프라이즈 (상승)",
+                    "tag": "🟢 고용 서프라이즈 (상승 편향)",
                     "tone": "bull",
                     "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 대폭 증가 (경기 연착륙 호재)"
                 }
             return {
-                "tag": "🔴 고용 쇼크 (하락)",
+                "tag": "🔴 고용 쇼크 (하락 편향)",
                 "tone": "bear",
                 "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 부진/고용 급랭 우려 (지수 악재)"
             }
@@ -436,12 +439,12 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
         else:
             if diff > 0:
                 return {
-                    "tag": "🟢 경기 호조 (상승)",
+                    "tag": "🟢 경기 호조 (상승 편향)",
                     "tone": "bull",
                     "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 지표 강세 (지수 호재)"
                 }
             return {
-                "tag": "🔴 경기 위축 (하락)",
+                "tag": "🔴 경기 위축 (하락 편향)",
                 "tone": "bear",
                 "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 지표 부진 (지수 악재)"
             }
@@ -456,7 +459,7 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
 def fetch_global_econ_calendar():
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=4.5)
+        r = requests.get(url, headers=HEADERS, timeout=6.0)
         if r.status_code != 200:
             return None
         data = r.json()
@@ -498,8 +501,7 @@ def fetch_global_econ_calendar():
 
 
 def get_today_econ_events(now_et):
-    # 장중 실시간 발표치를 바로 캐치할 수 있도록 캐시 TTL을 20초로 단축
-    events = cached("econ_events_data", 20, fetch_global_econ_calendar)
+    events = cached("econ_events_data", 45, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
         return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
@@ -507,11 +509,11 @@ def get_today_econ_events(now_et):
     today = now_et.date()
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
-    active_today_items = [e for e in today_items if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)]
 
-    target_items = active_today_items
+    # 당일 장중(00:00~16:30 ET)에는 오늘 발표된 모든 지표를 절대 삭제하지 않고 유지
     is_tomorrow = False
-    if not active_today_items and now_et.hour >= 16:
+    target_items = today_items
+    if (not today_items or now_et.hour >= 17) and now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
             target_items = tomorrow_items
@@ -914,7 +916,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     put_wall = min(puts_gex, key=lambda k: per[k]["put_gex"]) * scale if puts_gex else None
     net_total = sum(e["call_gex"] + e["put_gex"] for e in per.values())
 
-    # ATM Straddle
     by_k = {}
     for c in contracts:
         m_val = ((c["bid"] + c["ask"]) / 2.0) if (c.get("bid") and c.get("ask")) else c.get("last")
