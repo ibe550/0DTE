@@ -15,7 +15,7 @@
 
     <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80"></div>
 
-    <!-- 0. 실시간 변동성 쇼크 배너 -->
+    <!-- 0. 최상단 실시간 변동성 쇼크 (양방향 급등/급락 경보 배너) -->
     <div id="shock-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 shadow-lg transition-all duration-300">
         <div class="flex items-center justify-between mb-1">
             <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight" id="shock-alert-head">
@@ -37,7 +37,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.1</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.2</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -47,7 +47,7 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 -->
+    <!-- 2. 오늘의 중요 발표 (1시간 후 자동 제거 + 호재/악재 평가) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
@@ -262,85 +262,7 @@
         </div>
     </div>
 
-    <!-- 7. [모바일 & PC 완벽 최적화] VWAP BANDS (±1σ/±2σ 채우기 + 고대비 시간축 + 인스펙터) -->
-    <div class="card p-2 md:p-3 mb-2">
-        <div class="flex justify-between items-start mb-2.5 gap-2">
-            <div class="flex space-x-1" id="vwap-tf-group">
-                <button onclick="changeVwapTimeframe('1m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
-                <button onclick="changeVwapTimeframe('5m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
-                <button onclick="changeVwapTimeframe('10m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="10m">10m</button>
-                <button onclick="changeVwapTimeframe('15m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
-                <button onclick="changeVwapTimeframe('30m')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
-                <button onclick="changeVwapTimeframe('1H')" class="vwap-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
-            </div>
-            <div class="text-right max-w-[55%]">
-                <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="vwap-source">--</span></div>
-                <div class="text-[11px] font-bold text-sky-400 mt-0.5" id="vwap-val-display">VWAP --</div>
-            </div>
-        </div>
-
-        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
-            <svg id="vwap-svg-chart" class="w-full h-44 md:h-52" viewBox="0 0 500 200" preserveAspectRatio="none">
-                <defs>
-                    <linearGradient id="vwap-fill-grad2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.08"/>
-                        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.03"/>
-                    </linearGradient>
-                    <linearGradient id="vwap-fill-grad1" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stop-color="#818cf8" stop-opacity="0.16"/>
-                        <stop offset="100%" stop-color="#818cf8" stop-opacity="0.06"/>
-                    </linearGradient>
-                </defs>
-
-                <!-- TradingView 스타일 밴드 음영 채우기 -->
-                <path id="vwap-band2-fill" d="" fill="url(#vwap-fill-grad2)"/>
-                <path id="vwap-band1-fill" d="" fill="url(#vwap-fill-grad1)"/>
-
-                <!-- 가로 기준선 -->
-                <line x1="40" y1="25" x2="480" y2="25" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
-                <line x1="40" y1="95" x2="480" y2="95" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="1"/>
-                <line x1="40" y1="165" x2="480" y2="165" stroke="#334155" stroke-width="1"/>
-
-                <!-- 고대비 Y축 수치 라벨 -->
-                <text id="vwap-y-high" x="35" y="28" fill="#94a3b8" font-size="9.5" font-weight="bold" text-anchor="end" font-family="monospace">--</text>
-                <text id="vwap-y-mid" x="35" y="98" fill="#64748b" font-size="9" text-anchor="end" font-family="monospace">--</text>
-                <text id="vwap-y-low" x="35" y="168" fill="#94a3b8" font-size="9.5" font-weight="bold" text-anchor="end" font-family="monospace">--</text>
-
-                <!-- 세로 시간 격자 및 시간 라벨 -->
-                <g id="vwap-vertical-grids"></g>
-
-                <!-- 상하단 밴드선 및 중심선 -->
-                <path id="vwap-band2-upper" d="" fill="none" stroke="#64748b" stroke-dasharray="1,3" stroke-width="1"/>
-                <path id="vwap-band2-lower" d="" fill="none" stroke="#64748b" stroke-dasharray="1,3" stroke-width="1"/>
-                <path id="vwap-band-upper" d="" fill="none" stroke="#818cf8" stroke-dasharray="3,3" stroke-width="1.3"/>
-                <path id="vwap-band-lower" d="" fill="none" stroke="#818cf8" stroke-dasharray="3,3" stroke-width="1.3"/>
-                <path id="vwap-center-line" d="" fill="none" stroke="#38bdf8" stroke-width="2.3" stroke-linecap="round"/>
-                
-                <!-- 현재값 강조 점 -->
-                <circle id="vwap-end-dot" cx="-50" cy="-50" r="3.5" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5"/>
-
-                <g id="vwap-interactive-layer"></g>
-            </svg>
-            <div class="flex justify-center space-x-3 text-[8px] text-slate-400 font-mono mt-0.5">
-                <span class="flex items-center"><span class="inline-block w-2.5 h-0.5 bg-sky-400 mr-1"></span>VWAP</span>
-                <span class="flex items-center"><span class="inline-block w-2.5 h-0.5 bg-indigo-400 mr-1"></span>±1σ</span>
-                <span class="flex items-center"><span class="inline-block w-2.5 h-0.5 bg-slate-500 mr-1"></span>±2σ</span>
-            </div>
-        </div>
-
-        <!-- 실시간 터치/호버 인스펙터 바 -->
-        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
-            <div>
-                <span id="vwap-inspect-label">마지막 시점</span>
-                <span id="vwap-inspect-time" class="text-amber-300 font-bold ml-1">--</span>
-            </div>
-            <div id="vwap-inspect-detail">
-                VWAP <span id="vwap-inspect-cur" class="text-sky-300 font-bold">--</span> (±1σ <span id="vwap-inspect-s1" class="text-indigo-300">--</span>)
-            </div>
-        </div>
-    </div>
-
-    <!-- 8. [모바일 & PC 완벽 최적화] RSI (14) -->
+    <!-- 7. [모바일 & PC 완벽 최적화] RSI (14) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -410,7 +332,7 @@
         </div>
     </div>
 
-    <!-- 9. SPY VOLUME + CVD -->
+    <!-- 8. SPY VOLUME + CVD (30분 단위 초정밀 눈금) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -486,7 +408,7 @@
         <div class="bg-slate-950 p-2 rounded border border-slate-800/80 text-[10px] text-slate-300 font-sans" id="cvd-summary-text">--</div>
     </div>
 
-    <!-- 10. SPX 방향분석 -->
+    <!-- 9. SPX 방향분석 (0DTE 최적화 - 백엔드 VWAP/CVD 점수 100% 정상 반영) -->
     <div class="card p-2 md:p-3 mb-3">
         <div class="flex justify-between items-center mb-1">
             <div class="flex items-center space-x-1.5 text-xs font-bold text-slate-300" id="dir-head">
@@ -575,7 +497,6 @@
         const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
         const POLL_MS = 5000;
         const NA = 'N/A';
-        let currentVwapTf = '1H';
         let currentRsiTf = '1H';
         let currentCvdTf = '10m';
         let inFlight = false;
@@ -588,10 +509,6 @@
         let cachedRsiPoints = [];
         let defaultRsiLastTime = '--';
         let defaultRsiDetail = '--';
-
-        let cachedVwapPoints = [];
-        let defaultVwapLastTime = '--';
-        let defaultVwapDetail = '--';
 
         const $ = (id) => document.getElementById(id);
         const TONES = ['text-emerald-400', 'text-rose-400', 'text-slate-300', 'text-slate-200', 'text-slate-500', 'text-amber-400'];
@@ -657,7 +574,6 @@
                     : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition');
             });
         }
-        function changeVwapTimeframe(tf) { currentVwapTf = tf; markActive('#vwap-tf-group', 'vwap-tf-btn', tf, 'bg-indigo-600'); fetchRealMarketData(true); }
         function changeRsiTimeframe(tf) { currentRsiTf = tf; markActive('#rsi-tf-group', 'rsi-tf-btn', tf, 'bg-indigo-600'); setText('rsi-title-tf', tf); fetchRealMarketData(true); }
         function changeCvdTimeframe(tf) { currentCvdTf = tf; markActive('#cvd-tf-group', 'cvd-tf-btn', tf, 'bg-teal-600'); setText('cvd-title-tf', tf.toUpperCase()); fetchRealMarketData(true); }
 
@@ -800,142 +716,6 @@
             [['marker-put-line', g.put_wall], ['marker-flip-line', g.gamma_flip], ['marker-call-line', g.call_wall]].forEach(([id, v]) => {
                 if (isNum(v)) { $(id).style.left = `${getPct(v)}%`; $(id).style.display = 'block'; }
             });
-        }
-
-        // [대폭 개선] VWAP 인스펙터
-        function inspectVwapPoint(idx) {
-            if (idx === null || !cachedVwapPoints[idx]) {
-                $('vwap-inspect-label').innerText = '마지막 시점';
-                $('vwap-inspect-time').innerText = defaultVwapLastTime;
-                $('vwap-inspect-detail').innerHTML = defaultVwapDetail;
-                return;
-            }
-            const p = cachedVwapPoints[idx];
-            $('vwap-inspect-label').innerText = '선택 시점';
-            $('vwap-inspect-time').innerText = p.timeLabel;
-            $('vwap-inspect-detail').innerHTML = `VWAP <span class="text-sky-300 font-bold">${p.v.toFixed(1)}</span> (±1σ <span class="text-indigo-300 font-bold">${p.u1.toFixed(1)}~${p.l1.toFixed(1)}</span>)`;
-        }
-
-        // [대폭 개선] VWAP 차트 프로 렌더러
-        function renderVwap(v) {
-            const paths = ['vwap-center-line', 'vwap-band-upper', 'vwap-band-lower', 'vwap-band2-upper', 'vwap-band2-lower'];
-            const endDot = $('vwap-end-dot');
-            const gridGroup = $('vwap-vertical-grids');
-            const list = $('vwap-interactive-layer');
-
-            if (!v || !v.series || !v.series.length) {
-                cachedVwapPoints = [];
-                setText('vwap-source', NA); setText('vwap-val-display', 'VWAP N/A');
-                ['vwap-y-high', 'vwap-y-mid', 'vwap-y-low'].forEach((id) => setText(id, NA));
-                paths.forEach((id) => $(id).setAttribute('d', ''));
-                $('vwap-band1-fill').setAttribute('d', '');
-                $('vwap-band2-fill').setAttribute('d', '');
-                if (endDot) { endDot.setAttribute('cx', '-50'); endDot.setAttribute('cy', '-50'); }
-                if (gridGroup) gridGroup.innerHTML = '';
-                if (list) list.innerHTML = '';
-                return;
-            }
-
-            setText('vwap-source', v.source);
-            setText('vwap-val-display', `VWAP ${v.val.toFixed(2)} · σ ${v.sigma}`);
-
-            const n = v.series.length;
-            const minV = Math.min(...v.lower2);
-            const maxV = Math.max(...v.upper2);
-            const pad = (maxV - minV) * 0.05 || 1.0;
-            const lowY = minV - pad;
-            const highY = maxV + pad;
-
-            setText('vwap-y-high', maxV.toFixed(1));
-            setText('vwap-y-mid', ((maxV + minV) / 2).toFixed(1));
-            setText('vwap-y-low', minV.toFixed(1));
-
-            const AREA_X0 = 40, AREA_W = 440;
-            const AREA_Y0 = 25, AREA_H = 140;
-            const slot = AREA_W / Math.max(n - 1, 1);
-            const cx = (i) => AREA_X0 + i * slot;
-            const cy = (val) => AREA_Y0 + AREA_H - ((Math.min(Math.max(val, lowY), highY) - lowY) / (highY - lowY)) * AREA_H;
-
-            // 1. 밴드 채우기 (Band 2: ±2σ / Band 1: ±1σ)
-            let b2Path = v.upper2.map((val, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${cy(val).toFixed(1)}`).join(' ');
-            for (let i = n - 1; i >= 0; i--) {
-                b2Path += ` L ${cx(i).toFixed(1)} ${cy(v.lower2[i]).toFixed(1)}`;
-            }
-            b2Path += ' Z';
-            $('vwap-band2-fill').setAttribute('d', b2Path);
-
-            let b1Path = v.upper1.map((val, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${cy(val).toFixed(1)}`).join(' ');
-            for (let i = n - 1; i >= 0; i--) {
-                b1Path += ` L ${cx(i).toFixed(1)} ${cy(v.lower1[i]).toFixed(1)}`;
-            }
-            b1Path += ' Z';
-            $('vwap-band1-fill').setAttribute('d', b1Path);
-
-            // 2. 라인 렌더링
-            const drawPath = (arr) => arr.map((val, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${cy(val).toFixed(1)}`).join(' ');
-            $('vwap-band2-upper').setAttribute('d', drawPath(v.upper2));
-            $('vwap-band2-lower').setAttribute('d', drawPath(v.lower2));
-            $('vwap-band-upper').setAttribute('d', drawPath(v.upper1));
-            $('vwap-band-lower').setAttribute('d', drawPath(v.lower1));
-            $('vwap-center-line').setAttribute('d', drawPath(v.series));
-
-            // 3. 현재값 끝단 강조 점
-            if (endDot && n) {
-                endDot.setAttribute('cx', cx(n - 1).toFixed(1));
-                endDot.setAttribute('cy', cy(v.series[n - 1]).toFixed(1));
-            }
-
-            // 4. 모바일 및 PC 시간 축 촘촘한 세로 격자
-            const tfMins = { '1m': 1, '5m': 5, '10m': 10, '15m': 15, '30m': 30, '1H': 60 }[currentVwapTf] || 60;
-            const pts = [];
-
-            v.series.forEach((val, idx) => {
-                let timeLabel;
-                if (cachedBars && cachedBars.length >= n) {
-                    const d = new Date(cachedBars[cachedBars.length - n + idx].t * 1000);
-                    timeLabel = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
-                } else {
-                    const totalMins = 570 + idx * tfMins;
-                    const hh = String(Math.floor(totalMins / 60)).padStart(2, '0');
-                    const mm = String(totalMins % 60).padStart(2, '0');
-                    timeLabel = `${hh}:${mm}`;
-                }
-                pts.push({
-                    idx: idx,
-                    timeLabel: timeLabel,
-                    v: val,
-                    u1: v.upper1[idx],
-                    l1: v.lower1[idx]
-                });
-            });
-            cachedVwapPoints = pts;
-
-            defaultVwapLastTime = pts[pts.length - 1].timeLabel + ' ET';
-            defaultVwapDetail = `VWAP <span class="text-sky-300 font-bold">${v.val.toFixed(1)}</span> (±1σ <span class="text-indigo-300 font-bold">${v.upper1[n - 1].toFixed(1)}~${v.lower1[n - 1].toFixed(1)}</span>)`;
-            inspectVwapPoint(null);
-
-            let gridHtml = '';
-            let lastTickX = -999;
-            const minTickGap = 65; // 모바일에서도 겹치지 않는 안전 간격
-
-            pts.forEach((p, i) => {
-                const gx = cx(i);
-                if (gx - lastTickX >= minTickGap || i === 0 || i === n - 1) {
-                    lastTickX = gx;
-                    gridHtml += `<line x1="${gx.toFixed(1)}" y1="20" x2="${gx.toFixed(1)}" y2="165" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
-                    gridHtml += `<text x="${gx.toFixed(1)}" y="182" fill="#94a3b8" font-size="9.5" font-weight="bold" text-anchor="middle" font-family="monospace">${p.timeLabel}</text>`;
-                }
-            });
-            if (gridGroup) gridGroup.innerHTML = gridHtml;
-
-            // 5. 터치 인스펙터 레이어
-            if (list) {
-                const rectW = Math.max(AREA_W / n, 8);
-                list.innerHTML = pts.map((p, i) => {
-                    const rx = cx(i) - rectW / 2;
-                    return `<rect x="${rx.toFixed(1)}" y="15" width="${rectW.toFixed(1)}" height="150" fill="transparent" class="cursor-pointer" onmouseover="inspectVwapPoint(${i})" onmouseout="inspectVwapPoint(null)" ontouchstart="inspectVwapPoint(${i})"></rect>`;
-                }).join('');
-            }
         }
 
         // RSI 인스펙터
@@ -1189,7 +969,7 @@
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50%'; $('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
                 tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
                 list.innerHTML = '';
                 return;
@@ -1325,7 +1105,7 @@
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 15000);
             try {
-                const url = `${API_URL}?vwap_tf=${currentVwapTf}&rsi_tf=${currentRsiTf}&cvd_tf=${currentCvdTf}`;
+                const url = `${API_URL}?rsi_tf=${currentRsiTf}&cvd_tf=${currentCvdTf}`;
                 const res = await fetch(url, { signal: ctrl.signal });
                 const data = await res.json();
                 if (mySeq !== reqSeq) return;
@@ -1349,7 +1129,6 @@
                         setText('vp-source', vp ? vp.source : NA); setText('vp-timestamp', data.timestamp);
                     },
                     () => renderGex(data.gex, data.spx ? data.spx.price : null),
-                    () => renderVwap(data.vwap),
                     () => renderRsi(data.rsi),
                     () => renderCvd(data.cvd),
                     () => renderDirection(data.direction),
