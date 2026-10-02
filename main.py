@@ -103,20 +103,21 @@ _LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
 TELEGRAM_COOLDOWN_SEC = 600  # 동일 유형 쇼크 10분 재발송 방지
 
 
-def send_telegram_shock_alert(shock_alert, spx_price):
-    if not shock_alert or not shock_alert.get("active"):
-        return
+def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
+    if not shock_alert or (not shock_alert.get("active") and not force_test):
+        return {"status": "skipped", "reason": "알림 비활성 상태"}
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_ids_raw:
-        return
+        return {"status": "error", "reason": "Vercel 환경변수(TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) 누락"}
 
     now_ts = time.time()
     s_type = shock_alert.get("type")
 
-    # 10분 쿨다운 체크
-    if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
-        return
+    # 테스트가 아닌 실제 발송일 경우 10분 쿨다운 적용
+    if not force_test:
+        if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
+            return {"status": "skipped", "reason": "쿨다운 중 (10분 이내 동일 경보 발생)"}
 
     _LAST_TELEGRAM_SHOCK["ts"] = now_ts
     _LAST_TELEGRAM_SHOCK["type"] = s_type
@@ -138,17 +139,20 @@ def send_telegram_shock_alert(shock_alert, spx_price):
         f"SPX 0DTE DEFENDER Realtime Alert"
     )
 
-    # 쉼표로 구분된 다중 Chat ID 또는 단일 그룹방 ID 모두 지원
     chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
+    results = []
     for cid in chat_ids:
         try:
-            requests.post(
+            r = requests.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": cid, "text": msg},
-                timeout=3,
+                timeout=4,
             )
-        except Exception:
-            pass
+            results.append({"chat_id": cid, "status_code": r.status_code, "ok": r.status_code == 200})
+        except Exception as e:
+            results.append({"chat_id": cid, "error": str(e)})
+
+    return {"status": "sent", "results": results}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1749,6 +1753,31 @@ def norm_yield(x, scale=None):
 # ─────────────────────────────────────────────────────────────
 # API 엔드포인트
 # ─────────────────────────────────────────────────────────────
+@app.get("/api/test-alert")
+def test_telegram_alert():
+    """Vercel 환경변수 및 텔레그램 연동 정상 동작을 즉시 검증하는 테스트 엔드포인트."""
+    now_et = datetime.now(ET)
+    mock_shock = {
+        "active": True,
+        "type": "DROP",
+        "level": "CRITICAL",
+        "title": "🚨 [시스템 테스트] 텔레그램 연동 정상 작동 확인",
+        "timestamp": now_et.strftime("%H:%M:%S ET"),
+        "elapsed_text": f"{now_et.strftime('%H:%M ET')} 테스트 발송",
+        "details": [
+            "Vercel 환경변수(TELEGRAM_BOT_TOKEN / CHAT_ID) 연동 성공",
+            "실제 시장 급변동(Flash Drop / Surge) 감지 시 이와 동일하게 자동 전송됩니다.",
+            "동일 경보 10분 재발송 방지(쿨다운) 안전 로직 정상 가동 중"
+        ]
+    }
+    result = send_telegram_shock_alert(mock_shock, spx_price=5750.0, force_test=True)
+    return {
+        "status": "ok",
+        "time": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
+        "result": result
+    }
+
+
 @app.get("/api/market-data")
 def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"):
     now_et = datetime.now(ET)
@@ -1835,7 +1864,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 실시간 변동성 쇼크 감지 시스템 및 텔레그램 알림 연동
+    # 6. 실시간 변동성 쇼크 감지 및 텔레그램 연동
     spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
     shock_alert = guard("shock_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
 
@@ -2030,7 +2059,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
                 "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
             )
         else:
-            kv_note = "<p style='color:#f59e0b;'>⚠️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
+            kv_note = "<p style='color:#f59e0b;'>⚠️️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
 
     manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
         "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
