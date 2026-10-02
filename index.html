@@ -30,14 +30,14 @@
         <div class="text-[10px] pl-3 border-l-2 my-1 space-y-0.5" id="shock-alert-reasons"></div>
     </div>
 
-    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지) -->
+    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지 탑재) -->
     <div class="flex justify-between items-center px-1 mb-1">
         <div class="flex items-center space-x-2">
             <span class="text-blue-500 font-bold text-sm md:text-base flex items-center">
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.6</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.7</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] text-slate-400">
@@ -48,7 +48,7 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (장중 100% 보존 + 실시간 지수 영향 배지) -->
+    <!-- 2. 오늘의 중요 발표 (장중 100% 보존 + 지수 영향 배지) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
@@ -696,9 +696,7 @@
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
-                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
-                $('cvd-vertical-grids').innerHTML = '';
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
                 if (priorBadge) priorBadge.classList.add('hidden');
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
@@ -884,11 +882,11 @@
             return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
-        // [핵심] 당일 발표치 100% 보존 + 실시간 호재/악재 판정 렌더러
+        // [안정화 렌더러] 장 마감까지 100% 보존 + 실시간 컬러 배지 즉시 적용
         function renderEconEvents(e) {
             const card = $('econ-card');
             card.classList.remove('hidden');
-            setText('econ-source', (e && e.source) ? e.source : '공식 경제 캘린더 (실시간 판정 · ET 전용)');
+            setText('econ-source', (e && e.source) ? e.source : '공식 경제 캘린더 (ET 전용)');
 
             const items = (e && e.items) ? e.items : [];
             if (!items.length) {
@@ -901,11 +899,10 @@
                 const hasActual = it.has_actual;
                 
                 let statusBadge = '';
-                let dot = 'bg-amber-400 animate-pulse';
+                let dot = 'bg-slate-500';
                 let sentenceColor = 'text-slate-400';
 
                 if (hasActual) {
-                    dot = 'bg-slate-500';
                     if (it.eval_tone === 'bull') {
                         statusBadge = `<span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(it.eval_tag)}</span>`;
                         sentenceColor = 'text-emerald-300 font-bold';
@@ -916,15 +913,15 @@
                         statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(it.eval_tag)}</span>`;
                         sentenceColor = 'text-slate-300 font-medium';
                     }
-                } else if (isPassed && !hasActual) {
-                    dot = 'bg-amber-400 animate-ping';
-                    statusBadge = `<span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-600 px-1.5 py-0.5 rounded font-bold">수치 집계 중</span>`;
-                } else if (it.forecast) {
-                    statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                } else if (!isPassed) {
+                    dot = 'bg-amber-400 animate-pulse';
+                    if (it.forecast) {
+                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                    }
                 }
 
-                const titleCls = hasActual ? 'text-slate-200 font-bold' : (isPassed ? 'text-amber-300 font-bold' : 'text-slate-300');
-                const timeStatus = hasActual ? '발표완료' : (isPassed ? '수치 수신 중' : '발표예정');
+                const titleCls = hasActual ? 'text-slate-200 font-bold' : (isPassed ? 'text-slate-300 font-medium' : 'text-amber-300 font-bold');
+                const timeStatus = isPassed ? '발표완료' : '발표예정';
 
                 return `<div class="py-1.5 border-b border-slate-800/60 last:border-0">
                     <div class="flex items-center justify-between text-[11px]">
