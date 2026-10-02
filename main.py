@@ -97,6 +97,61 @@ def src_kind(s):
 
 
 # ─────────────────────────────────────────────────────────────
+# 텔레그램 실시간 다중 알림 시스템 (10분 쿨다운 탑재)
+# ─────────────────────────────────────────────────────────────
+_LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
+TELEGRAM_COOLDOWN_SEC = 600  # 동일 유형 쇼크 10분 재발송 방지
+
+
+def send_telegram_shock_alert(shock_alert, spx_price):
+    if not shock_alert or not shock_alert.get("active"):
+        return
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_ids_raw:
+        return
+
+    now_ts = time.time()
+    s_type = shock_alert.get("type")
+
+    # 10분 쿨다운 체크
+    if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
+        return
+
+    _LAST_TELEGRAM_SHOCK["ts"] = now_ts
+    _LAST_TELEGRAM_SHOCK["type"] = s_type
+
+    title = shock_alert.get("title", "⚡ [변동성 쇼크]")
+    time_info = shock_alert.get("elapsed_text") or shock_alert.get("timestamp") or ""
+    details_str = "\n".join(f"• {d}" for d in shock_alert.get("details", []))
+    price_str = f"{spx_price:.2f}" if spx_price else "N/A"
+
+    msg = (
+        f"{title}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📍 SPX 현재가: {price_str}\n"
+        f"⏱ 발생 시각: {time_info}\n"
+        f"\n"
+        f"🔍 상세 감지 내역:\n"
+        f"{details_str}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"SPX 0DTE DEFENDER Realtime Alert"
+    )
+
+    # 쉼표로 구분된 다중 Chat ID 또는 단일 그룹방 ID 모두 지원
+    chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
+    for cid in chat_ids:
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": cid, "text": msg},
+                timeout=3,
+            )
+        except Exception:
+            pass
+
+
+# ─────────────────────────────────────────────────────────────
 # 영속 저장소 (Vercel KV / Upstash Redis REST API)
 # ─────────────────────────────────────────────────────────────
 def _kv_config():
@@ -515,7 +570,6 @@ def get_today_econ_events(now_et):
 
     today_items = [e for e in events if e["dt"].date() == today]
 
-    # 발표 후 1시간(3600초) 지난 항목은 자동 삭제
     active_today_items = [
         e for e in today_items
         if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)
@@ -561,7 +615,7 @@ def get_today_econ_events(now_et):
 
 
 # ─────────────────────────────────────────────────────────────
-# 봉(candle) 데이터 (5분봉 기반 안전 주기 + 당일 유효성 엄격 검증)
+# 봉(candle) 데이터 (장중 오늘 캔들 유효성 보장)
 # ─────────────────────────────────────────────────────────────
 TF_SPEC = {
     "1m": ("1m", "2d", 1, 2, None),
@@ -603,7 +657,6 @@ def yahoo_candles(symbol, interval, range_str):
 
 
 def schwab_candles(token, symbol, freq, days):
-    """Schwab 장중 미완성 캔들 누락 방지를 위해 needExtendedHoursData=true 및 실시간 endDate 전달."""
     now_ms = int(time.time() * 1000)
     data = schwab_get(
         token,
@@ -658,7 +711,7 @@ def get_candles(token, inst, tf):
         today = now_et.date()
         is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
 
-        # 1. Schwab 시도: 장중(is_rth)일 경우 응답에 '오늘' 캔들이 실제로 들어있는지 엄격 검증
+        # Schwab 우선 시도: 장중에는 오늘 캔들이 실제로 들어있는지 확인
         if token and ssym:
             cs = schwab_candles(token, ssym, s_freq, s_days)
             if cs:
@@ -668,7 +721,7 @@ def get_candles(token, inst, tf):
                         cs = aggregate_candles(cs, agg)
                     return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
 
-        # 2. Schwab이 실패하거나, Schwab 응답에 오늘 장중 캔들이 없으면 즉시 Yahoo Finance로 대체
+        # Schwab이 비어있거나 오늘 캔들이 없으면 실시간 Yahoo Finance로 즉시 전환
         cs = yahoo_candles(ysym, y_int, y_rng)
         if cs:
             if agg:
@@ -704,16 +757,13 @@ def get_rth_session(candles, now_et=None):
 
     all_dates = sorted(sessions_by_date.keys())
 
-    # Case 1: 09:30~16:00 정규장 진행 중 -> 무조건 오늘 세션만 반환
     if is_rth:
         today_bars = sessions_by_date.get(today, [])
         return today_bars, False, today.strftime("%m/%d")
 
-    # Case 2: 16:00 이후 장 마감 후 -> 오늘 마감된 세션 반환
     if is_after_market and today in sessions_by_date:
         return sessions_by_date[today], False, today.strftime("%m/%d")
 
-    # Case 3: 00:00~09:29 개장 전 또는 주말 -> 직전 거래일 완성 세션 반환
     prior_dates = [d for d in all_dates if d < today]
     if prior_dates:
         target_date = prior_dates[-1]
@@ -786,7 +836,7 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# 실시간 변동성 쇼크 감지 (30분 TTL + 당일 장중 캔들만 분석)
+# 실시간 변동성 쇼크 감지
 # ─────────────────────────────────────────────────────────────
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
     if not spx_p:
@@ -796,7 +846,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
     is_weekday = (now_et.weekday() < 5)
     is_rth = is_weekday and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
 
-    # 정규장 시간 외(새벽/프리장/야간/주말)에는 쇼크 경보 비활성화
     if not is_rth:
         return {"active": False}
 
@@ -805,7 +854,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
 
     today_open_ts = int(ET.localize(datetime(today.year, today.month, today.day, 9, 30, 0)).timestamp())
 
-    # 오늘 09:30 이후에 생성된 당일 캔들만 필터링
     today_bars = [c for c in (spy_5m_candles or []) if c["t"] >= today_open_ts]
     recent_bars = today_bars[-6:] if len(today_bars) >= 2 else []
 
@@ -829,7 +877,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         rally_from_low = curr_c - min_l
         rally_from_low_pct = (rally_from_low / min_l) * 100
 
-        # 급락 패턴 감지 (30분 TTL)
         if drop_from_high <= -14.0 or drop_from_high_pct <= -0.25:
             start_ts = high_bar["t"]
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
@@ -845,7 +892,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
                 bounce_str = f" → 저점 대비 +{bounce:.1f}pt 반등 중" if bounce >= 5.0 else ""
                 reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생{bounce_str}")
 
-        # 급등 패턴 감지 (30분 TTL)
         elif rally_from_low >= 14.0 or rally_from_low_pct >= 0.25:
             start_ts = low_bar["t"]
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
@@ -861,7 +907,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
                 pullback_str = f" → 고점 대비 {pullback:.1f}pt 눌림목" if pullback <= -5.0 else ""
                 reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생{pullback_str}")
 
-    # GEX 딜러 레벨 돌파/붕괴 (0DTE 체인에서만)
     if gex and gex.get("available") and gex.get("is_0dte"):
         pw = gex.get("put_wall")
         cw = gex.get("call_wall")
@@ -886,7 +931,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         elif shock_type == "SURGE" and flip and spx_p > flip:
             reasons.append(f"Gamma Flip({flip:.1f}) 상회: 양(+) 감마 안정 구간 진입")
 
-    # CVD 기관 매도/매수 폭발
     if cvd and not cvd.get("is_prior") and cvd.get("sell_pct"):
         sell_pct = cvd["sell_pct"]
         buy_pct = cvd["buy_pct"]
@@ -895,7 +939,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
         elif buy_pct >= 65 and cvd.get("tone") == "bull" and shock_type == "SURGE":
             reasons.append(f"기관 매수 스퀴즈 압도적 유입 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
 
-    # VIX 급등
     if vix_q and shock_type == "DROP":
         vix_pct = vix_q.get("change_pct")
         if vix_pct and vix_pct >= 5.0:
@@ -923,7 +966,7 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD (09:30 개장 즉시 당일 모드 가동)
+# VWAP / Volume Profile / CVD
 # ─────────────────────────────────────────────────────────────
 def compute_vwap(spy_candles, ratio, source, now_et=None):
     sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
@@ -1057,7 +1100,6 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
 
     bars, is_prior, sess_date = get_rth_session(candles, now_et)
 
-    # 개장 직후 첫 캔들 생성 전 안전 처리
     if not bars:
         if is_rth:
             return {
@@ -1752,17 +1794,17 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
             return spx_p / spy_data["candles"][-1]["c"]
         return None
 
-    # 1. VWAP (장중 오늘 캔들 보장)
+    # 1. VWAP
     vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"], now_et) if spy_v else None
 
-    # 2. Volume Profile (장중 오늘 캔들 보장)
+    # 2. Volume Profile
     spy_vp = spy_dir_c.get("5m")
     vp = (
         guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"], now_et)
         if (spy_vp and ratio_for(spy_vp)) else None
     )
 
-    # 3. CVD (오늘 캔들 자동 검증 및 실시간 연동)
+    # 3. CVD
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
 
     # 4. RSI 계산
@@ -1793,9 +1835,12 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
         "available": False, "source": "N/A", "reason": "방향 분석 오류"}
 
-    # 6. 실시간 변동성 쇼크 감지 시스템 (당일 30분 TTL)
+    # 6. 실시간 변동성 쇼크 감지 시스템 및 텔레그램 알림 연동
     spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
     shock_alert = guard("shock_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
+
+    if shock_alert and shock_alert.get("active"):
+        guard("telegram_alert", send_telegram_shock_alert, shock_alert, spx_p)
 
     # 7. 국채 금리 계산
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
