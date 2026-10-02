@@ -336,7 +336,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (당일 장 마감까지 100% 보존 & 판정)
+# 미국 경제 캘린더 (발표 후 1시간 뒤 자동 삭제)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -501,7 +501,7 @@ def fetch_global_econ_calendar():
 
 
 def get_today_econ_events(now_et):
-    events = cached("econ_events_data", 60, fetch_global_econ_calendar)
+    events = cached("econ_events_data", 45, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
         return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
@@ -510,9 +510,12 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
+    # 발표 전이거나, 발표된 지 1시간(3600초) 이내인 항목만 목록에 유지 (1시간 지나면 자동 소멸)
+    active_today_items = [e for e in today_items if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)]
+
     is_tomorrow = False
-    target_items = today_items
-    if (not today_items or now_et.hour >= 17) and now_et.hour >= 16:
+    target_items = active_today_items
+    if not active_today_items and now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
             target_items = tomorrow_items
@@ -542,7 +545,7 @@ def get_today_econ_events(now_et):
             "eval_sentence": eval_res["sentence"],
         })
 
-    return {"items": out_items, "source": "공식 경제 캘린더 (ET 전용)", "error": None}
+    return {"items": out_items, "source": "공식 경제 캘린더 (ET 전용 · 1시간 후 자동 정리)", "error": None}
 
 
 # ─────────────────────────────────────────────────────────────
