@@ -336,7 +336,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 경제 캘린더 (실시간 발표치 분석 + 장중 100% 보존)
+# 미국 경제 캘린더 (당일 장 마감까지 100% 보존 & 판정)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -501,7 +501,7 @@ def fetch_global_econ_calendar():
 
 
 def get_today_econ_events(now_et):
-    events = cached("econ_events_data", 45, fetch_global_econ_calendar)
+    events = cached("econ_events_data", 60, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
         return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
@@ -510,7 +510,6 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
-    # 당일 장중(00:00~16:30 ET)에는 오늘 발표된 모든 지표를 절대 삭제하지 않고 유지
     is_tomorrow = False
     target_items = today_items
     if (not today_items or now_et.hour >= 17) and now_et.hour >= 16:
@@ -543,7 +542,7 @@ def get_today_econ_events(now_et):
             "eval_sentence": eval_res["sentence"],
         })
 
-    return {"items": out_items, "source": "공식 경제 캘린더 (실시간 판정 · ET 전용)", "error": None}
+    return {"items": out_items, "source": "공식 경제 캘린더 (ET 전용)", "error": None}
 
 
 # ─────────────────────────────────────────────────────────────
