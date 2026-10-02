@@ -114,7 +114,6 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     now_ts = time.time()
     s_type = shock_alert.get("type")
 
-    # 테스트가 아닌 실제 발송일 경우 10분 쿨다운 적용
     if not force_test:
         if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
             return {"status": "skipped", "reason": "쿨다운 중 (10분 이내 동일 경보 발생)"}
@@ -1755,7 +1754,6 @@ def norm_yield(x, scale=None):
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/test-alert")
 def test_telegram_alert():
-    """Vercel 환경변수 및 텔레그램 연동 정상 동작을 즉시 검증하는 테스트 엔드포인트."""
     now_et = datetime.now(ET)
     mock_shock = {
         "active": True,
@@ -1836,17 +1834,37 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     # 3. CVD
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
 
-    # 4. RSI 계산
+    # 4. [개선] RSI 계산 (각 캔들의 정확한 타임스탬프와 SMA 9 시그널선 계산 탑재)
     rsi = None
-    if spx_r:
-        rs = rsi_series([c["c"] for c in spx_r["candles"]])
+    if spx_r and spx_r.get("candles"):
+        cds = spx_r["candles"]
+        closes = [c["c"] for c in cds]
+        rs = rsi_series(closes, period=14)
         if rs:
             cur = rs[-1]
+            offset = len(cds) - len(rs)
+            rsi_points = []
+            for i, val in enumerate(rs):
+                c_idx = offset + i
+                if c_idx < len(cds):
+                    rsi_points.append({"t": cds[c_idx]["t"], "v": val})
+
+            sma_period = 9
+            for i in range(len(rsi_points)):
+                if i >= sma_period - 1:
+                    window = [rsi_points[j]["v"] for j in range(i - sma_period + 1, i + 1)]
+                    rsi_points[i]["sma"] = round(sum(window) / sma_period, 1)
+                else:
+                    rsi_points[i]["sma"] = None
+
+            recent_points = rsi_points[-36:] if len(rsi_points) > 36 else rsi_points
+
             rsi = {
                 "val": cur,
                 "status": "Overbought" if cur >= 70 else ("Oversold" if cur <= 30 else ("Bullish" if cur >= 55 else ("Bearish" if cur <= 45 else "Neutral"))),
-                "history": rs[-20:],
-                "source": f"{spx_r['source']} · Wilder RSI(14)",
+                "history": [p["v"] for p in recent_points],
+                "points": recent_points,
+                "source": f"{spx_r['source']} · Wilder RSI(14) + SMA(9)",
             }
 
     # 5. 실시간 방향 분석 계산
@@ -2059,7 +2077,7 @@ def schwab_callback(request: Request, code: Optional[str] = None, error: Optiona
                 "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
             )
         else:
-            kv_note = "<p style='color:#f59e0b;'>⚠️️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
+            kv_note = "<p style='color:#f59e0b;'>⚠️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
 
     manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
         "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
