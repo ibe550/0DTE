@@ -13,9 +13,9 @@
 </head>
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
-    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80"></div>
+    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80 bg-amber-950/70 border-amber-800/60 bg-indigo-950/70 text-indigo-300 border-indigo-800/60"></div>
 
-    <!-- 0. 최상단 실시간 변동성 쇼크 (양방향 급등/급락 경보 배너) -->
+    <!-- 0. 최상단 실시간 변동성 쇼크 배너 -->
     <div id="shock-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 shadow-lg transition-all duration-300">
         <div class="flex items-center justify-between mb-1">
             <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight" id="shock-alert-head">
@@ -30,18 +30,20 @@
         <div class="text-[10px] pl-3 border-l-2 my-1 space-y-0.5" id="shock-alert-reasons"></div>
     </div>
 
-    <!-- 1. 헤더 -->
+    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지 탑재) -->
     <div class="flex justify-between items-center px-1 mb-1">
         <div class="flex items-center space-x-2">
             <span class="text-blue-500 font-bold text-sm md:text-base flex items-center">
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.2</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.3</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
-        <div class="flex items-center space-x-2 text-[10px] text-slate-400">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>
+        <div class="flex items-center space-x-1.5 text-[10px] text-slate-400">
+            <!-- 한 줄짜리 실시간 RSI 배지 -->
+            <span id="header-rsi-badge" class="hidden text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border transition-colors">RSI --</span>
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5 animate-pulse"></span>
             <span class="text-slate-400 font-mono" id="current-clock">ET</span>
         </div>
     </div>
@@ -262,77 +264,7 @@
         </div>
     </div>
 
-    <!-- 7. [모바일 & PC 완벽 최적화] RSI (14) -->
-    <div class="card p-2 md:p-3 mb-2">
-        <div class="flex justify-between items-start mb-2 gap-2">
-            <div>
-                <div class="text-xs font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></div>
-                <div class="flex items-center space-x-2 mt-0.5">
-                    <span id="rsi-status-pill" class="text-[9px] px-1.5 py-0.2 rounded font-bold bg-slate-800 text-slate-300">--</span>
-                    <span class="text-[8px] text-slate-500 font-mono">70 과매수 / 30 과매도</span>
-                </div>
-            </div>
-            <div class="text-right max-w-[65%]">
-                <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="rsi-source">--</span></div>
-                <div class="flex items-center justify-end space-x-1.5 mt-0.5">
-                    <span class="text-base font-bold text-amber-400 font-mono" id="rsi-value">--</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex justify-between items-center mb-2">
-            <div class="flex space-x-1" id="rsi-tf-group">
-                <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
-                <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
-                <button onclick="changeRsiTimeframe('10m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="10m">10m</button>
-                <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
-                <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
-                <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
-            </div>
-            <span class="text-[10px] text-purple-400 bg-slate-800/60 px-2 py-1 rounded font-mono font-bold">— RSI(14)</span>
-        </div>
-
-        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
-            <svg id="rsi-svg-chart" class="w-full h-36 md:h-40" viewBox="0 0 500 134" preserveAspectRatio="none">
-                <defs>
-                    <linearGradient id="rsi-fill-grad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stop-color="#a855f7" stop-opacity="0.16"/>
-                        <stop offset="50%" stop-color="#6366f1" stop-opacity="0.06"/>
-                        <stop offset="100%" stop-color="#a855f7" stop-opacity="0.16"/>
-                    </linearGradient>
-                </defs>
-
-                <rect x="35" y="40" width="445" height="40" fill="url(#rsi-fill-grad)"/>
-
-                <line x1="35" y1="40" x2="480" y2="40" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="1.2" opacity="0.85"/>
-                <line x1="35" y1="60" x2="480" y2="60" stroke="#64748b" stroke-dasharray="2,3" stroke-width="0.9" opacity="0.7"/>
-                <line x1="35" y1="80" x2="480" y2="80" stroke="#10b981" stroke-dasharray="3,3" stroke-width="1.2" opacity="0.85"/>
-                <line x1="35" y1="110" x2="480" y2="110" stroke="#334155" stroke-width="1"/>
-
-                <text x="30" y="44" fill="#f43f5e" font-size="10" font-weight="bold" text-anchor="end" font-family="monospace">70</text>
-                <text x="30" y="64" fill="#94a3b8" font-size="9" text-anchor="end" font-family="monospace">50</text>
-                <text x="30" y="84" fill="#10b981" font-size="10" font-weight="bold" text-anchor="end" font-family="monospace">30</text>
-
-                <g id="rsi-vertical-grids"></g>
-                <path id="rsi-dynamic-line" d="" fill="none" stroke="#c084fc" stroke-width="2.3" stroke-linecap="round"/>
-                <circle id="rsi-end-dot" cx="-50" cy="-50" r="3.5" fill="#c084fc" stroke="#ffffff" stroke-width="1.5"/>
-                <g id="rsi-interactive-layer"></g>
-            </svg>
-            <div class="text-center text-[8px] text-slate-500 mt-0.5 font-mono">Time (Eastern Time, ET) · RSI Momentum Oscillator</div>
-        </div>
-
-        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
-            <div>
-                <span id="rsi-inspect-label">마지막 시점</span>
-                <span id="rsi-inspect-time" class="text-amber-300 font-bold ml-1">--</span>
-            </div>
-            <div id="rsi-inspect-detail">
-                RSI <span id="rsi-inspect-cur" class="text-purple-300 font-bold">--</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- 8. SPY VOLUME + CVD (30분 단위 초정밀 눈금) -->
+    <!-- 7. SPY VOLUME + CVD (30분 단위 초정밀 눈금) -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -408,7 +340,7 @@
         <div class="bg-slate-950 p-2 rounded border border-slate-800/80 text-[10px] text-slate-300 font-sans" id="cvd-summary-text">--</div>
     </div>
 
-    <!-- 9. SPX 방향분석 (0DTE 최적화 - 백엔드 VWAP/CVD 점수 100% 정상 반영) -->
+    <!-- 8. SPX 방향분석 (0DTE 최적화 - VWAP/CVD 가중치 100% 정상 작동) -->
     <div class="card p-2 md:p-3 mb-3">
         <div class="flex justify-between items-center mb-1">
             <div class="flex items-center space-x-1.5 text-xs font-bold text-slate-300" id="dir-head">
@@ -497,7 +429,6 @@
         const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
         const POLL_MS = 5000;
         const NA = 'N/A';
-        let currentRsiTf = '1H';
         let currentCvdTf = '10m';
         let inFlight = false;
         let reqSeq = 0;
@@ -505,10 +436,6 @@
         let cachedBars = [];
         let defaultCvdLastTime = '--';
         let defaultCvdSub = '--';
-
-        let cachedRsiPoints = [];
-        let defaultRsiLastTime = '--';
-        let defaultRsiDetail = '--';
 
         const $ = (id) => document.getElementById(id);
         const TONES = ['text-emerald-400', 'text-rose-400', 'text-slate-300', 'text-slate-200', 'text-slate-500', 'text-amber-400'];
@@ -574,7 +501,6 @@
                     : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition');
             });
         }
-        function changeRsiTimeframe(tf) { currentRsiTf = tf; markActive('#rsi-tf-group', 'rsi-tf-btn', tf, 'bg-indigo-600'); setText('rsi-title-tf', tf); fetchRealMarketData(true); }
         function changeCvdTimeframe(tf) { currentCvdTf = tf; markActive('#cvd-tf-group', 'cvd-tf-btn', tf, 'bg-teal-600'); setText('cvd-title-tf', tf.toUpperCase()); fetchRealMarketData(true); }
 
         function renderQuote(pfx, q, opts = {}) {
@@ -718,108 +644,36 @@
             });
         }
 
-        // RSI 인스펙터
-        function inspectRsiPoint(idx) {
-            if (idx === null || !cachedRsiPoints[idx]) {
-                $('rsi-inspect-label').innerText = '마지막 시점';
-                $('rsi-inspect-time').innerText = defaultRsiLastTime;
-                $('rsi-inspect-detail').innerHTML = defaultRsiDetail;
-                return;
-            }
-            const p = cachedRsiPoints[idx];
-            const d = p.t ? new Date(p.t * 1000) : null;
-            const timeStr = d ? d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET' : '--';
-            $('rsi-inspect-label').innerText = '선택 시점';
-            $('rsi-inspect-time').innerText = timeStr;
-            const colorCls = p.v >= 70 ? 'text-rose-400' : (p.v <= 30 ? 'text-emerald-400' : 'text-purple-300');
-            $('rsi-inspect-detail').innerHTML = `RSI <span class="${colorCls} font-bold">${p.v.toFixed(1)}</span>`;
-        }
-
-        // RSI 렌더러
+        // [컴팩트] 상단 헤더 전용 실시간 RSI 배지 렌더러
         function renderRsi(r) {
-            const list = $('rsi-interactive-layer');
-            const gridGroup = $('rsi-vertical-grids');
-            const endDot = $('rsi-end-dot');
-
-            if (!r || !r.history || !r.history.length) {
-                cachedRsiPoints = [];
-                setText('rsi-value', NA); setText('rsi-status-pill', NA); setText('rsi-source', NA);
-                $('rsi-dynamic-line').setAttribute('d', '');
-                if (gridGroup) gridGroup.innerHTML = '';
-                if (list) list.innerHTML = '';
-                if (endDot) { endDot.setAttribute('cx', '-50'); endDot.setAttribute('cy', '-50'); }
+            const badge = $('header-rsi-badge');
+            if (!badge) return;
+            if (!r || !isNum(r.val)) {
+                badge.classList.add('hidden');
                 return;
             }
+            badge.classList.remove('hidden');
+            const val = r.val.toFixed(1);
+            let statusText = '중립';
+            let colorCls = 'bg-slate-800 text-slate-300 border-slate-700';
 
-            const n = r.history.length;
-            const pts = [];
-
-            if (cachedBars && cachedBars.length >= n) {
-                const startOffset = cachedBars.length - n;
-                r.history.forEach((val, idx) => {
-                    pts.push({ t: cachedBars[startOffset + idx].t, v: val });
-                });
-            } else {
-                const nowTs = Math.floor(Date.now() / 1000);
-                r.history.forEach((val, idx) => {
-                    pts.push({ t: nowTs - (n - 1 - idx) * 300, v: val });
-                });
-            }
-            cachedRsiPoints = pts;
-
-            setText('rsi-value', isNum(r.val) ? r.val.toFixed(1) : NA);
-            setText('rsi-source', r.source);
-
-            const curVal = isNum(r.val) ? r.val : 50;
-            const cls = curVal >= 70 ? 'bg-rose-950/80 text-rose-300 border-rose-800/80' : (curVal >= 55 ? 'bg-amber-950 text-amber-400 border-amber-800/80' : (curVal <= 30 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80' : 'bg-slate-800 text-slate-300 border-slate-700'));
-            const statusEl = $('rsi-status-pill');
-            if (statusEl) {
-                statusEl.className = `text-[9px] px-1.5 py-0.2 rounded font-bold border ${cls}`;
-                statusEl.innerText = r.status || NA;
+            if (r.val >= 70) {
+                statusText = '과매수';
+                colorCls = 'bg-rose-950/90 text-rose-300 border-rose-800/80 animate-pulse';
+            } else if (r.val <= 30) {
+                statusText = '과매도';
+                colorCls = 'bg-emerald-950/90 text-emerald-300 border-emerald-800/80 animate-pulse';
+            } else if (r.val >= 55) {
+                statusText = '상승';
+                colorCls = 'bg-amber-950/70 text-amber-300 border-amber-800/60';
+            } else if (r.val <= 45) {
+                statusText = '하락';
+                colorCls = 'bg-indigo-950/70 text-indigo-300 border-indigo-800/60';
             }
 
-            const lastPt = pts[pts.length - 1];
-            const lastD = lastPt && lastPt.t ? new Date(lastPt.t * 1000) : new Date();
-            defaultRsiLastTime = lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-            defaultRsiDetail = `RSI <span class="text-purple-300 font-bold">${isNum(r.val) ? r.val.toFixed(1) : '--'}</span>`;
-            inspectRsiPoint(null);
-
-            const AREA_X0 = 35, AREA_W = 445;
-            const slot = AREA_W / Math.max(n - 1, 1);
-            const cx = (i) => AREA_X0 + i * slot;
-            const cy = (v) => 110 - Math.min(Math.max(v, 0), 100);
-
-            $('rsi-dynamic-line').setAttribute('d', pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${cy(p.v).toFixed(1)}`).join(' '));
-
-            if (endDot && pts.length) {
-                endDot.setAttribute('cx', cx(n - 1).toFixed(1));
-                endDot.setAttribute('cy', cy(pts[n - 1].v).toFixed(1));
-            }
-
-            let gridHtml = '';
-            let lastTickX = -999;
-            const minTickGap = 68;
-
-            pts.forEach((p, i) => {
-                if (!p.t) return;
-                const gx = cx(i);
-                if (gx - lastTickX >= minTickGap || i === 0 || i === n - 1) {
-                    lastTickX = gx;
-                    const d = new Date(p.t * 1000);
-                    const timeLabel = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
-                    gridHtml += `<line x1="${gx.toFixed(1)}" y1="12" x2="${gx.toFixed(1)}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
-                    gridHtml += `<text x="${gx.toFixed(1)}" y="125" fill="#94a3b8" font-size="9.5" font-weight="bold" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
-                }
-            });
-            if (gridGroup) gridGroup.innerHTML = gridHtml;
-
-            if (list) {
-                const rectW = Math.max(AREA_W / n, 8);
-                list.innerHTML = pts.map((p, i) => {
-                    const rx = cx(i) - rectW / 2;
-                    return `<rect x="${rx.toFixed(1)}" y="10" width="${rectW.toFixed(1)}" height="100" fill="transparent" class="cursor-pointer" onmouseover="inspectRsiPoint(${i})" onmouseout="inspectRsiPoint(null)" ontouchstart="inspectRsiPoint(${i})"></rect>`;
-                }).join('');
-            }
+            badge.className = `text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls}`;
+            badge.innerText = `RSI ${val} (${statusText})`;
+            badge.title = `RSI(14): ${r.val} · ${r.status || ''} · ${r.source || ''}`;
         }
 
         function inspectCvdBar(idx) {
@@ -954,7 +808,7 @@
 
                 if (lastHour === 15 && lastMin >= 40) {
                     gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>`;
-                    gridHtml += `<text x="478" y="125" fill="#94a3b8" font-size="9" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
+                    gridHtml += `<text x="478" y="125" fill="#94a3b8" font-size="6.8" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
                 }
                 gridGroup.innerHTML = gridHtml;
             }
@@ -1105,7 +959,7 @@
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 15000);
             try {
-                const url = `${API_URL}?rsi_tf=${currentRsiTf}&cvd_tf=${currentCvdTf}`;
+                const url = `${API_URL}?cvd_tf=${currentCvdTf}`;
                 const res = await fetch(url, { signal: ctrl.signal });
                 const data = await res.json();
                 if (mySeq !== reqSeq) return;
@@ -1115,6 +969,7 @@
                     () => renderShockAlert(data.shock_alert),
                     () => renderStatus(data),
                     () => renderEconEvents(data.econ_events),
+                    () => renderRsi(data.rsi),
                     () => renderQuote('spx', data.spx, { pct: true }),
                     () => renderQuote('es', data.es, { pct: true }),
                     () => renderQuote('vix', data.vix, { invert: true }),
@@ -1129,7 +984,6 @@
                         setText('vp-source', vp ? vp.source : NA); setText('vp-timestamp', data.timestamp);
                     },
                     () => renderGex(data.gex, data.spx ? data.spx.price : null),
-                    () => renderRsi(data.rsi),
                     () => renderCvd(data.cvd),
                     () => renderDirection(data.direction),
                 ];
