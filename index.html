@@ -6,23 +6,13 @@
     <title>SPX 0DTE DEFENDER</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            background-color: #080d1a !important;
-            color: #f3f4f6 !important;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0; padding: 8px;
-        }
-        .card {
-            background-color: #0f172a !important;
-            border: 1px solid #1e293b !important;
-            border-radius: 6px !important;
-        }
+        body { background-color: #080d1a !important; color: #f3f4f6 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 8px; }
+        .card { background-color: #0f172a !important; border: 1px solid #1e293b !important; border-radius: 6px !important; }
         .icon-sm { width: 14px !important; height: 14px !important; min-width: 14px !important; display: inline-block; }
     </style>
 </head>
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
-    <!-- Tailwind CDN 동적 클래스 등록 -->
     <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80"></div>
 
     <!-- 0. 최상단 실시간 변동성 쇼크 (양방향 급등/급락 경보 배너) -->
@@ -47,7 +37,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.8</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v14.9</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-2 text-[10px] text-slate-400">
@@ -57,7 +47,7 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (1시간 경과 후 자동 닫힘 + 호재/악재 평가 배지) -->
+    <!-- 2. 오늘의 중요 발표 (1시간 후 자동 제거 + 호재/악재 평가) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
@@ -169,7 +159,6 @@
                 <span class="text-slate-500 font-mono text-[8px]" id="vp-timestamp">--</span>
             </div>
         </div>
-
         <div class="grid grid-cols-3 gap-1.5 text-center mb-2">
             <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
                 <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Value Area Low (VAL)</div>
@@ -317,38 +306,77 @@
         </div>
     </div>
 
-    <!-- 8. RSI (14) -->
+    <!-- 8. [완전 개편] RSI (14) — TradingView 스타일 30/50/70 영역 + 촘촘한 시간 눈금 + 인터랙션 -->
     <div class="card p-2 md:p-3 mb-2">
         <div class="flex justify-between items-start mb-2 gap-2">
-            <div class="text-xs font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></div>
+            <div>
+                <div class="text-xs font-bold text-slate-200">📊 RSI (14) — <span id="rsi-title-tf">1H</span></div>
+                <div class="flex items-center space-x-2 mt-0.5">
+                    <span id="rsi-status-pill" class="text-[9px] px-1.5 py-0.2 rounded font-bold bg-slate-800 text-slate-300">--</span>
+                    <span class="text-[8px] text-slate-500 font-mono">70 과매수 / 30 과매도</span>
+                </div>
+            </div>
             <div class="text-right max-w-[65%]">
                 <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="rsi-source">--</span></div>
                 <div class="flex items-center justify-end space-x-1.5 mt-0.5">
                     <span class="text-base font-bold text-amber-400 font-mono" id="rsi-value">--</span>
-                    <span class="text-[9px] px-1.5 py-0.2 rounded font-bold bg-slate-800 text-slate-300" id="rsi-status">--</span>
                 </div>
             </div>
         </div>
 
-        <div class="flex space-x-1 mb-2" id="rsi-tf-group">
-            <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
-            <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
-            <button onclick="changeRsiTimeframe('10m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="10m">10m</button>
-            <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
-            <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
-            <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex space-x-1" id="rsi-tf-group">
+                <button onclick="changeRsiTimeframe('1m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+                <button onclick="changeRsiTimeframe('5m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeRsiTimeframe('10m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="10m">10m</button>
+                <button onclick="changeRsiTimeframe('15m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+                <button onclick="changeRsiTimeframe('30m')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+                <button onclick="changeRsiTimeframe('1H')" class="rsi-tf-btn px-2.5 py-1 rounded text-xs bg-indigo-600 text-white font-bold shadow" data-tf="1H">1H</button>
+            </div>
+            <span class="text-[10px] text-purple-400 bg-slate-800/60 px-2 py-1 rounded font-mono">— RSI(14)</span>
         </div>
 
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-1.5">
-            <svg id="rsi-svg-chart" class="w-full h-24 md:h-28" viewBox="0 0 500 100" preserveAspectRatio="none">
-                <line x1="30" y1="30" x2="480" y2="30" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
-                <line x1="30" y1="50" x2="480" y2="50" stroke="#475569" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.6"/>
-                <line x1="30" y1="70" x2="480" y2="70" stroke="#10b981" stroke-dasharray="3,3" stroke-width="1" opacity="0.6"/>
-                <text x="25" y="33" fill="#f43f5e" font-size="9" text-anchor="end">70</text>
-                <text x="25" y="53" fill="#64748b" font-size="9" text-anchor="end">50</text>
-                <text x="25" y="73" fill="#10b981" font-size="9" text-anchor="end">30</text>
-                <path id="rsi-dynamic-line" d="" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round"/>
+            <svg id="rsi-svg-chart" class="w-full h-36 md:h-40" viewBox="0 0 500 134" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="rsi-zone-grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#a855f7" stop-opacity="0.14"/>
+                        <stop offset="50%" stop-color="#6366f1" stop-opacity="0.05"/>
+                        <stop offset="100%" stop-color="#a855f7" stop-opacity="0.14"/>
+                    </linearGradient>
+                </defs>
+
+                <!-- 30 ~ 70 밴드 음영 채우기 -->
+                <rect x="35" y="40" width="445" height="40" fill="url(#rsi-zone-grad)"/>
+                
+                <!-- 70/50/30 및 바닥 기준선 -->
+                <line x1="35" y1="40" x2="480" y2="40" stroke="#f43f5e" stroke-dasharray="3,3" stroke-width="0.9" opacity="0.8"/>
+                <line x1="35" y1="60" x2="480" y2="60" stroke="#475569" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.6"/>
+                <line x1="35" y1="80" x2="480" y2="80" stroke="#10b981" stroke-dasharray="3,3" stroke-width="0.9" opacity="0.8"/>
+                <line x1="35" y1="110" x2="480" y2="110" stroke="#1e293b" stroke-width="1"/>
+
+                <text x="30" y="43" fill="#f43f5e" font-size="8" text-anchor="end" font-family="monospace">70</text>
+                <text x="30" y="63" fill="#64748b" font-size="8" text-anchor="end" font-family="monospace">50</text>
+                <text x="30" y="83" fill="#10b981" font-size="8" text-anchor="end" font-family="monospace">30</text>
+
+                <!-- 촘촘한 세로 시간 눈금선 -->
+                <g id="rsi-vertical-grids"></g>
+
+                <!-- RSI 곡선 -->
+                <path id="rsi-dynamic-line" d="" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round"/>
+                <g id="rsi-interactive-layer"></g>
             </svg>
+            <div class="text-center text-[8px] text-slate-500 mt-0.5 font-mono">Time (Eastern Time, ET) · RSI Momentum Oscillator</div>
+        </div>
+
+        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
+            <div>
+                <span id="rsi-inspect-label">마지막 시점</span>
+                <span id="rsi-inspect-time" class="text-amber-300 font-bold ml-1">--</span>
+            </div>
+            <div id="rsi-inspect-detail">
+                RSI <span id="rsi-inspect-cur" class="text-purple-300 font-bold">--</span>
+            </div>
         </div>
     </div>
 
@@ -408,7 +436,6 @@
             <div class="text-center text-[8px] text-slate-500 mt-0.5 font-mono">Time (Eastern Time, ET) · 30m Intervals</div>
         </div>
 
-        <!-- 봉 정보 / 마우스 오버 실시간 인스펙터 -->
         <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1.5 px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
             <div class="truncate">
                 <span id="cvd-inspect-label" class="text-slate-400">마지막 봉</span>
@@ -530,6 +557,10 @@
         let defaultCvdLastTime = '--';
         let defaultCvdSub = '--';
 
+        let cachedRsiPoints = [];
+        let defaultRsiLastTime = '--';
+        let defaultRsiDetail = '--';
+
         const $ = (id) => document.getElementById(id);
         const TONES = ['text-emerald-400', 'text-rose-400', 'text-slate-300', 'text-slate-200', 'text-slate-500', 'text-amber-400'];
         const isNum = (v) => typeof v === 'number' && isFinite(v);
@@ -643,28 +674,22 @@
                 $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping inline-block mr-1';
                 $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-emerald-200';
                 $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-emerald-500/80 my-1 space-y-0.5 text-emerald-200';
-                if (alert.elapsed_text) {
-                    $('shock-alert-elapsed').className = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-900/80 text-emerald-200';
-                    setText('shock-alert-elapsed', alert.elapsed_text);
-                }
             } else if (isDrop) {
                 banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-rose-500 bg-rose-950/90 shadow-lg shadow-rose-950/60 transition-all duration-300';
                 $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping inline-block mr-1';
                 $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-rose-200';
                 $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-rose-500/80 my-1 space-y-0.5 text-rose-200';
-                if (alert.elapsed_text) {
-                    $('shock-alert-elapsed').className = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200';
-                    setText('shock-alert-elapsed', alert.elapsed_text);
-                }
             } else {
                 banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-purple-500 bg-purple-950/90 shadow-lg shadow-purple-950/60 transition-all duration-300';
                 $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-purple-400 animate-ping inline-block mr-1';
                 $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-purple-200';
                 $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-purple-500/80 my-1 space-y-0.5 text-purple-200';
-                if (alert.elapsed_text) {
-                    $('shock-alert-elapsed').className = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-900/80 text-purple-200';
-                    setText('shock-alert-elapsed', alert.elapsed_text);
-                }
+            }
+
+            if (alert.elapsed_text) {
+                const badgeCls = isSurge ? 'bg-emerald-900/80 text-emerald-200' : (isDrop ? 'bg-rose-900/80 text-rose-200' : 'bg-purple-900/80 text-purple-200');
+                $('shock-alert-elapsed').className = `text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${badgeCls}`;
+                setText('shock-alert-elapsed', alert.elapsed_text);
             }
 
             const list = $('shock-alert-reasons');
@@ -700,10 +725,6 @@
             const notes = [];
             if (!g.is_0dte) {
                 notes.push(`0DTE 만기가 아니라 ${g.expiration} 만기 기준입니다`);
-                const d = g.chain_diag;
-                if (d && d.all_expirations_seen) {
-                    notes.push(`Schwab이 돌려준 만기 목록: ${d.all_expirations_seen.join(', ')}`);
-                }
             }
             if (!isNum(g.gamma_flip) && g.gamma_flip_note) notes.push(g.gamma_flip_note);
             if (notes.length) { note.classList.remove('hidden'); note.innerText = notes.join(' · '); } else { note.classList.add('hidden'); }
@@ -735,15 +756,11 @@
                     setText('gex-oi-skew',
                         `현재가 기준 · 위: Call OI ${sk.call_oi_at_or_above_spot.toLocaleString()} / Put OI ${sk.put_oi_at_or_above_spot.toLocaleString()}` +
                         ` · 아래: Call OI ${sk.call_oi_below_spot.toLocaleString()} / Put OI ${sk.put_oi_below_spot.toLocaleString()}`);
-                } else {
-                    setText('gex-oi-skew', '');
                 }
                 setText('gex-gamma-note', g.gamma_source_note || '');
             } else {
                 strikeToggle.classList.add('hidden');
                 $('gex-strike-panel').classList.add('hidden');
-                $('gex-strike-rows').innerHTML = '';
-                setText('gex-oi-skew', ''); setText('gex-gamma-note', '');
             }
 
             if (!isNum(spx)) return;
@@ -790,16 +807,95 @@
             draw('vwap-band2-upper', v.upper2); draw('vwap-band2-lower', v.lower2);
         }
 
-        function renderRsi(r) {
-            if (!r) {
-                setText('rsi-value', NA); setText('rsi-status', NA); setText('rsi-source', NA);
-                $('rsi-dynamic-line').setAttribute('d', '');
+        // RSI 인스펙터
+        function inspectRsiPoint(idx) {
+            if (idx === null || !cachedRsiPoints[idx]) {
+                $('rsi-inspect-label').innerText = '마지막 시점';
+                $('rsi-inspect-time').innerText = defaultRsiLastTime;
+                $('rsi-inspect-detail').innerHTML = defaultRsiDetail;
                 return;
             }
-            setText('rsi-value', r.val); setText('rsi-status', r.status); setText('rsi-source', r.source);
-            const cls = r.val >= 70 ? 'bg-rose-950/80 text-rose-300' : (r.val >= 55 ? 'bg-amber-950 text-amber-400' : (r.val <= 30 ? 'bg-emerald-950/80 text-emerald-300' : 'bg-slate-800 text-slate-300'));
-            $('rsi-status').className = `text-[9px] px-1.5 py-0.2 rounded font-bold ${cls}`;
-            $('rsi-dynamic-line').setAttribute('d', generatePath(r.history, 20, 80, 30, 20, 450, 60));
+            const p = cachedRsiPoints[idx];
+            const d = p.t ? new Date(p.t * 1000) : null;
+            const timeStr = d ? d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET' : '--';
+
+            $('rsi-inspect-label').innerText = '선택 시점';
+            $('rsi-inspect-time').innerText = timeStr;
+            const colorCls = p.v >= 70 ? 'text-rose-400' : (p.v <= 30 ? 'text-emerald-400' : 'text-purple-300');
+            $('rsi-inspect-detail').innerHTML = `RSI <span class="${colorCls} font-bold">${p.v.toFixed(1)}</span>`;
+        }
+
+        // RSI 렌더링 함수
+        function renderRsi(r) {
+            const list = $('rsi-interactive-layer');
+            const gridGroup = $('rsi-vertical-grids');
+            if (!r || !r.history || !r.history.length) {
+                cachedRsiPoints = [];
+                setText('rsi-value', NA); setText('rsi-status-pill', NA); setText('rsi-source', NA);
+                $('rsi-dynamic-line').setAttribute('d', '');
+                if (gridGroup) gridGroup.innerHTML = '';
+                if (list) list.innerHTML = '';
+                return;
+            }
+
+            // 봉 데이터 기반 포인트 매핑
+            const n = r.history.length;
+            const nowTs = Math.floor(Date.now() / 1000);
+            const pts = r.history.map((val, idx) => ({
+                t: nowTs - (n - 1 - idx) * 300,
+                v: val
+            }));
+            cachedRsiPoints = pts;
+
+            setText('rsi-value', isNum(r.val) ? r.val.toFixed(1) : NA);
+            setText('rsi-source', r.source);
+
+            const curVal = isNum(r.val) ? r.val : 50;
+            const cls = curVal >= 70 ? 'bg-rose-950/80 text-rose-300 border-rose-800/80' : (curVal >= 55 ? 'bg-amber-950 text-amber-400 border-amber-800/80' : (curVal <= 30 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80' : 'bg-slate-800 text-slate-300 border-slate-700'));
+            const statusEl = $('rsi-status-pill');
+            if (statusEl) {
+                statusEl.className = `text-[9px] px-1.5 py-0.2 rounded font-bold border ${cls}`;
+                statusEl.innerText = r.status || NA;
+            }
+
+            defaultRsiLastTime = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
+            defaultRsiDetail = `RSI <span class="text-purple-300 font-bold">${isNum(r.val) ? r.val.toFixed(1) : '--'}</span>`;
+            inspectRsiPoint(null);
+
+            const AREA_X0 = 35, AREA_W = 445;
+            const slot = AREA_W / Math.max(n - 1, 1);
+            const cx = (i) => AREA_X0 + i * slot;
+            const cy = (v) => 110 - Math.min(Math.max(v, 0), 100);
+
+            // RSI 곡선
+            $('rsi-dynamic-line').setAttribute('d', pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${cy(p.v).toFixed(1)}`).join(' '));
+
+            // 촘촘한 세로 시간 눈금선 (35px 간격)
+            let gridHtml = '';
+            let lastTickX = -999;
+            const isMobile = window.innerWidth < 640;
+            const minTickGap = isMobile ? 48 : 36;
+
+            pts.forEach((p, i) => {
+                const gx = cx(i);
+                if (gx - lastTickX >= minTickGap || i === 0 || i === n - 1) {
+                    lastTickX = gx;
+                    const d = new Date(p.t * 1000);
+                    const timeLabel = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
+                    gridHtml += `<line x1="${gx.toFixed(1)}" y1="12" x2="${gx.toFixed(1)}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
+                    gridHtml += `<text x="${gx.toFixed(1)}" y="125" fill="#64748b" font-size="6.8" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
+                }
+            });
+            if (gridGroup) gridGroup.innerHTML = gridHtml;
+
+            // 터치/마우스 인터랙션 영역
+            if (list) {
+                const rectW = Math.max(AREA_W / n, 8);
+                list.innerHTML = pts.map((p, i) => {
+                    const rx = cx(i) - rectW / 2;
+                    return `<rect x="${rx.toFixed(1)}" y="10" width="${rectW.toFixed(1)}" height="100" fill="transparent" class="cursor-pointer" onmouseover="inspectRsiPoint(${i})" onmouseout="inspectRsiPoint(null)" ontouchstart="inspectRsiPoint(${i})"></rect>`;
+                }).join('');
+            }
         }
 
         function inspectCvdBar(idx) {
@@ -812,7 +908,6 @@
             const b = cachedBars[idx];
             const d = new Date(b.t * 1000);
             const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-            
             const isLast = (idx === cachedBars.length - 1);
             const rangeHint = isLast && currentCvdTf === '10m' ? ' (15:50~16:00 마감봉)' : (isLast ? ' (마감봉)' : '');
 
@@ -830,9 +925,7 @@
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
-                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
-                $('cvd-vertical-grids').innerHTML = '';
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
                 if (priorBadge) priorBadge.classList.add('hidden');
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
@@ -854,7 +947,6 @@
             const is10mLast = currentCvdTf === '10m' && (c.last_bar_time || '').startsWith('15:50');
             defaultCvdLastTime = is10mLast ? `${c.data_time} (15:50~16:00 마감)` : c.data_time;
             defaultCvdSub = `최근 봉 <span class="text-slate-200">${c.recent_vol}</span> · 합계 <span class="text-slate-200">${c.total_vol}</span>`;
-            
             inspectCvdBar(null);
 
             setText('cvd-source', c.source);
@@ -899,9 +991,8 @@
                 const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
                 const isLast = (i === bars.length - 1);
                 const tipRange = isLast && currentCvdTf === '10m' ? ' [15:50~16:00 마감봉]' : '';
-                const tip = `[${timeStr}${tipRange}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K (${b.is_bull ? 'Buy 우세' : 'Sell 우세'})`;
                 return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}" class="cursor-pointer transition-opacity hover:opacity-75" onmouseover="inspectCvdBar(${i})" onmouseout="inspectCvdBar(null)" ontouchstart="inspectCvdBar(${i})">
-                    <title>${tip}</title>
+                    <title>[${timeStr}${tipRange}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K</title>
                 </rect>`;
             }).join('');
 
@@ -916,7 +1007,6 @@
             } else {
                 let gridHtml = '';
                 const seenTicks = new Set();
-
                 bars.forEach((b, i) => {
                     const d = new Date(b.t * 1000);
                     const etHour = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
@@ -941,7 +1031,6 @@
                     gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>`;
                     gridHtml += `<text x="478" y="125" fill="#94a3b8" font-size="6.8" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
                 }
-
                 gridGroup.innerHTML = gridHtml;
             }
         }
@@ -955,8 +1044,8 @@
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50%'; $('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
-                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); setTone(`tf-${k}-score`, 'text-slate-500'); });
+                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
                 list.innerHTML = '';
                 return;
             }
@@ -977,14 +1066,13 @@
                 const t = d.tfs ? d.tfs[k] : null;
                 if (!t) {
                     setText(`tf-${k}-status`, '데이터 부족'); setText(`tf-${k}-score`, NA);
-                    setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); setTone(`tf-${k}-score`, 'text-slate-500');
+                    setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300');
                     return;
                 }
                 const c = toneByName(t.tone);
                 setText(`tf-${k}-status`, t.status);
                 setText(`tf-${k}-score`, sgn(t.score, 1));
                 setTone(`tf-${k}-status`, c); setTone(`tf-${k}-label`, c); setTone(`tf-${k}-score`, c);
-                $(`tf-${k}-status`).title = t.source || '';
             });
 
             const dot = { bull: 'bg-emerald-400', bear: 'bg-rose-400', flat: 'bg-slate-400', na: 'bg-slate-600' };
@@ -1010,7 +1098,6 @@
                 setTone(id, y && y[key] ? 'text-slate-200' : 'text-slate-500');
                 const s = y && y.sources ? y.sources[key] : null;
                 setText(srcId, srcShort(s));
-                if ($(srcId))$(srcId).title = s || '';
                 const bp = y ? y[chgBpKey] : null;
                 setText(chgId, y ? y[chgTextKey] : null);
                 setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-emerald-400' : (bp < 0 ? 'text-rose-400' : 'text-slate-400')));
@@ -1123,7 +1210,6 @@
                     () => renderDirection(data.direction),
                 ];
                 blocks.forEach((fn) => { try { fn(); } catch (e) { console.error('렌더링 오류:', e); } });
-                if (data.errors && data.errors.length) console.warn('서버 오류:', data.errors);
             } catch (err) {
                 console.error('데이터 동기화 에러:', err);
                 if (mySeq === reqSeq) setText('global-source-badge', 'API 연결 실패 · 재시도 중');
