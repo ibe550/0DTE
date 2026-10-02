@@ -43,7 +43,6 @@ SECONDS_PER_YEAR = 365.0 * 24 * 3600
 # 공통 유틸
 # ─────────────────────────────────────────────────────────────
 def num(x):
-    """유한한 float 이면 float, 아니면 None (NaN / inf / 문자열 방어)."""
     try:
         v = float(x)
         return v if math.isfinite(v) else None
@@ -52,7 +51,6 @@ def num(x):
 
 
 def _parse_val(s):
-    """지표 문자열 (예: '0.3%', '215K', '-1.2%')을 float으로 변환."""
     if not s or not isinstance(s, str):
         return None
     cleaned = s.replace("%", "").replace("K", "").replace("M", "").replace("B", "").replace(",", "").strip()
@@ -66,7 +64,6 @@ _CACHE = {}
 
 
 def cached(key, ttl, fn):
-    """아주 짧은 TTL 캐시. 성공한 결과(None 아님)만 저장합니다."""
     now = time.time()
     hit = _CACHE.get(key)
     if hit and now - hit[0] < ttl:
@@ -100,7 +97,7 @@ def src_kind(s):
 # 텔레그램 실시간 다중 알림 시스템 (10분 쿨다운 탑재)
 # ─────────────────────────────────────────────────────────────
 _LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
-TELEGRAM_COOLDOWN_SEC = 600  # 동일 유형 쇼크 10분 재발송 방지
+TELEGRAM_COOLDOWN_SEC = 600
 
 
 def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
@@ -109,14 +106,14 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_ids_raw:
-        return {"status": "error", "reason": "Vercel 환경변수(TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) 누락"}
+        return {"status": "error", "reason": "환경변수 누락"}
 
     now_ts = time.time()
     s_type = shock_alert.get("type")
 
     if not force_test:
         if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
-            return {"status": "skipped", "reason": "쿨다운 중 (10분 이내 동일 경보 발생)"}
+            return {"status": "skipped", "reason": "10분 쿨다운 중"}
 
     _LAST_TELEGRAM_SHOCK["ts"] = now_ts
     _LAST_TELEGRAM_SHOCK["type"] = s_type
@@ -147,7 +144,7 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
                 json={"chat_id": cid, "text": msg},
                 timeout=4,
             )
-            results.append({"chat_id": cid, "status_code": r.status_code, "ok": r.status_code == 200})
+            results.append({"chat_id": cid, "ok": r.status_code == 200})
         except Exception as e:
             results.append({"chat_id": cid, "error": str(e)})
 
@@ -155,7 +152,7 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
 
 
 # ─────────────────────────────────────────────────────────────
-# 영속 저장소 (Vercel KV / Upstash Redis REST API)
+# 영속 저장소 (Vercel KV / Upstash Redis)
 # ─────────────────────────────────────────────────────────────
 def _kv_config():
     url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
@@ -197,7 +194,7 @@ KV_AVAILABLE = _kv_config()[0] is not None
 
 
 # ─────────────────────────────────────────────────────────────
-# Schwab 인증 / 호출
+# Schwab 인증
 # ─────────────────────────────────────────────────────────────
 _TOKEN = {"value": None, "exp": 0.0}
 SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
@@ -223,9 +220,7 @@ def _schwab_token_request(data, app_key, app_secret):
             return res.json(), None
         except Exception:
             return None, "Schwab 응답 파싱 실패"
-    hint = ""
-    if res.status_code in (400, 401):
-        hint = " - refresh token 만료(7일) 또는 키/시크릿 확인. /api/callback 으로 재인증하세요"
+    hint = " - /api/callback 으로 재인증하세요" if res.status_code in (400, 401) else ""
     return None, f"Schwab 토큰 갱신 실패 (HTTP {res.status_code}){hint}"
 
 
@@ -250,7 +245,7 @@ def get_schwab_token(force_refresh=False):
 
     refresh_token = kv_get(KV_KEY_REFRESH) or os.environ.get("SCHWAB_REFRESH_TOKEN")
     if not refresh_token:
-        return None, "refresh_token 없음 - /api/callback 으로 최초 인증이 필요합니다"
+        return None, "refresh_token 없음 - /api/callback 으로 최초 인증 필요"
 
     body, err = _schwab_token_request({"grant_type": "refresh_token", "refresh_token": refresh_token}, app_key, app_secret)
     if not body:
@@ -259,7 +254,7 @@ def get_schwab_token(force_refresh=False):
     access_token = body.get("access_token")
     new_refresh = body.get("refresh_token")
     if not access_token:
-        return None, "Schwab 응답에 access_token 이 없습니다"
+        return None, "Schwab 응답에 access_token 없음"
     ttl = int(num(body.get("expires_in")) or 1800)
 
     _TOKEN["value"] = access_token
@@ -295,13 +290,13 @@ def schwab_get(token, path, params=None, timeout=4):
 
 
 # ─────────────────────────────────────────────────────────────
-# 시세 (Schwab 우선 -> Yahoo)
+# 시세 (VIX1D 탑재 + VIX9D 제거)
 # ─────────────────────────────────────────────────────────────
 QUOTES = OrderedDict([
     ("spx", ("$SPX", "^GSPC")),
     ("es", ("/ES", "ES=F")),
+    ("vix1d", ("$VIX1D", "^VIX1D")),
     ("vix", ("$VIX", "^VIX")),
-    ("vix9d", ("$VIX9D", "^VIX9D")),
     ("mag7", ("MAGS", "MAGS")),
     ("spy", ("SPY", "SPY")),
     ("tnx", ("$TNX", "^TNX")),
@@ -396,7 +391,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 주요 경제 지표 캘린더 (PCE, CPI, GDP, FOMC 등 + 1시간 후 자동 소멸)
+# 주요 경제 지표 캘린더
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Core PCE Price Index m/m": "근원 PCE 물가지수 (MoM)",
@@ -438,16 +433,8 @@ HIGH_IMPACT_KEYWORDS = [
 def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
     if not actual_str:
         if forecast_str:
-            return {
-                "tag": None,
-                "tone": "pending",
-                "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")
-            }
-        return {
-            "tag": None,
-            "tone": "pending",
-            "sentence": f"이전치: {previous_str}" if previous_str else "발표 대기중"
-        }
+            return {"tag": None, "tone": "pending", "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")}
+        return {"tag": None, "tone": "pending", "sentence": f"이전치: {previous_str}" if previous_str else "발표 대기중"}
 
     act_num = _parse_val(actual_str)
     fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
@@ -461,59 +448,21 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
     if act_num is not None and fc_num is not None:
         diff = act_num - fc_num
         if abs(diff) < 1e-5:
-            return {
-                "tag": "⚪ 예상 부합 (중립)",
-                "tone": "flat",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치에 부합 (중립적 흐름)"
-            }
-
+            return {"tag": "⚪ 예상 부합 (중립)", "tone": "flat", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치 부합"}
         if is_inflation:
             if diff > 0:
-                return {
-                    "tag": "🔴 물가 과열 (부정적)",
-                    "tone": "bear",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 물가 압력 상승/인플레 우려 (주가 악재)"
-                }
-            else:
-                return {
-                    "tag": "🟢 물가 둔화 (긍정적)",
-                    "tone": "bull",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 둔화/물가 안정 (주가 호재)"
-                }
-
+                return {"tag": "🔴 물가 과열 (부정적)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 우려 (악재)"}
+            return {"tag": "🟢 물가 둔화 (긍정적)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 둔화 (호재)"}
         elif is_unemployment:
             if diff > 0:
-                return {
-                    "tag": "⚠️ 실업 증가 (부정적)",
-                    "tone": "bear",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업/실업수당 증가 (고용 둔화 우려)"
-                }
-            else:
-                return {
-                    "tag": "🟢 고용 견조 (긍정적)",
-                    "tone": "bull",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 및 고용 시장 안정 (호재)"
-                }
-
+                return {"tag": "⚠️ 실업 증가 (부정적)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 증가 (악재)"}
+            return {"tag": "🟢 고용 견조 (긍정적)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 고용 시장 안정 (호재)"}
         else:
             if diff > 0:
-                return {
-                    "tag": "🟢 경기 호조 (긍정적)",
-                    "tone": "bull",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 지표 호조 및 경기 확장 (주가 호재)"
-                }
-            else:
-                return {
-                    "tag": "⚠️ 경기 둔화 (부정적)",
-                    "tone": "bear",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 지표 부진 및 경기 위축 우려 (주가 악재)"
-                }
+                return {"tag": "🟢 경기 호조 (긍정적)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 확장 (호재)"}
+            return {"tag": "⚠️ 경기 둔화 (부정적)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 위축 (악재)"}
 
-    return {
-        "tag": "발표 완료",
-        "tone": "flat",
-        "sentence": f"발표치: {actual_str}" + (f" ({cmp_label}: {cmp_str})" if cmp_str else "")
-    }
+    return {"tag": "발표 완료", "tone": "flat", "sentence": f"발표치: {actual_str}" + (f" ({cmp_label}: {cmp_str})" if cmp_str else "")}
 
 
 def fetch_global_econ_calendar():
@@ -530,30 +479,20 @@ def fetch_global_econ_calendar():
             title = (it.get("title") or "").strip()
             impact = it.get("impact", "")
             t_lower = title.lower()
-
-            is_target = (impact == "High") or any(k in t_lower for k in HIGH_IMPACT_KEYWORDS)
-            if not is_target:
+            if not ((impact == "High") or any(k in t_lower for k in HIGH_IMPACT_KEYWORDS)):
                 continue
-
             raw_date = it.get("date", "")
             if not raw_date:
                 continue
-
             try:
                 dt_obj = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(ET)
             except Exception:
                 continue
-
             kr_name = ECON_TITLE_KR.get(title, title)
             parsed.append({
-                "title": kr_name,
-                "title_en": title,
-                "dt": dt_obj,
-                "ts": dt_obj.timestamp(),
-                "time": dt_obj.strftime("%H:%M ET"),
-                "impact": impact,
-                "forecast": (it.get("forecast") or "").strip(),
-                "previous": (it.get("previous") or "").strip(),
+                "title": kr_name, "title_en": title, "dt": dt_obj, "ts": dt_obj.timestamp(),
+                "time": dt_obj.strftime("%H:%M ET"), "impact": impact,
+                "forecast": (it.get("forecast") or "").strip(), "previous": (it.get("previous") or "").strip(),
                 "actual": (it.get("actual") or "").strip()
             })
         return parsed
@@ -564,22 +503,15 @@ def fetch_global_econ_calendar():
 def get_today_econ_events(now_et):
     events = cached("econ_events_data", 900, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
-
     if not events:
-        return {"items": [], "source": "N/A", "error": "경제 캘린더를 가져오지 못했습니다"}
+        return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
 
     today = now_et.date()
     tomorrow = today + timedelta(days=1)
-
     today_items = [e for e in events if e["dt"].date() == today]
-
-    active_today_items = [
-        e for e in today_items
-        if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)
-    ]
+    active_today_items = [e for e in today_items if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)]
 
     target_items = active_today_items
-
     is_tomorrow = False
     if not active_today_items and now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
@@ -588,48 +520,29 @@ def get_today_econ_events(now_et):
             is_tomorrow = True
 
     target_items.sort(key=lambda x: x["ts"])
-
     out_items = []
     for it in target_items:
         passed = (it["ts"] <= now_ts)
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
         eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"])
-
         out_items.append({
-            "title": f"{prefix}{it['title']}",
-            "title_en": it["title_en"],
-            "time": it["time"],
-            "ts": it["ts"],
-            "passed": passed,
-            "impact": it.get("impact", "High"),
-            "actual": it["actual"],
-            "forecast": it["forecast"],
-            "previous": it["previous"],
-            "eval_tag": eval_res["tag"],
-            "eval_tone": eval_res["tone"],
-            "eval_sentence": eval_res["sentence"],
+            "title": f"{prefix}{it['title']}", "title_en": it["title_en"], "time": it["time"],
+            "ts": it["ts"], "passed": passed, "impact": it.get("impact", "High"),
+            "actual": it["actual"], "forecast": it["forecast"], "previous": it["previous"],
+            "eval_tag": eval_res["tag"], "eval_tone": eval_res["tone"], "eval_sentence": eval_res["sentence"],
         })
 
-    return {
-        "items": out_items,
-        "source": "공식 경제 캘린더 (PCE·CPI·FOMC·고용 종합 · ET 전용)",
-        "error": None
-    }
+    return {"items": out_items, "source": "공식 경제 캘린더 (PCE·CPI·FOMC·고용 종합 · ET 전용)", "error": None}
 
 
 # ─────────────────────────────────────────────────────────────
-# 봉(candle) 데이터 (장중 오늘 캔들 유효성 보장)
+# 봉(candle) 데이터
 # ─────────────────────────────────────────────────────────────
 TF_SPEC = {
-    "1m": ("1m", "2d", 1, 2, None),
-    "5m": ("5m", "5d", 5, 5, None),
-    "10m": ("5m", "5d", 5, 5, 10),
-    "15m": ("5m", "5d", 5, 5, 15),
-    "30m": ("5m", "5d", 5, 5, 30),
-    "1h": ("60m", "1mo", 30, 10, 60),
+    "1m": ("1m", "2d", 1, 2, None), "5m": ("5m", "5d", 5, 5, None), "10m": ("5m", "5d", 5, 5, 10),
+    "15m": ("5m", "5d", 5, 5, 15), "30m": ("5m", "5d", 5, 5, 30), "1h": ("60m", "1mo", 30, 10, 60),
 }
 TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
-TF_MINUTES = {"1m": 1, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "1h": 60}
 INSTR = {"spx": ("$SPX", "^GSPC"), "spy": ("SPY", "SPY"), "es": (None, "ES=F")}
 
 
@@ -642,11 +555,7 @@ def yahoo_candles(symbol, interval, range_str):
     chart = fetch_yahoo_chart(symbol, interval, range_str)
     ts = chart.get("timestamp") or []
     quote = ((chart.get("indicators") or {}).get("quote") or [{}])[0] or {}
-    opens = quote.get("open") or []
-    highs = quote.get("high") or []
-    lows = quote.get("low") or []
-    closes = quote.get("close") or []
-    vols = quote.get("volume") or []
+    opens, highs, lows, closes, vols = quote.get("open") or [], quote.get("high") or [], quote.get("low") or [], quote.get("close") or [], quote.get("volume") or []
     out = []
     for i, t in enumerate(ts):
         if i >= len(closes) or i >= len(opens) or i >= len(highs) or i >= len(lows):
@@ -662,17 +571,8 @@ def yahoo_candles(symbol, interval, range_str):
 def schwab_candles(token, symbol, freq, days):
     now_ms = int(time.time() * 1000)
     data = schwab_get(
-        token,
-        "/pricehistory",
-        {
-            "symbol": symbol,
-            "periodType": "day",
-            "period": days,
-            "frequencyType": "minute",
-            "frequency": freq,
-            "endDate": now_ms,
-            "needExtendedHoursData": "true",
-        },
+        token, "/pricehistory",
+        {"symbol": symbol, "periodType": "day", "period": days, "frequencyType": "minute", "frequency": freq, "endDate": now_ms, "needExtendedHoursData": "true"},
         timeout=5,
     )
     out = []
@@ -714,7 +614,6 @@ def get_candles(token, inst, tf):
         today = now_et.date()
         is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
 
-        # Schwab 우선 시도: 장중에는 오늘 캔들이 실제로 들어있는지 확인
         if token and ssym:
             cs = schwab_candles(token, ssym, s_freq, s_days)
             if cs:
@@ -724,7 +623,6 @@ def get_candles(token, inst, tf):
                         cs = aggregate_candles(cs, agg)
                     return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
 
-        # Schwab이 비어있거나 오늘 캔들이 없으면 실시간 Yahoo Finance로 즉시 전환
         cs = yahoo_candles(ysym, y_int, y_rng)
         if cs:
             if agg:
@@ -738,10 +636,8 @@ def get_candles(token, inst, tf):
 def get_rth_session(candles, now_et=None):
     if not candles:
         return [], False, None
-
     if now_et is None:
         now_et = datetime.now(ET)
-
     today = now_et.date()
     is_weekday = (now_et.weekday() < 5)
     is_rth = is_weekday and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
@@ -759,29 +655,18 @@ def get_rth_session(candles, now_et=None):
             sessions_by_date[d].append(c)
 
     all_dates = sorted(sessions_by_date.keys())
-
     if is_rth:
-        today_bars = sessions_by_date.get(today, [])
-        return today_bars, False, today.strftime("%m/%d")
-
+        return sessions_by_date.get(today, []), False, today.strftime("%m/%d")
     if is_after_market and today in sessions_by_date:
         return sessions_by_date[today], False, today.strftime("%m/%d")
-
     prior_dates = [d for d in all_dates if d < today]
     if prior_dates:
         target_date = prior_dates[-1]
         return sessions_by_date[target_date], True, target_date.strftime("%m/%d")
-
     if all_dates:
         target_date = all_dates[-1]
-        is_prior = (target_date != today)
-        return sessions_by_date[target_date], is_prior, target_date.strftime("%m/%d")
-
+        return sessions_by_date[target_date], (target_date != today), target_date.strftime("%m/%d")
     return [], False, today.strftime("%m/%d")
-
-
-def et_label(ts):
-    return datetime.fromtimestamp(ts, ET).strftime("%m/%d %H:%M ET")
 
 
 def et_label_sec(ts):
@@ -839,24 +724,19 @@ def rsi_series(closes, period=14):
 
 
 # ─────────────────────────────────────────────────────────────
-# 실시간 변동성 쇼크 감지
+# 실시간 변동성 쇼크 감지 (VIX1D 우선 감지 탑재)
 # ─────────────────────────────────────────────────────────────
-def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
+def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
     if not spx_p:
         return {"active": False}
 
     today = now_et.date()
     is_weekday = (now_et.weekday() < 5)
     is_rth = is_weekday and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
-
     if not is_rth:
         return {"active": False}
 
-    if cvd and cvd.get("is_prior"):
-        return {"active": False}
-
     today_open_ts = int(ET.localize(datetime(today.year, today.month, today.day, 9, 30, 0)).timestamp())
-
     today_bars = [c for c in (spy_5m_candles or []) if c["t"] >= today_open_ts]
     recent_bars = today_bars[-6:] if len(today_bars) >= 2 else []
 
@@ -869,115 +749,80 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_q, now_et):
     if recent_bars and ratio:
         high_bar = max(recent_bars, key=lambda b: b["h"])
         low_bar = min(recent_bars, key=lambda b: b["l"])
-
         max_h = high_bar["h"] * ratio
         min_l = low_bar["l"] * ratio
         curr_c = recent_bars[-1]["c"] * ratio
 
         drop_from_high = curr_c - max_h
         drop_from_high_pct = (drop_from_high / max_h) * 100
-
         rally_from_low = curr_c - min_l
         rally_from_low_pct = (rally_from_low / min_l) * 100
 
         if drop_from_high <= -14.0 or drop_from_high_pct <= -0.25:
             start_ts = high_bar["t"]
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
-
             if elapsed_min <= 30:
                 shock_type = "DROP"
                 level = "CRITICAL" if (drop_from_high <= -24.0 or drop_from_high_pct <= -0.40) else "WARNING"
                 start_dt = datetime.fromtimestamp(start_ts, ET)
                 start_time_label = start_dt.strftime("%H:%M ET")
                 elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
-
-                bounce = curr_c - min_l
-                bounce_str = f" → 저점 대비 +{bounce:.1f}pt 반등 중" if bounce >= 5.0 else ""
-                reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생{bounce_str}")
+                reasons.append(f"{start_time_label}부터 {drop_from_high:.1f}pt ({drop_from_high_pct:.2f}%) 단기 급락 발생")
 
         elif rally_from_low >= 14.0 or rally_from_low_pct >= 0.25:
             start_ts = low_bar["t"]
             elapsed_min = int(max((now_et.timestamp() - start_ts) // 60, 1))
-
             if elapsed_min <= 30:
                 shock_type = "SURGE"
                 level = "CRITICAL" if (rally_from_low >= 24.0 or rally_from_low_pct >= 0.40) else "WARNING"
                 start_dt = datetime.fromtimestamp(start_ts, ET)
                 start_time_label = start_dt.strftime("%H:%M ET")
                 elapsed_text = f"{start_time_label} 시작 ({elapsed_min}분 경과)"
-
-                pullback = curr_c - max_h
-                pullback_str = f" → 고점 대비 {pullback:.1f}pt 눌림목" if pullback <= -5.0 else ""
-                reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생{pullback_str}")
+                reasons.append(f"{start_time_label}부터 +{rally_from_low:.1f}pt (+{rally_from_low_pct:.2f}%) 단기 급등 발생")
 
     if gex and gex.get("available") and gex.get("is_0dte"):
-        pw = gex.get("put_wall")
-        cw = gex.get("call_wall")
-        flip = gex.get("gamma_flip")
-
+        pw, cw, flip = gex.get("put_wall"), gex.get("call_wall"), gex.get("gamma_flip")
         if pw and spx_p < pw:
-            diff = spx_p - pw
-            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({diff:.1f}pt) - 딜러 방어선 파괴")
+            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({spx_p - pw:.1f}pt) - 딜러 방어선 파괴")
             if shock_type == "NORMAL":
                 shock_type = "DROP"
             level = "CRITICAL"
-
         if cw and spx_p > cw:
-            diff = spx_p - cw
-            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{diff:.1f}pt) - 딜러 숏스퀴즈 가속화")
+            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{spx_p - cw:.1f}pt) - 숏스퀴즈 가속화")
             if shock_type == "NORMAL":
                 shock_type = "SURGE"
             level = "CRITICAL"
 
-        if shock_type == "DROP" and flip and spx_p < flip:
-            reasons.append(f"Gamma Flip({flip:.1f}) 하회: 음(−) 감마 가속화 구간 진입 (변동성 증폭)")
-        elif shock_type == "SURGE" and flip and spx_p > flip:
-            reasons.append(f"Gamma Flip({flip:.1f}) 상회: 양(+) 감마 안정 구간 진입")
-
     if cvd and not cvd.get("is_prior") and cvd.get("sell_pct"):
-        sell_pct = cvd["sell_pct"]
-        buy_pct = cvd["buy_pct"]
-        if sell_pct >= 65 and cvd.get("tone") == "bear" and shock_type == "DROP":
-            reasons.append(f"기관 매도 덤핑 압도적 폭발 (Sell {sell_pct}%, {cvd.get('sell_vol')})")
-        elif buy_pct >= 65 and cvd.get("tone") == "bull" and shock_type == "SURGE":
-            reasons.append(f"기관 매수 스퀴즈 압도적 유입 (Buy {buy_pct}%, {cvd.get('buy_vol')})")
+        if cvd["sell_pct"] >= 65 and cvd.get("tone") == "bear" and shock_type == "DROP":
+            reasons.append(f"기관 매도 덤핑 폭발 (Sell {cvd['sell_pct']}%, {cvd.get('sell_vol')})")
+        elif cvd["buy_pct"] >= 65 and cvd.get("tone") == "bull" and shock_type == "SURGE":
+            reasons.append(f"기관 매수 스퀴즈 유입 (Buy {cvd['buy_pct']}%, {cvd.get('buy_vol')})")
 
-    if vix_q and shock_type == "DROP":
-        vix_pct = vix_q.get("change_pct")
-        if vix_pct and vix_pct >= 5.0:
-            reasons.append(f"VIX 공포지수 급등세 (+{vix_pct:.1f}%, {vix_q.get('price'):.2f})")
+    if vix_active and shock_type == "DROP":
+        vix_pct = vix_active.get("change_pct")
+        if vix_pct and vix_pct >= 6.0:
+            reasons.append(f"0DTE 변동성(VIX1D) 스파이크 폭등 (+{vix_pct:.1f}%, {vix_active.get('price'):.2f})")
 
     is_active = len(reasons) > 0 and (shock_type in ("DROP", "SURGE"))
-
-    if shock_type == "DROP":
-        title = "🚨 [변동성 쇼크 · 급락 경보]" if level == "CRITICAL" else "⚠️ [변동성 쇼크 · 하방 주의보]"
-    elif shock_type == "SURGE":
-        title = "🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]"
-    else:
-        title = "⚡ [변동성 쇼크 · 시장 급변 경보]"
+    title = "🚨 [변동성 쇼크 · 급락 경보]" if shock_type == "DROP" and level == "CRITICAL" else ("⚠️️ [변동성 쇼크 · 하방 주의보]" if shock_type == "DROP" else ("🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]"))
 
     return {
-        "active": is_active,
-        "type": shock_type,
-        "level": level,
-        "title": title,
-        "start_time": start_time_label,
-        "elapsed_text": elapsed_text,
-        "details": reasons,
+        "active": is_active, "type": shock_type, "level": level, "title": title,
+        "start_time": start_time_label, "elapsed_text": elapsed_text, "details": reasons,
         "timestamp": now_et.strftime("%H:%M:%S ET")
     }
 
 
 # ─────────────────────────────────────────────────────────────
-# VWAP / Volume Profile / CVD
+# VWAP (내부 계산 전용) / Volume Profile / CVD
 # ─────────────────────────────────────────────────────────────
-def compute_vwap(spy_candles, ratio, source, now_et=None):
-    sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
+def compute_vwap(spy_candles, ratio, now_et=None):
+    sess, _, _ = get_rth_session(spy_candles, now_et)
     if not sess or not ratio:
         return None
-    cum_v = cum_tp = cum_tp2 = 0.0
-    series, u1, l1, u2, l2 = [], [], [], [], []
-    sd = 0.0
+    cum_v = cum_tp = 0.0
+    val = None
     for c in sess:
         v = c["v"]
         if v <= 0:
@@ -985,68 +830,31 @@ def compute_vwap(spy_candles, ratio, source, now_et=None):
         tp = (c["h"] + c["l"] + c["c"]) / 3.0 * ratio
         cum_v += v
         cum_tp += tp * v
-        cum_tp2 += tp * tp * v
-        vwap = cum_tp / cum_v
-        sd = math.sqrt(max(cum_tp2 / cum_v - vwap * vwap, 0.0))
-        series.append(round(vwap, 2))
-        u1.append(round(vwap + sd, 2))
-        l1.append(round(vwap - sd, 2))
-        u2.append(round(vwap + 2 * sd, 2))
-        l2.append(round(vwap - 2 * sd, 2))
-    if not series:
-        return None
-    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
-    return {
-        "val": series[-1],
-        "sigma": round(sd, 2),
-        "series": series,
-        "upper1": u1,
-        "lower1": l1,
-        "upper2": u2,
-        "lower2": l2,
-        "data_time": et_label(sess[-1]["t"]),
-        "is_prior": is_prior,
-        "source": f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 VWAP · 밴드=거래량가중 표준편차",
-    }
+        val = cum_tp / cum_v
+    return {"val": round(val, 2)} if val else None
 
 
 def compute_volume_profile(spy_candles, ratio, source, now_et=None):
     sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
     if not sess or not ratio:
         return None
-
     bins = {}
     total = 0.0
-
     for c in sess:
         v = c["v"]
         if v <= 0:
             continue
-
-        lo = c["l"] * ratio
-        hi = c["h"] * ratio
+        lo = min(c["l"], c["h"]) * ratio
+        hi = max(c["l"], c["h"]) * ratio
         op = c["o"] * ratio
         cl = c["c"] * ratio
-
-        if hi < lo:
-            lo, hi = hi, lo
-
         lo_b = int(round(lo / 5.0)) * 5
         hi_b = int(round(hi / 5.0)) * 5
         rng = list(range(lo_b, hi_b + 5, 5))
         if not rng:
             continue
-
-        body_lo = min(op, cl)
-        body_hi = max(op, cl)
-
-        weights = []
-        for b in rng:
-            if body_lo - 2.5 <= b <= body_hi + 2.5:
-                weights.append(2.5)
-            else:
-                weights.append(1.0)
-
+        b_lo, b_hi = min(op, cl), max(op, cl)
+        weights = [2.5 if b_lo - 2.5 <= b <= b_hi + 2.5 else 1.0 for b in rng]
         w_sum = sum(weights)
         for b, w in zip(rng, weights):
             each = v * (w / w_sum)
@@ -1055,13 +863,11 @@ def compute_volume_profile(spy_candles, ratio, source, now_et=None):
 
     if not bins or total <= 0:
         return None
-
     keys = sorted(bins)
     poc = max(bins, key=bins.get)
     target = total * 0.70
     cur = bins[poc]
     lo_i = hi_i = keys.index(poc)
-
     while cur < target and (lo_i > 0 or hi_i < len(keys) - 1):
         up = bins[keys[hi_i + 1]] if hi_i + 1 < len(keys) else -1.0
         dn = bins[keys[lo_i - 1]] if lo_i > 0 else -1.0
@@ -1072,20 +878,10 @@ def compute_volume_profile(spy_candles, ratio, source, now_et=None):
             lo_i -= 1
             cur += dn
 
-    start_ts, end_ts = sess[0]["t"], sess[-1]["t"]
-    hours_covered = (end_ts - start_ts) / 3600.0
     prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
-
     return {
-        "val": float(keys[lo_i]),
-        "poc": float(poc),
-        "vah": float(keys[hi_i]),
-        "hours_covered": round(hours_covered, 1),
-        "is_prior": is_prior,
-        "source": (
-            f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 (09:30~{et_time_sec(end_ts)}) · "
-            f"5pt 구간 · 70% Value Area · 몸통 가중치 프로파일"
-        ),
+        "val": float(keys[lo_i]), "poc": float(poc), "vah": float(keys[hi_i]),
+        "source": f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 · 5pt 구간 POC",
     }
 
 
@@ -1093,127 +889,54 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
-
     if now_et is None:
         now_et = datetime.now(ET)
-
-    is_weekday = (now_et.weekday() < 5)
-    is_rth = is_weekday and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
-    today = now_et.date()
-
     bars, is_prior, sess_date = get_rth_session(candles, now_et)
-
     if not bars:
-        if is_rth:
-            return {
-                "source": source,
-                "data_time": now_et.strftime("%m/%d %H:%M:%S ET"),
-                "last_bar_time": "09:30:00 ET",
-                "is_prior": False,
-                "session_date": today.strftime("%m/%d"),
-                "status": "개장 첫 봉 집계 중",
-                "tone": "flat",
-                "aggregate_range": f"{today.strftime('%m/%d')} 정규장 (09:30 개장) · 첫 {tf_label} 봉 집계 중",
-                "data_desc": f"{symbol} 정규장(09:30~) · {source}",
-                "buy_pct": 50,
-                "sell_pct": 50,
-                "buy_vol": "0",
-                "sell_vol": "0",
-                "recent_vol": "0",
-                "total_vol": "0",
-                "bars": [],
-                "summary_text": f"09:30 ET 정규장이 개장되었습니다. 오늘 첫 {tf_label} 체결 데이터를 수집 중입니다.",
-            }
         return None
 
     buy = sell = running = 0.0
     out = []
     for c in bars:
-        v = c["v"]
-        h, l, cl = c["h"], c["l"], c["c"]
+        v, h, l, cl = c["v"], c["h"], c["l"], c["c"]
         rng = h - l
-
-        if rng > 0:
-            buy_ratio = (cl - l) / rng
-            sell_ratio = (h - cl) / rng
-        else:
-            buy_ratio = 0.5
-            sell_ratio = 0.5
-
-        bar_buy = v * buy_ratio
-        bar_sell = v * sell_ratio
-        bar_delta = bar_buy - bar_sell
-
-        buy += bar_buy
-        sell += bar_sell
-        running += bar_delta
-
-        out.append({
-            "t": c["t"],
-            "vol": round(v / 1000.0, 2),
-            "is_bull": bar_delta >= 0,
-            "cvd_line": round(running / 1000.0, 2),
-        })
+        buy_ratio = (cl - l) / rng if rng > 0 else 0.5
+        sell_ratio = (h - cl) / rng if rng > 0 else 0.5
+        b_v = v * buy_ratio
+        s_v = v * sell_ratio
+        delta = b_v - s_v
+        buy += b_v
+        sell += s_v
+        running += delta
+        out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": delta >= 0, "cvd_line": round(running / 1000.0, 2)})
 
     total = buy + sell
     if total <= 0:
         return None
-
     buy_pct = int(round(buy / total * 100))
     sell_pct = 100 - buy_pct
+    status, tone = ("Buying Pressure", "bull") if buy_pct >= 53 else (("Selling Pressure", "bear") if buy_pct <= 47 else ("Balanced", "flat"))
+    text = f"CVD Flow: Buy {buy_pct}% / Sell {sell_pct}% in session."
 
-    if buy_pct >= 60:
-        status, tone = "Buying Pressure", "bull"
-        text = f"Strong buying pressure – {buy_pct}% buy volume in session."
-    elif buy_pct >= 53:
-        status, tone = "Buying Pressure", "bull"
-        text = f"Moderate buying pressure – {buy_pct}% buy volume in session."
-    elif buy_pct > 47:
-        status, tone = "Balanced", "flat"
-        text = f"Balanced flow – buy {buy_pct}% / sell {sell_pct}% in session."
-    elif buy_pct > 40:
-        status, tone = "Selling Pressure", "bear"
-        text = f"Moderate selling pressure – {sell_pct}% sell volume in session."
-    else:
-        status, tone = "Selling Pressure", "bear"
-        text = f"Strong selling pressure – {sell_pct}% sell volume in session."
-
-    start_ts, end_ts = bars[0]["t"], bars[-1]["t"]
-    if is_prior:
-        aggregate_range = f"{sess_date} 전일 정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉 · [09:30 ET 자동 리셋]"
-        status_suffix = " (전일 마감)"
-    else:
-        aggregate_range = f"{sess_date} 정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉"
-        status_suffix = ""
-
+    end_ts = bars[-1]["t"]
+    aggregate_range = f"{sess_date} {'전일' if is_prior else ''}정규장 (09:30 ~ {et_time_sec(end_ts)}) · {len(bars)}개 {tf_label} 봉"
     prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
-    data_desc = (
-        f"{symbol} {prefix}정규장(09:30~) · {source} · "
-        f"A/D 체결 압력(고저-종가 가중) 기반 정밀 CVD"
-    )
+
     return {
-        "source": f"{source} {'· [전일 마감 기준]' if is_prior else ''}",
-        "data_time": et_label_sec(bars[-1]["t"]),
-        "last_bar_time": et_time_sec(bars[-1]["t"]),
-        "is_prior": is_prior,
-        "session_date": sess_date,
-        "status": f"{status}{status_suffix}",
-        "tone": tone,
+        "source": f"{source} {'· [전일 마감]' if is_prior else ''}",
+        "data_time": et_label_sec(end_ts), "last_bar_time": et_time_sec(end_ts),
+        "is_prior": is_prior, "session_date": sess_date,
+        "status": f"{status}{' (전일)' if is_prior else ''}", "tone": tone,
         "aggregate_range": aggregate_range,
-        "data_desc": data_desc,
-        "buy_pct": buy_pct,
-        "sell_pct": sell_pct,
-        "buy_vol": fmt_vol(buy),
-        "sell_vol": fmt_vol(sell),
-        "recent_vol": fmt_vol(bars[-1]["v"]),
-        "total_vol": fmt_vol(total),
-        "bars": out,
-        "summary_text": text + (" (※ 09:30 ET 개장 전으로 전일 정규장 마감 데이터가 표시 중입니다)" if is_prior else ""),
+        "data_desc": f"{symbol} {prefix}정규장 · {source} · 체결 압력 CVD",
+        "buy_pct": buy_pct, "sell_pct": sell_pct, "buy_vol": fmt_vol(buy), "sell_vol": fmt_vol(sell),
+        "recent_vol": fmt_vol(bars[-1]["v"]), "total_vol": fmt_vol(total),
+        "bars": out, "summary_text": text,
     }
 
 
 # ─────────────────────────────────────────────────────────────
-# GEX (0DTE 최적화: SPX/SPXW 실시간 Volume+OI 결합 & 진짜 Gamma Wall)
+# GEX (0DTE 실시간 Volume+OI 결합)
 # ─────────────────────────────────────────────────────────────
 def bs_gamma(S, K, T, sigma, r=0.0):
     if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
@@ -1257,24 +980,16 @@ def parse_schwab_chain(data, exp_date):
                 for o in arr or []:
                     if not isinstance(o, dict):
                         continue
-                    K = num(o.get("strikePrice"))
-                    if K is None:
-                        K = num(skey)
+                    K = num(o.get("strikePrice")) or num(skey)
                     if K is None:
                         continue
                     iv = num(o.get("volatility"))
-                    oi = num(o.get("openInterest")) or 0.0
-                    vol = num(o.get("totalVolume")) or num(o.get("volume")) or 0.0
                     contracts.append({
-                        "K": K,
-                        "side": side,
-                        "oi": oi,
-                        "vol": vol,
+                        "K": K, "side": side, "oi": num(o.get("openInterest")) or 0.0,
+                        "vol": num(o.get("totalVolume")) or num(o.get("volume")) or 0.0,
                         "iv": _valid_iv(iv / 100.0) if iv is not None else None,
                         "gamma": _valid_gamma(o.get("gamma")),
-                        "bid": num(o.get("bid")),
-                        "ask": num(o.get("ask")),
-                        "last": num(o.get("last")),
+                        "bid": num(o.get("bid")), "ask": num(o.get("ask")), "last": num(o.get("last")),
                     })
     return contracts
 
@@ -1284,19 +999,7 @@ def fetch_schwab_chain(token, today_date):
         return None, {"reason": "토큰 없음"}
 
     def ask(sym, from_date, to_date, strike_count):
-        return schwab_get(
-            token,
-            "/chains",
-            {
-                "symbol": sym,
-                "contractType": "ALL",
-                "strikeCount": strike_count,
-                "includeUnderlyingQuote": "false",
-                "fromDate": from_date.isoformat(),
-                "toDate": to_date.isoformat(),
-            },
-            timeout=6,
-        )
+        return schwab_get(token, "/chains", {"symbol": sym, "contractType": "ALL", "strikeCount": strike_count, "includeUnderlyingQuote": "false", "fromDate": from_date.isoformat(), "toDate": to_date.isoformat()}, timeout=6)
 
     today_str = today_date.isoformat()
     data = ask("$SPX", today_date, today_date, 160)
@@ -1307,40 +1010,18 @@ def fetch_schwab_chain(token, today_date):
         data_spxw = ask("$SPXW", today_date, today_date, 160)
         exps_spxw = _chain_exps(data_spxw)
         if today_str in exps_spxw:
-            data = data_spxw
-            exps = exps_spxw
-            used_sym = "$SPXW"
+            data, exps, used_sym = data_spxw, exps_spxw, "$SPXW"
 
-    single_day_had_today = today_str in exps
-    widened = False
-    if not single_day_had_today:
-        widened = True
-        wide = ask("$SPX", today_date, today_date + timedelta(days=7), 40)
-        wide_exps = _chain_exps(wide)
-        if wide_exps:
-            data, exps = wide, wide_exps
-
-    diag = {
-        "requested_date": today_str,
-        "single_day_query_had_today": single_day_had_today,
-        "used_symbol": used_sym,
-        "widened_to_7d": widened,
-        "all_expirations_seen": exps[:10],
-    }
     if not exps:
-        return None, diag
-
+        return None, {"reason": "만기 없음"}
     exp = today_str if today_str in exps else exps[0]
     contracts = parse_schwab_chain(data, exp)
-    return (contracts, exp) if contracts else None, diag
+    return (contracts, exp) if contracts else None, {"used_symbol": used_sym, "is_0dte": exp == today_str}
 
 
 def fetch_yahoo_chain(start_date):
     try:
         import yfinance as yf
-    except Exception:
-        return None
-    try:
         t = yf.Ticker("SPY")
         today_str = start_date.isoformat()
         cand = sorted(e for e in list(t.options or []) if e >= today_str)
@@ -1355,15 +1036,9 @@ def fetch_yahoo_chain(start_date):
                 if K is None:
                     continue
                 contracts.append({
-                    "K": K,
-                    "side": side,
-                    "oi": num(row.get("openInterest")) or 0.0,
-                    "vol": num(row.get("volume")) or 0.0,
-                    "iv": _valid_iv(row.get("impliedVolatility")),
-                    "gamma": None,
-                    "bid": num(row.get("bid")),
-                    "ask": num(row.get("ask")),
-                    "last": num(row.get("lastPrice")),
+                    "K": K, "side": side, "oi": num(row.get("openInterest")) or 0.0,
+                    "vol": num(row.get("volume")) or 0.0, "iv": _valid_iv(row.get("impliedVolatility")),
+                    "gamma": None, "bid": num(row.get("bid")), "ask": num(row.get("ask")), "last": num(row.get("lastPrice")),
                 })
         return (contracts, exp) if contracts else None
     except Exception:
@@ -1382,9 +1057,8 @@ def atm_straddle(contracts, S):
     by_k = {}
     for c in contracts:
         m = _mid(c)
-        if m is None:
-            continue
-        by_k.setdefault(c["K"], {})[c["side"]] = m
+        if m is not None:
+            by_k.setdefault(c["K"], {})[c["side"]] = m
     both = {k: v for k, v in by_k.items() if "C" in v and "P" in v}
     if not both:
         return None
@@ -1425,7 +1099,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     y, m, d = (int(x) for x in exp_date.split("-"))
     exp_dt = ET.localize(datetime(y, m, d, 16, 0))
     secs = (exp_dt - now_et).total_seconds()
-
     T = max(secs, 1800.0) / SECONDS_PER_YEAR
 
     use = [c for c in contracts if 0.88 * S <= c["K"] <= 1.12 * S and (c["oi"] > 0 or c.get("vol", 0) > 0)]
@@ -1433,57 +1106,39 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         return None
 
     per = {}
-    gamma_from_schwab = gamma_from_calc = 0
+    gamma_schwab = gamma_calc = 0
     for c in use:
         raw_g = c["gamma"]
         g = raw_g or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
         if g:
-            gamma_from_schwab += 1 if raw_g else 0
-            gamma_from_calc += 0 if raw_g else 1
+            gamma_schwab += 1 if raw_g else 0
+            gamma_calc += 0 if raw_g else 1
 
-        e = per.setdefault(c["K"], {
-            "call_gex": 0.0, "put_gex": 0.0,
-            "call_oi": 0.0, "put_oi": 0.0,
-            "call_vol": 0.0, "put_vol": 0.0,
-            "call_gamma": None, "put_gamma": None,
-            "call_iv": None, "put_iv": None
-        })
-
+        e = per.setdefault(c["K"], {"call_gex": 0.0, "put_gex": 0.0, "call_oi": 0.0, "put_oi": 0.0, "call_vol": 0.0, "put_vol": 0.0})
         eff_qty = max(c["oi"], c.get("vol", 0.0))
 
         if c["side"] == "C":
             e["call_oi"] += c["oi"]
             e["call_vol"] += c.get("vol", 0.0)
-            e["call_iv"] = c["iv"] if e["call_iv"] is None else e["call_iv"]
         else:
             e["put_oi"] += c["oi"]
             e["put_vol"] += c.get("vol", 0.0)
-            e["put_iv"] = c["iv"] if e["put_iv"] is None else e["put_iv"]
 
         if not g or eff_qty <= 0:
             continue
-
         dg = g * eff_qty * 100.0 * S * S * 0.01
         if c["side"] == "C":
             e["call_gex"] += dg
-            e["call_gamma"] = g
         else:
             e["put_gex"] -= dg
-            e["put_gamma"] = g
 
     if not per:
         return None
 
-    gamma_source_note = (
-        f"감마 {gamma_from_schwab}개는 Schwab 제공값, {gamma_from_calc}개는 BS 실시간 계산값"
-        if (gamma_from_schwab or gamma_from_calc) else None
-    )
-
-    calls_with_gex = [k for k, e in per.items() if e["call_gex"] > 0]
-    puts_with_gex = [k for k, e in per.items() if e["put_gex"] < 0]
-
-    call_wall = max(calls_with_gex, key=lambda k: per[k]["call_gex"]) * scale if calls_with_gex else None
-    put_wall = min(puts_with_gex, key=lambda k: per[k]["put_gex"]) * scale if puts_with_gex else None
+    calls_gex = [k for k, e in per.items() if e["call_gex"] > 0]
+    puts_gex = [k for k, e in per.items() if e["put_gex"] < 0]
+    call_wall = max(calls_gex, key=lambda k: per[k]["call_gex"]) * scale if calls_gex else None
+    put_wall = min(puts_gex, key=lambda k: per[k]["put_gex"]) * scale if puts_gex else None
 
     net_total = sum(e["call_gex"] + e["put_gex"] for e in per.values())
     flip, flip_note = gamma_flip_level(use, S, T)
@@ -1495,92 +1150,56 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     for K, e in sorted(nearest, key=lambda kv: kv[0]):
         net_m = (e["call_gex"] + e["put_gex"]) / 1e6
         by_strike.append({
-            "strike": round(K * scale, 1),
-            "call_oi": int(e["call_oi"]),
-            "put_oi": int(e["put_oi"]),
-            "call_vol": int(e["call_vol"]),
-            "put_vol": int(e["put_vol"]),
-            "call_iv": round(e["call_iv"] * 100, 1) if e["call_iv"] else None,
-            "put_iv": round(e["put_iv"] * 100, 1) if e["put_iv"] else None,
-            "call_gamma": round(e["call_gamma"], 5) if e["call_gamma"] else None,
-            "put_gamma": round(e["put_gamma"], 5) if e["put_gamma"] else None,
-            "call_gex_m": round(e["call_gex"] / 1e6, 1),
-            "put_gex_m": round(e["put_gex"] / 1e6, 1),
-            "net_gex_m": round(net_m, 1),
+            "strike": round(K * scale, 1), "call_oi": int(e["call_oi"]), "put_oi": int(e["put_oi"]),
+            "call_vol": int(e["call_vol"]), "put_vol": int(e["put_vol"]), "net_gex_m": round(net_m, 1),
         })
 
-    oi_above_call = sum(e["call_oi"] for k, e in per.items() if k >= S)
-    oi_above_put = sum(e["put_oi"] for k, e in per.items() if k >= S)
-    oi_below_call = sum(e["call_oi"] for k, e in per.items() if k < S)
-    oi_below_put = sum(e["put_oi"] for k, e in per.items() if k < S)
-
-    target_date = now_et.date() if now_et.hour < 16 else (now_et.date() + timedelta(days=1))
-    is_0dte_session = bool(
-        (now_et.hour < 16 and exp_date == now_et.date().isoformat() and secs > 0) or
-        (now_et.hour >= 16 and exp_date >= target_date.isoformat())
-    )
+    is_0dte_session = bool((now_et.hour < 16 and exp_date == now_et.date().isoformat() and secs > 0) or (now_et.hour >= 16 and exp_date >= now_et.date().isoformat()))
+    gamma_source_note = f"감마 {gamma_schwab}개는 Schwab 제공값, {gamma_calc}개는 BS 실시간 계산값"
 
     return {
-        "available": True,
-        "source": source,
-        "expiration": exp_date,
-        "is_0dte": is_0dte_session,
+        "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session,
         "call_wall": round(call_wall, 1) if call_wall is not None else None,
         "put_wall": round(put_wall, 1) if put_wall is not None else None,
         "gamma_flip": round(flip * scale, 1) if flip is not None else None,
-        "gamma_flip_note": flip_note,
-        "em_pt": round(em_pt, 1) if em_pt else None,
+        "gamma_flip_note": flip_note, "em_pt": round(em_pt, 1) if em_pt else None,
         "expected_move": f"±{em_pt:.1f}pt ({em_pt / spot * 100:.2f}%)" if em_pt else None,
-        "net_gex": fmt_dollars(net_total),
-        "regime": "positive" if net_total >= 0 else "negative",
-        "regime_text": ("양(+) 감마 우세 - 딜러 헤지가 변동성을 누르는 구간" if net_total >= 0
-                        else "음(−) 감마 우세 - 딜러 헤지가 변동성을 증폭시키는 구간"),
-        "strike_count": len(per),
-        "by_strike": by_strike,
-        "gamma_source_note": gamma_source_note,
+        "net_gex": fmt_dollars(net_total), "regime": "positive" if net_total >= 0 else "negative",
+        "regime_text": "양(+) 감마 우세 - 딜러 헤지가 변동성을 억제" if net_total >= 0 else "음(−) 감마 우세 - 변동성 증폭 구간",
+        "strike_count": len(per), "by_strike": by_strike, "gamma_source_note": gamma_source_note,
         "oi_skew": {
-            "call_oi_at_or_above_spot": int(oi_above_call),
-            "put_oi_at_or_above_spot": int(oi_above_put),
-            "call_oi_below_spot": int(oi_below_call),
-            "put_oi_below_spot": int(oi_below_put),
+            "call_oi_at_or_above_spot": int(sum(e["call_oi"] for k, e in per.items() if k >= S)),
+            "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
+            "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
+            "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
         },
-        "chain_diag": diag,
     }
-
-
-def gex_na(reason, diag=None):
-    return {"available": False, "source": "N/A", "reason": reason, "chain_diag": diag}
 
 
 def get_gex(token, spx_p, ratio, now_et):
     if spx_p is None:
-        return gex_na("SPX 현재가를 가져오지 못했습니다")
+        return {"available": False, "source": "N/A", "reason": "SPX 현재가 없음"}
     start = now_et.date() if now_et.hour < 16 else now_et.date() + timedelta(days=1)
 
     def load():
         r, diag = fetch_schwab_chain(token, start)
         if r:
-            sym_tag = diag.get("used_symbol", "$SPX")
-            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {sym_tag} 체인 (실시간 Volume+OI 결합 GEX)", diag)
+            res = analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag)
             if res:
                 return res
         if ratio:
             ry = fetch_yahoo_chain(start)
             if ry:
-                res = analyze_gex(
-                    ry[0], spx_p, ratio, ry[1], now_et,
-                    f"{SRC_YAHOO} SPY 체인 (단일 만기 {ry[1]}) x SPX/SPY 환산 · 근사치",
-                    diag,
-                )
+                res = analyze_gex(ry[0], spx_p, ratio, ry[1], now_et, f"{SRC_YAHOO} SPY 체인 x 환산 · 근사치", diag)
                 if res:
                     return res
-        return gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)", diag)
+        return {"available": False, "source": "N/A", "reason": "옵션체인 수집 실패"}
 
-    return cached("gex", 15, load) or gex_na("옵션체인을 가져오지 못했습니다 (Schwab · Yahoo 모두 실패)")
+    return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
 
 # ─────────────────────────────────────────────────────────────
-# 방향 분석 (0DTE 최적화: 초단타 EMA 5/13/21 + 캔들 모멘텀 + VWAP/CVD 연동)
+# 방향 분석 (0DTE 최적화: EMA 5/13/21 + CVD + VWAP 가중치)
 # ─────────────────────────────────────────────────────────────
 DIR_WEIGHTS = {"5m": 0.35, "1m": 0.25, "15m": 0.25, "1h": 0.15}
 
@@ -1601,14 +1220,10 @@ def analyze_tf(candles):
     closes = [c["c"] for c in candles]
     if len(closes) < 15:
         return None
-    e5 = ema_series(closes, 5)
-    e13 = ema_series(closes, 13)
-    e21 = ema_series(closes, 21)
-
+    e5, e13, e21 = ema_series(closes, 5), ema_series(closes, 13), ema_series(closes, 21)
     p_vs_e5 = 1.0 if closes[-1] > e5[-1] else -1.0
     e5_vs_e13 = 1.0 if e5[-1] > e13[-1] else -1.0
     e13_vs_e21 = 1.0 if e13[-1] > e21[-1] else -1.0
-
     e5_slope = 1.0 if (len(e5) >= 2 and e5[-1] > e5[-2]) else -1.0
 
     last_c = candles[-1]
@@ -1627,109 +1242,51 @@ def analyze_tf(candles):
     rsi_val = rs[-1] if rs else 50.0
     rsi_score = 1.0 if rsi_val >= 55 else (-1.0 if rsi_val <= 45 else 0.0)
 
-    raw_score = p_vs_e5 + e5_vs_e13 + e13_vs_e21 + e5_slope + bar_imp + rsi_score
-    score = max(-6.0, min(6.0, raw_score))
+    score = max(-6.0, min(6.0, p_vs_e5 + e5_vs_e13 + e13_vs_e21 + e5_slope + bar_imp + rsi_score))
     label, tone = status_of(score)
     return {"score": round(score, 1), "status": label, "tone": tone}
 
 
-def build_evidence(spx_p, vwap_val, c1h, rsi_1h, cvd_data):
+def build_evidence(spx_p, vwap_val, c1h, cvd_data):
     ev = []
     if spx_p is not None and vwap_val is not None:
         diff = spx_p - vwap_val
-        ev.append({
-            "title": "VWAP 위치",
-            "signal": "bull" if diff > 0 else ("bear" if diff < 0 else "flat"),
-            "text": f"현재가가 당일 VWAP {'위' if diff > 0 else ('아래' if diff < 0 else '와 동일')} ({diff:+.2f}pt)",
-        })
-    else:
-        ev.append({"title": "VWAP 위치", "signal": "na", "text": "N/A (VWAP 데이터 없음)"})
-
+        ev.append({"title": "VWAP 위치", "signal": "bull" if diff > 0 else ("bear" if diff < 0 else "flat"), "text": f"현재가가 당일 VWAP {'위' if diff > 0 else '아래'} ({diff:+.2f}pt)"})
     if cvd_data:
-        ev.append({
-            "title": "CVD 볼륨 압력",
-            "signal": cvd_data["tone"],
-            "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)",
-        })
-    else:
-        ev.append({"title": "CVD 볼륨 압력", "signal": "na", "text": "N/A"})
-
+        ev.append({"title": "CVD 볼륨 압력", "signal": cvd_data["tone"], "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)"})
     if len(c1h) >= 6:
-        h3, h6 = max(c["h"] for c1h_bar in c1h[-3:] for c in [c1h_bar]), max(c["h"] for c1h_bar in c1h[-6:-3] for c in [c1h_bar])
-        l3, l6 = min(c["l"] for c1h_bar in c1h[-3:] for c in [c1h_bar]), min(c["l"] for c1h_bar in c1h[-6:-3] for c in [c1h_bar])
-        if h3 > h6 and l3 > l6:
-            sig, txt = "bull", "최근 고점과 저점이 함께 높아지는 상승 구조"
-        elif h3 < h6 and l3 < l6:
-            sig, txt = "bear", "최근 고점과 저점이 함께 낮아지는 하락 구조"
-        else:
-            sig, txt = "flat", "고점·저점이 엇갈려 뚜렷한 구조가 없음"
-        ev.append({"title": "상위(1H) 구조", "signal": sig, "text": txt})
-    else:
-        ev.append({"title": "상위(1H) 구조", "signal": "na", "text": "N/A"})
-
-    if len(c1h) >= 3:
-        mom = c1h[-1]["c"] - c1h[-3]["c"]
-        ev.append({
-            "title": "단기 모멘텀",
-            "signal": "bull" if mom > 0 else ("bear" if mom < 0 else "flat"),
-            "text": f"최근 2개 봉 기준 {'상승' if mom > 0 else ('하락' if mom < 0 else '보합')} ({abs(mom):.2f}pt)",
-        })
+        h3, h6 = max(c["h"] for c in c1h[-3:]), max(c["h"] for c in c1h[-6:-3])
+        l3, l6 = min(c["l"] for c in c1h[-3:]), min(c["l"] for c in c1h[-6:-3])
+        sig = "bull" if (h3 > h6 and l3 > l6) else ("bear" if (h3 < h6 and l3 < l6) else "flat")
+        ev.append({"title": "상위(1H) 구조", "signal": sig, "text": f"1H 추세: {'고저점 상승' if sig=='bull' else ('고저점 하락' if sig=='bear' else '박스권')}"})
     return ev
 
 
 def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=None):
     avail = {k: v for k, v in tf_results.items() if v}
     if not avail:
-        return {"available": False, "source": "N/A", "reason": "SPY 실시간 봉 데이터를 가져오지 못했습니다"}
+        return {"available": False, "source": "N/A", "reason": "실시간 봉 수집 불가"}
 
-    wsum = sum(DIR_WEIGHTS[k] for k in avail)
-    raw_score = sum(DIR_WEIGHTS[k] * avail[k]["score"] for k in avail) / wsum
-
+    raw_score = sum(DIR_WEIGHTS[k] * avail[k]["score"] for k in avail) / sum(DIR_WEIGHTS[k] for k in avail)
     score = raw_score
     if vwap_diff is not None:
-        if vwap_diff < -1.0:
-            score -= 1.5
-        elif vwap_diff > 1.0:
-            score += 1.0
-
+        score += 1.0 if vwap_diff > 1.0 else (-1.5 if vwap_diff < -1.0 else 0)
     if cvd_data:
-        if cvd_data.get("tone") == "bear":
-            score -= 1.5
-        elif cvd_data.get("tone") == "bull":
-            score += 1.0
+        score += 1.0 if cvd_data.get("tone") == "bull" else (-1.5 if cvd_data.get("tone") == "bear" else 0)
 
     score = max(-6.0, min(6.0, score))
     label, tone = status_of(score)
-    match = sum(1 for v in avail.values() if v["tone"] == tone)
-    match_pct = int(round(match / len(avail) * 100))
+    match_pct = int(round(sum(1 for v in avail.values() if v["tone"] == tone) / len(avail) * 100))
 
-    if tone == "bull":
-        summary = f"단기 모멘텀과 체결 압력이 상승 쪽으로 기울었습니다. {match_pct}%의 시간봉이 상승 편향을 보입니다."
-    elif tone == "bear":
-        summary = f"단기 모멘텀과 매도 덤핑 압력이 우세합니다. {match_pct}%의 시간봉이 하락 편향을 보입니다."
-    else:
-        summary = f"시간봉 및 VWAP 간 방향이 엇갈려 박스권 중립 흐름입니다."
-
+    summary = f"단기 모멘텀과 체결 압력이 {'상승' if tone=='bull' else ('하락' if tone=='bear' else '중립')} 쪽입니다. {match_pct}%의 시간봉이 일치합니다."
     kinds = {src_kind(tf_sources.get(k)) for k in avail}
-    names = {"schwab": "Charles Schwab", "yahoo": "Yahoo Finance"}
-    src = " + ".join(names[x] for x in ("schwab", "yahoo") if x in kinds) or "N/A"
-
-    tfs = {}
-    for k in ("1h", "15m", "5m", "1m"):
-        v = avail.get(k)
-        tfs[k] = {**v, "source": tf_sources.get(k)} if v else None
+    src = " + ".join({"schwab": "Charles Schwab", "yahoo": "Yahoo Finance"}[x] for x in ("schwab", "yahoo") if x in kinds) or "N/A"
 
     return {
-        "available": True,
-        "score": round(score, 1),
-        "score_text": f"{score:+.1f}",
-        "status": label,
-        "tone": tone,
-        "match_pct": match_pct,
-        "summary": summary,
-        "tfs": tfs,
-        "evidence": evidence,
-        "source": f"{src} (SPY 실시간) · 0DTE EMA(5/13/21)·VWAP·CVD 결합 판정",
+        "available": True, "score": round(score, 1), "score_text": f"{score:+.1f}",
+        "status": label, "tone": tone, "match_pct": match_pct, "summary": summary,
+        "tfs": {k: ({**avail[k], "source": tf_sources.get(k)} if k in avail else None) for k in ("1h", "15m", "5m", "1m")},
+        "evidence": evidence, "source": f"{src} (SPY) · 0DTE EMA(5/13/21)·VWAP·CVD 결합",
     }
 
 
@@ -1737,16 +1294,7 @@ def build_direction(tf_results, tf_sources, evidence, vwap_diff=None, cvd_data=N
 # 금리
 # ─────────────────────────────────────────────────────────────
 def yield_scale(raw_price):
-    if raw_price is None:
-        return 1.0
-    return 10.0 if raw_price > 25 else 1.0
-
-
-def norm_yield(x, scale=None):
-    if x is None:
-        return None
-    s = scale if scale is not None else yield_scale(x)
-    return x / s
+    return 10.0 if (raw_price and raw_price > 25) else 1.0
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1756,28 +1304,22 @@ def norm_yield(x, scale=None):
 def test_telegram_alert():
     now_et = datetime.now(ET)
     mock_shock = {
-        "active": True,
-        "type": "DROP",
-        "level": "CRITICAL",
+        "active": True, "type": "DROP", "level": "CRITICAL",
         "title": "🚨 [시스템 테스트] 텔레그램 연동 정상 작동 확인",
         "timestamp": now_et.strftime("%H:%M:%S ET"),
         "elapsed_text": f"{now_et.strftime('%H:%M ET')} 테스트 발송",
         "details": [
             "Vercel 환경변수(TELEGRAM_BOT_TOKEN / CHAT_ID) 연동 성공",
-            "실제 시장 급변동(Flash Drop / Surge) 감지 시 이와 동일하게 자동 전송됩니다.",
+            "실제 시장 급변동(Flash Drop / Surge) 감지 시 자동 전송됩니다.",
             "동일 경보 10분 재발송 방지(쿨다운) 안전 로직 정상 가동 중"
         ]
     }
     result = send_telegram_shock_alert(mock_shock, spx_price=5750.0, force_test=True)
-    return {
-        "status": "ok",
-        "time": now_et.strftime("%Y-%m-%d %H:%M:%S ET"),
-        "result": result
-    }
+    return {"status": "ok", "time": now_et.strftime("%Y-%m-%d %H:%M:%S ET"), "result": result}
 
 
 @app.get("/api/market-data")
-def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"):
+def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     now_et = datetime.now(ET)
     now_str = now_et.strftime("%m/%d %H:%M:%S ET")
     errors = []
@@ -1786,7 +1328,7 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
         try:
             return fn(*args)
         except Exception as e:
-            errors.append(f"{name}: {type(e).__name__}: {e}")
+            errors.append(f"{name}: {e}")
             return None
 
     token, schwab_msg = get_schwab_token()
@@ -1795,317 +1337,136 @@ def get_market_data(vwap_tf: str = "1H", rsi_tf: str = "1H", cvd_tf: str = "10m"
     spx_p = q_spx["price"] if q_spx else None
     ratio_q = (spx_p / q_spy["price"]) if (spx_p and q_spy and q_spy["price"]) else None
 
-    v_key, r_key, c_key = normalize_tf(vwap_tf), normalize_tf(rsi_tf), normalize_tf(cvd_tf)
-    with ThreadPoolExecutor(max_workers=9) as ex:
+    r_key, c_key = normalize_tf(rsi_tf), normalize_tf(cvd_tf)
+    with ThreadPoolExecutor(max_workers=8) as ex:
         f_spy_dir = {k: ex.submit(get_candles, token, "spy", k) for k in {"1h", "15m", "5m", "1m"}}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
-        f_spy_v = ex.submit(get_candles, token, "spy", v_key)
         f_spy_c = ex.submit(get_candles, token, "spy", c_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
         f_econ = ex.submit(get_today_econ_events, now_et)
 
-    def result(name, fut):
-        return guard(name, fut.result)
-
-    spy_dir_c = {k: result(f"candles spy dir {k}", f) for k, f in f_spy_dir.items()}
-    spx_r = result("candles spx rsi", f_spx_r)
-    spy_v = result("candles spy vwap", f_spy_v)
-    spy_c = result("candles spy cvd", f_spy_c)
-    gex = result("gex", f_gex) or gex_na("GEX 계산 오류")
-    econ_events = result("econ_events", f_econ) or {"items": [], "source": "N/A", "error": "계산 오류"}
+    spy_dir_c = {k: guard(f"dir {k}", f.result) for k, f in f_spy_dir.items()}
+    spx_r = guard("rsi", f_spx_r.result)
+    spy_c = guard("cvd", f_spy_c.result)
+    gex = guard("gex", f_gex.result) or {"available": False, "source": "N/A"}
+    econ_events = guard("econ", f_econ.result) or {"items": [], "source": "N/A"}
 
     def ratio_for(spy_data):
         if ratio_q:
             return ratio_q
-        if spx_p and spy_data and spy_data["candles"]:
+        if spx_p and spy_data and spy_data.get("candles"):
             return spx_p / spy_data["candles"][-1]["c"]
         return None
 
-    # 1. VWAP
-    vwap = guard("vwap", compute_vwap, spy_v["candles"], ratio_for(spy_v), spy_v["source"], now_et) if spy_v else None
+    # 1. 내부 VWAP (화면 차트는 제거되었으나 방향 판정에 100% 반영)
+    spy_5m = spy_dir_c.get("5m")
+    vwap_calc = guard("vwap", compute_vwap, spy_5m["candles"], ratio_for(spy_5m), now_et) if spy_5m else None
 
     # 2. Volume Profile
-    spy_vp = spy_dir_c.get("5m")
-    vp = (
-        guard("volume_profile", compute_volume_profile, spy_vp["candles"], ratio_for(spy_vp), spy_vp["source"], now_et)
-        if (spy_vp and ratio_for(spy_vp)) else None
-    )
+    vp = guard("vp", compute_volume_profile, spy_5m["candles"], ratio_for(spy_5m), spy_5m["source"], now_et) if (spy_5m and ratio_for(spy_5m)) else None
 
     # 3. CVD
     cvd = guard("cvd", compute_cvd, spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
 
-    # 4. [개선] RSI 계산 (각 캔들의 정확한 타임스탬프와 SMA 9 시그널선 계산 탑재)
+    # 4. RSI (헤더 실시간 배지용)
     rsi = None
-    if spx_r and spx_r.get("candles"):
-        cds = spx_r["candles"]
-        closes = [c["c"] for c in cds]
-        rs = rsi_series(closes, period=14)
+    if spx_r:
+        rs = rsi_series([c["c"] for c in spx_r["candles"]])
         if rs:
             cur = rs[-1]
-            offset = len(cds) - len(rs)
-            rsi_points = []
-            for i, val in enumerate(rs):
-                c_idx = offset + i
-                if c_idx < len(cds):
-                    rsi_points.append({"t": cds[c_idx]["t"], "v": val})
-
-            sma_period = 9
-            for i in range(len(rsi_points)):
-                if i >= sma_period - 1:
-                    window = [rsi_points[j]["v"] for j in range(i - sma_period + 1, i + 1)]
-                    rsi_points[i]["sma"] = round(sum(window) / sma_period, 1)
-                else:
-                    rsi_points[i]["sma"] = None
-
-            recent_points = rsi_points[-36:] if len(rsi_points) > 36 else rsi_points
-
             rsi = {
                 "val": cur,
-                "status": "Overbought" if cur >= 70 else ("Oversold" if cur <= 30 else ("Bullish" if cur >= 55 else ("Bearish" if cur <= 45 else "Neutral"))),
-                "history": [p["v"] for p in recent_points],
-                "points": recent_points,
-                "source": f"{spx_r['source']} · Wilder RSI(14) + SMA(9)",
+                "status": "과매수" if cur >= 70 else ("과매도" if cur <= 30 else ("상승" if cur >= 55 else ("하락" if cur <= 45 else "중립"))),
+                "source": f"{spx_r['source']} · Wilder RSI(14)",
             }
 
-    # 5. 실시간 방향 분석 계산
+    # 5. 방향 분석
     tf_results, tf_sources = {}, {}
     for k in ("1h", "15m", "5m", "1m"):
         d = spy_dir_c.get(k)
-        tf_results[k] = guard(f"direction {k}", analyze_tf, d["candles"]) if d else None
+        tf_results[k] = guard(f"dir {k}", analyze_tf, d["candles"]) if d else None
         tf_sources[k] = d["source"] if d else None
 
     c1h = spy_dir_c["1h"]["candles"] if spy_dir_c.get("1h") else []
-    rs_1h = rsi_series([c["c"] for c in c1h])
-    vwap_diff = (spx_p - vwap["val"]) if (spx_p and vwap and vwap.get("val")) else None
-    evidence = build_evidence(spx_p, vwap["val"] if vwap else None, c1h, rs_1h[-1] if rs_1h else None, cvd)
+    vwap_diff = (spx_p - vwap_calc["val"]) if (spx_p and vwap_calc and vwap_calc.get("val")) else None
+    evidence = build_evidence(spx_p, vwap_calc["val"] if vwap_calc else None, c1h, cvd)
+    direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {"available": False, "source": "N/A"}
 
-    direction = guard("direction", build_direction, tf_results, tf_sources, evidence, vwap_diff, cvd) or {
-        "available": False, "source": "N/A", "reason": "방향 분석 오류"}
-
-    # 6. 실시간 변동성 쇼크 감지 및 텔레그램 연동
+    # 6. 실시간 변동성 쇼크 (VIX1D 우선 반영)
     spy_5m_bars = spy_dir_c.get("5m", {}).get("candles") if spy_dir_c.get("5m") else []
-    shock_alert = guard("shock_alert", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_vp), gex, cvd, quotes.get("vix"), now_et) or {"active": False}
-
+    vix_target = quotes.get("vix1d") or quotes.get("vix")
+    shock_alert = guard("shock", detect_market_shock, spx_p, spy_5m_bars, ratio_for(spy_5m), gex, cvd, vix_target, now_et) or {"active": False}
     if shock_alert and shock_alert.get("active"):
-        guard("telegram_alert", send_telegram_shock_alert, shock_alert, spx_p)
+        guard("telegram", send_telegram_shock_alert, shock_alert, spx_p)
 
-    # 7. 국채 금리 계산
+    # 7. 국채 금리
     q10, q30, q3m = quotes.get("tnx"), quotes.get("tyx"), quotes.get("irx")
 
-    def yield_level_and_change(q):
+    def yield_info(q):
         if not q:
             return None, None
-        scale = yield_scale(q["price"])
-        level = norm_yield(q["price"], scale)
-        chg = q.get("change")
-        bp = int(round(norm_yield(chg, scale) * 100)) if chg is not None else None
-        return level, bp
+        s = yield_scale(q["price"])
+        lvl = q["price"] / s
+        bp = int(round((q["change"] / s) * 100)) if q.get("change") is not None else None
+        return lvl, bp
 
-    y10, y10_bp = yield_level_and_change(q10)
-    y30, y30_bp = yield_level_and_change(q30)
-    y3m, y3m_bp = yield_level_and_change(q3m)
+    y10, y10_bp = yield_info(q10)
+    y30, y30_bp = yield_info(q30)
+    y3m, y3m_bp = yield_info(q3m)
     spread_bp = int(round((y10 - y3m) * 100)) if (y10 is not None and y3m is not None) else None
 
-    def pct_text(v):
-        return f"{v:.3f}%" if v is not None else None
-
-    def bp_text(v):
-        return f"{'+' if v > 0 else ''}{v} bp" if v is not None else None
-
     yields = {
-        "y3m": pct_text(y3m),
-        "y10": pct_text(y10),
-        "y30": pct_text(y30),
-        "y3m_change_bp": y3m_bp,
-        "y10_change_bp": y10_bp,
-        "y30_change_bp": y30_bp,
-        "y3m_change_text": bp_text(y3m_bp),
-        "y10_change_text": bp_text(y10_bp),
-        "y30_change_text": bp_text(y30_bp),
-        "spread": (f"{'+' if spread_bp > 0 else ''}{spread_bp} bp" if spread_bp is not None else None),
-        "sources": {
-            "y3m": q3m["source"] if q3m else None,
-            "y10": q10["source"] if q10 else None,
-            "y30": q30["source"] if q30 else None,
-        },
+        "y3m": f"{y3m:.3f}%" if y3m else None, "y10": f"{y10:.3f}%" if y10 else None, "y30": f"{y30:.3f}%" if y30 else None,
+        "y3m_change_text": f"{'+' if y3m_bp > 0 else ''}{y3m_bp} bp" if y3m_bp is not None else None,
+        "y10_change_text": f"{'+' if y10_bp > 0 else ''}{y10_bp} bp" if y10_bp is not None else None,
+        "y30_change_text": f"{'+' if y30_bp > 0 else ''}{y30_bp} bp" if y30_bp is not None else None,
+        "spread": f"{'+' if spread_bp > 0 else ''}{spread_bp} bp" if spread_bp is not None else None,
+        "sources": {"y3m": q3m["source"] if q3m else None, "y10": q10["source"] if q10 else None, "y30": q30["source"] if q30 else None},
     }
 
     def slim(q):
-        return {"price": q["price"], "change": q["change"], "source": q["source"]} if q else None
+        return {"price": q["price"], "change": q["change"], "change_pct": q.get("change_pct"), "source": q["source"]} if q else None
 
     used = [q["source"] for q in quotes.values() if q]
-    used += [x["source"] for x in (vwap, vp, rsi, cvd) if x]
-    used.append(gex.get("source"))
-    used += [s for s in tf_sources.values() if s]
-    counts = {"schwab": 0, "yahoo": 0, "na": 0}
-    for s in used:
-        kind = src_kind(s)
-        if kind in counts:
-            counts[kind] += 1
-    missing = sum(1 for k in QUOTES if not quotes.get(k))
-    summary = f"Schwab {counts['schwab']} · Yahoo {counts['yahoo']}" + (f" · N/A {missing}" if missing else "")
-
-    status_msg = schwab_msg
-    if token and q_spx and src_kind(q_spx["source"]) == "yahoo":
-        status_msg += " · 단, 시세 응답이 없어 Yahoo 로 대체됨"
+    counts = {"schwab": sum(1 for s in used if src_kind(s) == "schwab"), "yahoo": sum(1 for s in used if src_kind(s) == "yahoo")}
+    summary = f"Schwab {counts['schwab']} · Yahoo {counts['yahoo']}"
 
     return {
-        "status": "success",
-        "timestamp": now_str,
-        "source": summary,
-        "source_summary": summary,
-        "schwab_status": status_msg,
-        "errors": errors,
-        "shock_alert": shock_alert,
-        "spx": q_spx,
-        "es": quotes.get("es"),
-        "vix": slim(quotes.get("vix")),
-        "vix9d": slim(quotes.get("vix9d")),
-        "mag7": quotes.get("mag7"),
-        "econ_events": econ_events,
-        "wti": quotes.get("wti"),
-        "brent": quotes.get("brent"),
-        "yields": yields,
-        "volume_profile": vp,
-        "vwap": vwap,
-        "gex": gex,
-        "rsi": rsi,
-        "cvd": cvd,
-        "direction": direction,
+        "status": "success", "timestamp": now_str, "source_summary": summary, "schwab_status": schwab_msg,
+        "shock_alert": shock_alert, "spx": q_spx, "es": quotes.get("es"),
+        "vix1d": slim(quotes.get("vix1d")), "vix": slim(quotes.get("vix")),
+        "mag7": quotes.get("mag7"), "econ_events": econ_events,
+        "wti": quotes.get("wti"), "brent": quotes.get("brent"), "yields": yields,
+        "volume_profile": vp, "gex": gex, "rsi": rsi, "cvd": cvd, "direction": direction,
     }
 
 
 # ─────────────────────────────────────────────────────────────
 # Schwab OAuth 콜백 (/api/callback)
 # ─────────────────────────────────────────────────────────────
-def render_callback_page(title, body_html, ok=True):
-    color = "#10b981" if ok else "#f43f5e"
-    return f"""<!DOCTYPE html>
-<html lang="ko"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html_lib.escape(title)}</title>
-<style>
-body{{background:#080d1a;color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:24px;}}
-.card{{max-width:640px;margin:0 auto;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:20px;}}
-h1{{font-size:16px;color:{color};margin:0 0 12px;}}
-.box{{background:#020617;border:1px solid #1e293b;border-radius:6px;padding:10px;font-family:monospace;
-     font-size:12px;word-break:break-all;user-select:all;margin:8px 0;}}
-button{{background:#4f46e5;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer;}}
-button:active{{background:#4338ca;}}
-p{{font-size:12px;color:#94a3b8;line-height:1.7;}}
-code{{background:#1e293b;padding:1px 5px;border-radius:4px;}}
-</style></head>
-<body><div class="card"><h1>{html_lib.escape(title)}</h1>{body_html}</div></body></html>"""
-
-
 @app.get("/api/callback", response_class=HTMLResponse)
 def schwab_callback(request: Request, code: Optional[str] = None, error: Optional[str] = None):
-    if error:
-        return HTMLResponse(
-            render_callback_page("Schwab 인증 실패", f"<p>Schwab 이 인증을 거부했습니다: {html_lib.escape(error)}</p>", ok=False),
-            status_code=400,
-        )
-    if not code:
-        return HTMLResponse(
-            render_callback_page(
-                "잘못된 요청", "<p><code>code</code> 파라미터가 없습니다. Schwab 인증 페이지에서 승인 절차를 다시 시작해주세요.</p>", ok=False
-            ),
-            status_code=400,
-        )
-
+    if error or not code:
+        return HTMLResponse("<h1>인증 실패</h1>", status_code=400)
     app_key = os.environ.get("SCHWAB_APP_KEY")
     app_secret = os.environ.get("SCHWAB_SECRET")
     redirect_uri = os.environ.get("SCHWAB_REDIRECT_URI") or str(request.url).split("?")[0]
-    if not app_key or not app_secret:
-        return HTMLResponse(
-            render_callback_page(
-                "설정 오류",
-                "<p><code>SCHWAB_APP_KEY</code> / <code>SCHWAB_SECRET</code> 환경변수가 설정되어 있지 않습니다. "
-                "Vercel 프로젝트 설정에서 먼저 등록해주세요.</p>",
-                ok=False,
-            ),
-            status_code=500,
-        )
-
-    try:
-        res = requests.post(
-            "https://api.schwabapi.com/v1/oauth/token",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
-            auth=(app_key, app_secret),
-            timeout=8,
-        )
-    except Exception as e:
-        return HTMLResponse(
-            render_callback_page("토큰 교환 실패", f"<p>Schwab 서버 요청 중 오류가 발생했습니다: {html_lib.escape(str(e))}</p>", ok=False),
-            status_code=502,
-        )
-
+    res = requests.post(
+        "https://api.schwabapi.com/v1/oauth/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
+        auth=(app_key, app_secret),
+        timeout=8,
+    )
     if res.status_code != 200:
-        detail = html_lib.escape(res.text[:500])
-        return HTMLResponse(
-            render_callback_page(
-                "토큰 교환 실패",
-                f"<p>Schwab 이 HTTP {res.status_code} 를 반환했습니다. 인가 코드는 보통 30초~몇 분 안에만 유효하니 "
-                f"이미 만료됐거나, redirect_uri 가 앱 등록 값과 다를 수 있습니다.</p>"
-                f"<div class='box'>{detail}</div>"
-                f"<p>이번에 사용된 redirect_uri: <code>{html_lib.escape(redirect_uri)}</code></p>",
-                ok=False,
-            ),
-            status_code=400,
-        )
-
+        return HTMLResponse("<h1>토큰 교환 실패</h1>", status_code=400)
     body = res.json()
     refresh_token = body.get("refresh_token", "")
     access_token = body.get("access_token", "")
-    expires_in = body.get("expires_in", "")
-
-    kv_note = ""
+    ttl = int(num(body.get("expires_in")) or 1800)
     if KV_AVAILABLE:
         now = time.time()
-        ttl = int(num(expires_in) or 1800)
-        ok_r = kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TOKEN_TTL) if refresh_token else False
-        ok_a = kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl) if access_token else False
+        kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TOKEN_TTL)
+        kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
         kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
-        _TOKEN["value"] = access_token
-        _TOKEN["exp"] = now + max(60, ttl - 120)
-        if ok_r and ok_a:
-            kv_note = (
-                "<p style='color:#10b981;'>✅ 저장소(KV)에도 자동으로 반영했습니다 - "
-                "Vercel 환경변수를 직접 바꾸지 않으셔도 앱이 바로 이 토큰을 씁니다. "
-                "이후로는 앱이 매번 새 refresh_token 을 스스로 저장소에 갱신해두므로, "
-                "정상적으로 계속 동작하는 한 다시 로그인하지 않아도 됩니다.</p>"
-            )
-        else:
-            kv_note = "<p style='color:#f59e0b;'>⚠️ 저장소(KV) 저장에 실패했습니다. 아래 값을 환경변수에 직접 넣어주세요.</p>"
-
-    manual_note = "" if (KV_AVAILABLE and kv_note.startswith("<p style='color:#10b981")) else (
-        "<p>아래 <b>refresh_token</b>을 복사해서 Vercel 프로젝트 설정 → Environment Variables 의 "
-        "<code>SCHWAB_REFRESH_TOKEN</code>에 붙여넣고 재배포하세요.</p>"
-    )
-
-    return HTMLResponse(render_callback_page(
-        "✅ Schwab 인증 성공",
-        f"""
-        {kv_note}
-        {manual_note}
-        <div class="box" id="rt">{html_lib.escape(refresh_token)}</div>
-        <button onclick="navigator.clipboard.writeText(document.getElementById('rt').innerText).then(()=>{{this.innerText='복사됨 ✓';}})">
-            Refresh Token 복사
-        </button>
-        <p style="margin-top:16px;">access_token 은 참고용입니다 (보통 30분만 유효, 따로 저장할 필요 없음 - 앱이 자동으로 갱신합니다):</p>
-        <div class="box" style="color:#64748b;">{html_lib.escape(access_token[:40])}... (expires_in: {html_lib.escape(str(expires_in))}초)</div>
-        <p style="margin-top:16px;color:#f59e0b;">⚠️ 이 페이지의 값은 계정 접근 권한이 담긴 민감한 정보입니다. 캡처해서 공유하지 마세요.</p>
-        """,
-    ))
-
-
-# ─────────────────────────────────────────────────────────────
-# 자동 갱신용 크론 엔드포인트 (/api/refresh-token)
-# ─────────────────────────────────────────────────────────────
-@app.get("/api/refresh-token")
-def refresh_token_cron():
-    if not KV_AVAILABLE:
-        return {"status": "skipped", "reason": "KV 저장소가 연결되어 있지 않습니다 (KV_REST_API_URL/TOKEN 필요)"}
-    token, msg = get_schwab_token(force_refresh=True)
-    return {"status": "ok" if token else "error", "message": msg}
+    return HTMLResponse(f"<h1>✅ Schwab 인증 성공</h1><p>새 토큰이 등록되었습니다: {html_lib.escape(refresh_token[:20])}...</p>")
