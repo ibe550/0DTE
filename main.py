@@ -1,1229 +1,1012 @@
-"""SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)"""
-import math
-import os
-import time
-from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SPX 0DTE DEFENDER</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #080d1a !important; color: #f3f4f6 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 8px; }
+        .card { background-color: #0f172a !important; border: 1px solid #1e293b !important; border-radius: 6px !important; }
+        .icon-sm { width: 14px !important; height: 14px !important; min-width: 14px !important; display: inline-block; }
+    </style>
+</head>
+<body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
-import html as html_lib
-from typing import Optional
+    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80 bg-amber-950/70 border-amber-800/60 bg-indigo-950/70 text-indigo-300 border-indigo-800/60 border-emerald-600 border-rose-600 border-slate-600"></div>
 
-import pytz
-import requests
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+    <!-- 0. 변동성 쇼크 배너 -->
+    <div id="shock-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 shadow-lg transition-all duration-300">
+        <div class="flex items-center justify-between mb-1">
+            <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight" id="shock-alert-head">
+                <span id="shock-alert-dot" class="w-2.5 h-2.5 rounded-full animate-ping inline-block mr-1"></span>
+                <span id="shock-alert-title">⚡ [변동성 쇼크] 실시간 급변동 감지</span>
+            </span>
+            <div class="flex items-center space-x-1.5">
+                <span id="shock-alert-elapsed" class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded">--</span>
+                <span id="shock-alert-time" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-400">--</span>
+            </div>
+        </div>
+        <div class="text-[10px] pl-3 border-l-2 my-1 space-y-0.5" id="shock-alert-reasons"></div>
+    </div>
 
-app = FastAPI()
-handler = app
-application = app
+    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지) -->
+    <div class="flex justify-between items-center px-1 mb-1">
+        <div class="flex items-center space-x-2">
+            <span class="text-blue-500 font-bold text-sm md:text-base flex items-center">
+                <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                SPX 0DTE DEFENDER
+            </span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.0</span>
+            <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
+        </div>
+        <div class="flex items-center space-x-1.5 text-[10px] text-slate-400">
+            <span id="header-rsi-badge" class="hidden text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border transition-colors">RSI --</span>
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5 animate-pulse"></span>
+            <span class="text-slate-400 font-mono" id="current-clock">ET</span>
+        </div>
+    </div>
+    <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    <!-- 2. 오늘의 중요 발표 (장 마감까지 보존 + 호재/악재 평가 배지) -->
+    <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
+        <div class="flex justify-between items-center mb-1.5">
+            <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
+            <span class="text-[9px] text-slate-500" id="econ-source">--</span>
+        </div>
+        <div id="econ-list" class="space-y-1.5">
+            <div class="text-[11px] text-slate-500 py-0.5">일정을 불러오는 중입니다...</div>
+        </div>
+    </div>
 
-ET = pytz.timezone("US/Eastern")
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-SCHWAB_BASE_URL = "https://api.schwabapi.com/marketdata/v1"
-SRC_SCHWAB = "Charles Schwab"
-SRC_YAHOO = "Yahoo Finance"
-SECONDS_PER_YEAR = 365.0 * 24 * 3600
+    <!-- 3. 메인 시세 4열 (VIX 1D 상단 + VIX 하단) -->
+    <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">SPX</span>
+                <span id="spx-source" class="text-[7px] md:text-[9px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+            </div>
+            <div id="spx-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
+            <div id="spx-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
+        </div>
 
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-center">
+                <span class="text-[9px] md:text-[11px] text-purple-400 font-bold">VIX 1D (0DTE)</span>
+                <span id="vix1d-price" class="text-[10px] md:text-sm font-bold text-slate-500">--</span>
+            </div>
+            <div id="vix1d-change" class="text-[8px] md:text-[10px] text-slate-500 text-right -mt-0.5">--</div>
+            <div id="vix1d-source" class="text-[7px] text-slate-500 text-right truncate">--</div>
+            <div class="border-t border-slate-800 pt-1 mt-0.5 flex justify-between items-center">
+                <span class="text-[8px] md:text-[10px] text-slate-400 font-medium">VIX (30D)</span>
+                <span id="vix-price" class="text-[9px] md:text-xs font-bold text-slate-500">--</span>
+            </div>
+            <div id="vix-change" class="text-[8px] md:text-[10px] text-slate-500 text-right">--</div>
+            <div id="vix-source" class="text-[7px] text-slate-500 text-right truncate">--</div>
+        </div>
 
-def num(x):
-    try:
-        v = float(x)
-        return v if math.isfinite(v) else None
-    except (TypeError, ValueError):
-        return None
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">ES FUTURES</span>
+                <span id="es-source" class="text-[7px] md:text-[9px] px-1 py-0.5 rounded font-bold bg-indigo-950 text-indigo-300 border border-indigo-800/60 leading-none truncate">--</span>
+            </div>
+            <div id="es-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
+            <div id="es-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
+        </div>
 
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">MAG7 (MAGS)</span>
+                <span id="mag7-source" class="text-[7px] md:text-[8px] text-slate-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+            </div>
+            <div id="mag7-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
+            <div id="mag7-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
+        </div>
+    </div>
 
-def _parse_val(s):
-    if not s or not isinstance(s, str):
-        return None
-    cleaned = s.replace("%", "").replace("K", "").replace("M", "").replace("B", "").replace(",", "").strip()
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
+    <!-- 4. 국채 금리 4열 -->
+    <div class="grid grid-cols-4 gap-1.5 md:gap-2.5 mb-2">
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">3M T-BILL (IRX)</div>
+            <div id="yield-3m" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div id="yield-3m-chg" class="text-[8px] md:text-[10px] font-semibold text-slate-500 truncate">--</div>
+            <div id="yield-3m-src" class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">--</div>
+        </div>
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y YIELD (^TNX)</div>
+            <div id="yield-10y" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div id="yield-10y-chg" class="text-[8px] md:text-[10px] font-semibold text-slate-500 truncate">--</div>
+            <div id="yield-10y-src" class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">--</div>
+        </div>
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">30Y YIELD (^TYX)</div>
+            <div id="yield-30y" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div id="yield-30y-chg" class="text-[8px] md:text-[10px] font-semibold text-slate-500 truncate">--</div>
+            <div id="yield-30y-src" class="text-[7px] md:text-[8px] text-slate-500 mt-0.5 truncate">--</div>
+        </div>
+        <div class="card p-1.5 md:p-2.5">
+            <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">10Y-3M SPREAD</div>
+            <div id="yield-spread" class="text-xs sm:text-sm md:text-base font-bold text-slate-200 truncate">--</div>
+            <div class="text-[7px] md:text-[8px] text-slate-500 mt-0.5">Curve Delta</div>
+        </div>
+    </div>
 
+    <!-- 4-1. 유가 2열 -->
+    <div class="grid grid-cols-2 gap-1.5 md:gap-2.5 mb-2">
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">WTI CRUDE OIL (CL)</span>
+                <span id="wti-source" class="text-[7px] md:text-[9px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+            </div>
+            <div id="wti-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
+            <div id="wti-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
+        </div>
+        <div class="card p-1.5 md:p-3 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">BRENT (BZ)</span>
+                <span id="brent-source" class="text-[7px] md:text-[9px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+            </div>
+            <div id="brent-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
+            <div id="brent-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
+        </div>
+    </div>
 
-_CACHE = {}
+    <!-- 5. VOLUME PROFILE -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-start mb-1.5 gap-2">
+            <h2 class="text-[10px] md:text-xs font-bold text-emerald-400 tracking-wide">VOLUME PROFILE · SPX</h2>
+            <div class="text-[9px] text-slate-400 text-right max-w-[65%]">
+                <span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="vp-source">--</span><br>
+                <span class="text-slate-500 font-mono text-[8px]" id="vp-timestamp">--</span>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5 text-center mb-2">
+            <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
+                <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Value Area Low (VAL)</div>
+                <div id="val-price" class="text-xs md:text-base font-bold text-white">--</div>
+            </div>
+            <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
+                <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Point of Control (POC)</div>
+                <div id="poc-price" class="text-xs md:text-base font-bold text-emerald-400">--</div>
+            </div>
+            <div class="bg-slate-900 p-1.5 md:p-2 rounded border border-slate-800">
+                <div class="text-[8px] md:text-[10px] text-slate-400 mb-0.5">Value Area High (VAH)</div>
+                <div id="vah-price" class="text-xs md:text-base font-bold text-white">--</div>
+            </div>
+        </div>
+    </div>
 
+    <!-- 6. GEX & EM Range -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-start mb-2 gap-2">
+            <h2 class="text-[11px] md:text-xs font-bold text-slate-200">⚡ GEX · 옵션 체인 감마 레벨</h2>
+            <div class="text-right max-w-[65%]">
+                <span class="text-[9px] bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="gex-source" class="text-[9px] text-slate-400">--</span>
+                <div class="text-[8px] text-slate-500 font-mono" id="gex-meta"></div>
+            </div>
+        </div>
+        <div id="gex-note" class="hidden mb-2 text-[10px] text-amber-400 bg-amber-950/30 border border-amber-900/40 rounded px-2 py-1"></div>
+        <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] md:text-xs font-bold text-slate-300">EXPECTED MOVE (ATM STRADDLE)</span>
+            <span id="gex-em" class="text-[10px] md:text-xs font-bold text-blue-400">--</span>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5 text-center mb-3">
+            <div class="bg-rose-950/20 border border-rose-900/40 p-1.5 rounded">
+                <div class="text-[8px] md:text-[10px] text-rose-400 font-semibold">PUT GAMMA WALL</div>
+                <div id="gex-put-wall" class="text-xs md:text-base font-bold text-rose-300">--</div>
+            </div>
+            <div class="bg-purple-950/20 border border-purple-900/40 p-1.5 rounded">
+                <div class="text-[8px] md:text-[10px] text-purple-400 font-semibold">GAMMA FLIP LEVEL</div>
+                <div id="gex-flip" class="text-xs md:text-base font-bold text-purple-300">--</div>
+            </div>
+            <div class="bg-emerald-950/20 border border-emerald-900/40 p-1.5 rounded">
+                <div class="text-[8px] md:text-[10px] text-emerald-400 font-semibold">CALL GAMMA WALL</div>
+                <div id="gex-call-wall" class="text-xs md:text-base font-bold text-emerald-300">--</div>
+            </div>
+        </div>
+        <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3 mb-2">
+            <div class="relative h-6 text-[10px] font-mono select-none">
+                <div id="marker-current" class="absolute -translate-x-1/2 flex flex-col items-center transition-all duration-300" style="left: 50%;">
+                    <span class="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded text-[9px] shadow-sm flex items-center">
+                        현 <span id="marker-current-val" class="ml-0.5">--</span>
+                    </span>
+                    <span class="w-0.5 h-1.5 bg-amber-400"></span>
+                </div>
+            </div>
+            <div class="relative h-4 bg-slate-900 rounded-full border border-slate-700/60 overflow-visible my-1 flex items-center">
+                <div id="em-range-bar" class="absolute h-full bg-indigo-600/70 border-x-2 border-indigo-400 rounded-sm shadow-inner transition-all duration-300" style="left: 25%; width: 0%;">
+                    <div class="w-full h-full flex items-center justify-center text-[9px] font-bold text-indigo-100">EM RANGE</div>
+                </div>
+                <div id="marker-put-line" class="absolute top-0 bottom-0 w-0.5 bg-rose-400 z-10" style="left: 30%; display:none;"></div>
+                <div id="marker-flip-line" class="absolute top-0 bottom-0 w-0.5 bg-purple-400 z-10" style="left: 50%; display:none;"></div>
+                <div id="marker-call-line" class="absolute top-0 bottom-0 w-0.5 bg-emerald-400 z-10" style="left: 70%; display:none;"></div>
+            </div>
+            <div class="flex justify-between items-center text-[10px] font-mono mt-1 text-slate-400">
+                <span id="scale-min">--</span>
+                <div class="text-center px-2 py-0.5 bg-indigo-950/60 border border-indigo-800/60 rounded">
+                    <span class="text-indigo-300 text-[9px]">EM: </span>
+                    <span id="em-low-val" class="text-indigo-200 font-bold text-xs">--</span>
+                    <span class="text-slate-500 mx-1">~</span>
+                    <span id="em-high-val" class="text-indigo-200 font-bold text-xs">--</span>
+                </div>
+                <span id="scale-max">--</span>
+            </div>
+        </div>
+        <div id="gex-regime" class="text-[10px] text-slate-300 bg-slate-950 border border-slate-800/80 rounded px-2 py-1 hidden"></div>
+        <div id="gex-strike-toggle" class="hidden border-t border-slate-800 pt-1.5 mt-2 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleGexStrikes()">
+            <span class="flex items-center space-x-1 font-semibold text-slate-300">
+                <svg id="gex-strike-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                <span>행사가별 GEX 보기 (다른 사이트와 대조용)</span>
+            </span>
+            <span id="gex-strike-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
+        </div>
+        <div id="gex-strike-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60">
+            <div id="gex-oi-skew" class="text-[9px] text-slate-400 font-mono mb-1.5"></div>
+            <div id="gex-gamma-note" class="text-[9px] text-slate-500 font-mono mb-1.5"></div>
+            <div class="overflow-x-auto">
+            <table class="w-full text-[9px] font-mono border-collapse">
+                <thead>
+                    <tr class="text-slate-500 text-left">
+                        <th class="pr-2 py-0.5">Strike</th>
+                        <th class="pr-2 py-0.5 text-right">Call OI</th>
+                        <th class="pr-2 py-0.5 text-right">Put OI</th>
+                        <th class="pr-2 py-0.5 text-right">Call Vol</th>
+                        <th class="pr-2 py-0.5 text-right">Put Vol</th>
+                        <th class="pr-2 py-0.5 text-right">Net GEX($M)</th>
+                    </tr>
+                </thead>
+                <tbody id="gex-strike-rows"></tbody>
+            </table>
+            </div>
+        </div>
+    </div>
 
-def cached(key, ttl, fn):
-    now = time.time()
-    hit = _CACHE.get(key)
-    if hit and now - hit[0] < ttl:
-        return hit[1]
-    val = fn()
-    if val is not None:
-        _CACHE[key] = (now, val)
-        return val
-    if hit:
-        return hit[1]
-    return None
+    <!-- 7. SPY VOLUME + CVD (30분 단위 초정밀 눈금) -->
+    <div class="card p-2 md:p-3 mb-2">
+        <div class="flex justify-between items-start mb-2 gap-2">
+            <div>
+                <span class="text-xs font-bold text-slate-200">📊 SPY VOLUME + CVD — <span id="cvd-title-tf">10M</span></span>
+            </div>
+            <div class="text-right max-w-[60%]">
+                <div class="text-[9px] text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">--</span></div>
+                <div class="text-[9px] text-slate-500 font-mono mt-0.5" id="cvd-data-time">Data as of --</div>
+            </div>
+        </div>
 
+        <div class="flex justify-between items-center mb-2">
+            <span id="cvd-prior-badge" class="hidden text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">--</span>
+            <span id="cvd-status-pill" class="text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1">
+                <span>--</span>
+            </span>
+        </div>
 
-def fmt_dollars(x):
-    sign = "+" if x >= 0 else "-"
-    a = abs(x)
-    for unit, div in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
-        if a >= div:
-            return f"{sign}{a / div:.1f}{unit}"
-    return f"{sign}{a:.0f}"
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex space-x-1" id="cvd-tf-group">
+                <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+                <button onclick="changeCvdTimeframe('10m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-teal-600 text-white font-bold shadow" data-tf="10m">10m</button>
+                <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+                <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+                <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
+            </div>
+            <span class="text-[10px] text-yellow-500 bg-slate-800/60 px-2 py-1 rounded font-mono font-bold">— CVD</span>
+        </div>
 
+        <div class="text-[9px] text-slate-400 space-y-0.5 mb-2 font-mono">
+            <div><span class="text-slate-500">집계 구간</span> <span id="cvd-agg-range" class="text-slate-300">--</span></div>
+            <div><span class="text-slate-500">데이터</span> <span id="cvd-data-desc" class="text-slate-300">--</span></div>
+        </div>
 
-def src_kind(s):
-    if not s:
-        return "na"
-    if s.startswith(SRC_SCHWAB):
-        return "schwab"
-    if s.startswith(SRC_YAHOO):
-        return "yahoo"
-    return "other"
+        <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 relative select-none mb-2">
+            <svg id="cvd-bars-svg" class="w-full h-38 md:h-44" viewBox="0 0 500 134" preserveAspectRatio="none">
+                <line x1="35" y1="20" x2="480" y2="20" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
+                <line x1="35" y1="65" x2="480" y2="65" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
+                <line x1="35" y1="110" x2="480" y2="110" stroke="#334155" stroke-width="1"/>
+                <g id="cvd-vertical-grids"></g>
+                <text id="cvd-y-max" x="30" y="23" fill="#64748b" font-size="8" text-anchor="end">--</text>
+                <text id="cvd-y-mid" x="30" y="68" fill="#64748b" font-size="8" text-anchor="end">--</text>
+                <text x="30" y="113" fill="#64748b" font-size="8" text-anchor="end">0</text>
+                <g id="cvd-real-bars"></g>
+                <path id="cvd-line-path" d="" fill="none" stroke="#eab308" stroke-width="1.5"/>
+            </svg>
+            <div class="text-center text-[8px] text-slate-500 mt-0.5 font-mono">Time (Eastern Time, ET) · 30m Intervals</div>
+        </div>
 
+        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1.5 px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
+            <div class="truncate">
+                <span id="cvd-inspect-label" class="text-slate-400">마지막 봉</span>
+                <span id="cvd-last-time" class="text-amber-300 font-bold ml-1">--</span>
+            </div>
+            <div class="text-right whitespace-nowrap">
+                <span id="cvd-inspect-sub">최근 봉 <span id="cvd-recent-vol" class="text-slate-200">--</span> · 합계 <span id="cvd-total-vol" class="text-slate-200">--</span></span>
+            </div>
+        </div>
 
-# ─────────────────────────────────────────────────────────────
-# 텔레그램 실시간 알림 시스템
-# ─────────────────────────────────────────────────────────────
-_LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
-TELEGRAM_COOLDOWN_SEC = 600
+        <div class="flex justify-between text-xs font-bold mb-1 font-mono px-0.5">
+            <span class="text-emerald-400" id="cvd-buy-pct">▲ Buy --</span>
+            <span class="text-rose-400" id="cvd-sell-pct">▼ Sell --</span>
+        </div>
 
+        <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden flex mb-2.5 border border-slate-800">
+            <div id="cvd-bar-fill" class="bg-emerald-500 h-full transition-all duration-300" style="width: 0%;"></div>
+            <div id="cvd-sell-fill" class="bg-rose-500 h-full flex-1" style="width: 0%;"></div>
+        </div>
 
-def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
-    if not shock_alert or (not shock_alert.get("active") and not force_test):
-        return {"status": "skipped", "reason": "알림 비활성"}
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_ids_raw:
-        return {"status": "error", "reason": "환경변수 누락"}
+        <div class="bg-slate-950 p-2 rounded border border-slate-800/80 text-[10px] text-slate-300 font-sans" id="cvd-summary-text">--</div>
+    </div>
 
-    now_ts = time.time()
-    s_type = shock_alert.get("type")
-    if not force_test:
-        if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
-            return {"status": "skipped", "reason": "쿨다운 중"}
+    <!-- 8. SPX 방향분석 -->
+    <div class="card p-2 md:p-3 mb-3">
+        <div class="flex justify-between items-center mb-1">
+            <div class="flex items-center space-x-1.5 text-xs font-bold text-slate-300" id="dir-head">
+                <span>📈 SPX 방향분석 · <span id="dir-main-status">--</span></span>
+            </div>
+            <div class="text-xs font-bold text-slate-300" id="dir-top-score">종합 점수 --</div>
+        </div>
+        <div class="text-[10px] text-slate-300 mb-2" id="dir-summary">--</div>
 
-    _LAST_TELEGRAM_SHOCK["ts"] = now_ts
-    _LAST_TELEGRAM_SHOCK["type"] = s_type
+        <div class="w-full bg-slate-900 h-2 rounded-md relative overflow-hidden border border-slate-800 mb-1">
+            <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-rose-600 via-slate-700 to-emerald-500 w-full opacity-70"></div>
+            <div id="dir-gauge-pin" class="absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow" style="left:50%; transform:translateX(-50%);"></div>
+        </div>
+        <div class="flex justify-between text-[8px] text-slate-500 mb-2 font-mono">
+            <span>BEARISH</span>
+            <span>NEUTRAL</span>
+            <span>BULLISH</span>
+        </div>
 
-    title = shock_alert.get("title", "⚡ [변동성 쇼크]")
-    time_info = shock_alert.get("elapsed_text") or shock_alert.get("timestamp") or ""
-    details_str = "\n".join(f"• {d}" for d in shock_alert.get("details", []))
-    price_str = f"{spx_price:.2f}" if spx_price else "N/A"
+        <div class="grid grid-cols-2 gap-1.5 text-xs mb-2">
+            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="font-bold text-slate-300" id="tf-5m-label">5m (주도)</span>
+                    <span class="text-[8px] text-slate-500">핵심 흐름 (35%)</span>
+                </div>
+                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-5m-status">--</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
+                    <span>EMA(5/13/21)·압력</span>
+                    <span class="text-slate-400 font-bold" id="tf-5m-score">--</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="font-bold text-slate-300" id="tf-1m-label">1m (타이밍)</span>
+                    <span class="text-[8px] text-slate-500">미세 반응 (25%)</span>
+                </div>
+                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-1m-status">--</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
+                    <span>즉각 모멘텀</span>
+                    <span class="text-slate-400 font-bold" id="tf-1m-score">--</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="font-bold text-slate-300" id="tf-15m-label">15m (구조)</span>
+                    <span class="text-[8px] text-slate-500">장중 지지 (25%)</span>
+                </div>
+                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-15m-status">--</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
+                    <span>이평선 정/역배열</span>
+                    <span class="text-slate-400 font-bold" id="tf-15m-score">--</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-2 rounded">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="font-bold text-slate-300" id="tf-1h-label">1H (배경)</span>
+                    <span class="text-[8px] text-slate-500">상위 추세 (15%)</span>
+                </div>
+                <div class="text-xs font-bold text-slate-500 my-0.5" id="tf-1h-status">--</div>
+                <div class="flex justify-between text-[8px] text-slate-500 border-t border-slate-800 pt-0.5">
+                    <span>대세 방향</span>
+                    <span class="text-slate-400 font-bold" id="tf-1h-score">--</span>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-between text-[9px] text-slate-500 mb-2 font-mono gap-2">
+            <span id="dir-source" class="truncate">Source --</span>
+            <span class="whitespace-nowrap">시간봉 일치도 <span id="tf-match-pct">--</span>%</span>
+        </div>
 
-    msg = (
-        f"{title}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📍 SPX 현재가: {price_str}\n"
-        f"⏱ 발생 시각: {time_info}\n"
-        f"\n"
-        f"🔍 상세 감지 내역:\n"
-        f"{details_str}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"SPX 0DTE DEFENDER Realtime Alert"
-    )
+        <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
+            <span class="flex items-center space-x-1 font-semibold text-slate-300">
+                <svg id="evidence-arrow" class="icon-sm transition-transform duration-200" style="width:12px;height:12px;min-width:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                <span>방향성 근거 상세 보기 (VWAP · CVD · 모멘텀)</span>
+            </span>
+            <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
+        </div>
 
-    chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
-    results = []
-    for cid in chat_ids:
-        try:
-            r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": cid, "text": msg}, timeout=4)
-            results.append({"chat_id": cid, "ok": r.status_code == 200})
-        except Exception as e:
-            results.append({"chat_id": cid, "error": str(e)})
+        <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] space-y-2">
+            <div class="text-[9px] font-bold text-slate-400 tracking-wider">0DTE 종합 판정 근거</div>
+            <div id="evidence-list" class="space-y-2"></div>
+        </div>
+    </div>
 
-    return {"status": "sent", "results": results}
+    <script>
+        const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
+        const POLL_MS = 5000;
+        const NA = 'N/A';
+        let currentCvdTf = '10m';
+        let inFlight = false;
+        let reqSeq = 0;
 
+        let cachedBars = [];
+        let defaultCvdLastTime = '--';
+        let defaultCvdSub = '--';
 
-# ─────────────────────────────────────────────────────────────
-# 영속 저장소 & Schwab 인증
-# ─────────────────────────────────────────────────────────────
-def _kv_config():
-    url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
-    token = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-    return (url.rstrip("/"), token) if url and token else (None, None)
+        const $ = (id) => document.getElementById(id);
+        const TONES = ['text-emerald-400', 'text-rose-400', 'text-slate-300', 'text-slate-200', 'text-slate-500', 'text-amber-400'];
+        const isNum = (v) => typeof v === 'number' && isFinite(v);
 
+        function setText(id, v, fallback = NA) {
+            const el = $(id);
+            if (el) el.innerText = (v === null || v === undefined || v === '') ? fallback : v;
+        }
+        function setTone(id, cls) {
+            const el = $(id);
+            if (!el) return;
+            el.classList.remove(...TONES);
+            el.classList.add(cls);
+        }
+        const toneOf = (v) => (!isNum(v) ? 'text-slate-500' : (v > 0 ? 'text-emerald-400' : (v < 0 ? 'text-rose-400' : 'text-slate-300')));
+        const toneByName = (t) => (t === 'bull' ? 'text-emerald-400' : (t === 'bear' ? 'text-rose-400' : 'text-slate-300'));
+        const fmt = (v, d = 2) => (isNum(v) ? v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : NA);
+        const sgn = (v, d = 2) => (isNum(v) ? `${v > 0 ? '+' : ''}${v.toFixed(d)}` : NA);
+        const srcShort = (s) => (!s ? NA : s.replace('Charles Schwab', 'Schwab').replace('Yahoo Finance', 'Yahoo'));
 
-def kv_cmd(*args):
-    url, token = _kv_config()
-    if not url:
-        return None
-    try:
-        r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=list(args), timeout=4)
-        if r.status_code == 200:
-            return r.json().get("result")
-    except Exception:
-        pass
-    return None
+        function updateClock() {
+            const now = new Date();
+            $('current-clock').innerText = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }) + ' ET';
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
 
-
-def kv_get(key):
-    return kv_cmd("GET", key)
-
-
-def kv_set(key, value, ex_seconds=None):
-    if ex_seconds:
-        return kv_cmd("SET", key, value, "EX", str(int(ex_seconds))) is not None
-    return kv_cmd("SET", key, value) is not None
-
-
-KV_AVAILABLE = _kv_config()[0] is not None
-_TOKEN = {"value": None, "exp": 0.0}
-SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
-KV_KEY_ACCESS = "schwab:access_token"
-KV_KEY_ACCESS_EXP = "schwab:access_token_exp"
-KV_KEY_REFRESH = "schwab:refresh_token"
-REFRESH_TOKEN_TTL = 8 * 24 * 3600
-
-
-def get_schwab_token(force_refresh=False):
-    now = time.time()
-    if not force_refresh and _TOKEN["value"] and now < _TOKEN["exp"]:
-        return _TOKEN["value"], "연결됨 (캐시)"
-
-    app_key = os.environ.get("SCHWAB_APP_KEY")
-    app_secret = os.environ.get("SCHWAB_SECRET")
-    if not app_key:
-        return None, "Schwab 환경변수 없음 (SCHWAB_APP_KEY)"
-
-    if not force_refresh:
-        kv_exp = num(kv_get(KV_KEY_ACCESS_EXP))
-        if kv_exp and now < kv_exp - 30:
-            kv_access = kv_get(KV_KEY_ACCESS)
-            if kv_access:
-                _TOKEN["value"] = kv_access
-                _TOKEN["exp"] = kv_exp - 30
-                return kv_access, "연결됨 (공유 캐시)"
-
-    refresh_token = kv_get(KV_KEY_REFRESH) or os.environ.get("SCHWAB_REFRESH_TOKEN")
-    if not refresh_token:
-        return None, "refresh_token 없음 - /api/callback 으로 인증 필요"
-
-    try:
-        res = requests.post(
-            SCHWAB_TOKEN_URL,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={"grant_type": "refresh_token", "refresh_token": refresh_token},
-            auth=(app_key, app_secret) if app_secret else None,
-            timeout=6,
-        )
-        if res.status_code == 200:
-            body = res.json()
-            access_token = body.get("access_token")
-            new_refresh = body.get("refresh_token")
-            ttl = int(num(body.get("expires_in")) or 1800)
-            _TOKEN["value"] = access_token
-            _TOKEN["exp"] = now + max(60, ttl - 120)
-            if KV_AVAILABLE:
-                kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
-                kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
-                if new_refresh:
-                    kv_set(KV_KEY_REFRESH, new_refresh, ex_seconds=REFRESH_TOKEN_TTL)
-            return access_token, "연결됨 (새로 갱신)"
-    except Exception:
-        pass
-    return None, "Schwab 토큰 갱신 실패"
-
-
-def schwab_get(token, path, params=None, timeout=4):
-    if not token:
-        return None
-    try:
-        r = requests.get(f"{SCHWAB_BASE_URL}{path}", headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}, params=params, timeout=timeout)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
-
-
-# ─────────────────────────────────────────────────────────────
-# 실시간 시세 (VIX 1D + VIX)
-# ─────────────────────────────────────────────────────────────
-QUOTES = OrderedDict([
-    ("spx", ("$SPX", "^GSPC")),
-    ("es", ("/ES", "ES=F")),
-    ("vix1d", ("$VIX1D", "^VIX1D")),
-    ("vix", ("$VIX", "^VIX")),
-    ("mag7", ("MAGS", "MAGS")),
-    ("spy", ("SPY", "SPY")),
-    ("tnx", ("$TNX", "^TNX")),
-    ("tyx", ("$TYX", "^TYX")),
-    ("irx", ("$IRX", "^IRX")),
-    ("wti", ("/CL", "CL=F")),
-    ("brent", ("/BZ", "BZ=F")),
-])
-
-
-def make_quote(price, prev, change, source):
-    price = num(price)
-    if price is None:
-        return None
-    prev = num(prev)
-    change = num(change)
-    if change is None and prev is not None:
-        change = price - prev
-    if prev is None and change is not None:
-        prev = price - change
-    pct = (change / prev * 100.0) if (change is not None and prev) else None
-    return {
-        "price": price,
-        "change": round(change, 2) if change is not None else None,
-        "change_pct": round(pct, 2) if pct is not None else None,
-        "source": source,
-    }
-
-
-def fetch_schwab_quotes(token, symbols):
-    out = {}
-    data = schwab_get(token, "/quotes", {"symbols": ",".join(symbols), "fields": "quote"})
-    if isinstance(data, dict):
-        for sym in symbols:
-            q = data.get(sym, {}).get("quote") if isinstance(data.get(sym), dict) else None
-            if isinstance(q, dict):
-                p = q.get("lastPrice") or q.get("mark")
-                item = make_quote(p, q.get("closePrice"), q.get("netChange"), f"{SRC_SCHWAB} ({sym})")
-                if item:
-                    out[sym] = item
-    return out
-
-
-def fetch_yahoo_chart(symbol, interval="5m", range_str="1d"):
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={range_str}"
-        res = requests.get(url, headers=HEADERS, timeout=4)
-        if res.status_code == 200:
-            return (res.json().get("chart", {}).get("result") or [{}])[0] or {}
-    except Exception:
-        pass
-    return {}
-
-
-def fetch_yahoo_quote(ysym):
-    meta = fetch_yahoo_chart(ysym, "5m", "1d").get("meta") or {}
-    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
-    return make_quote(meta.get("regularMarketPrice"), prev, None, f"{SRC_YAHOO} ({ysym})")
-
-
-def get_all_quotes(token):
-    def load():
-        result = {}
-        symbols = [s for s, _ in QUOTES.values()]
-        schwab = fetch_schwab_quotes(token, symbols) if token else {}
-        need = []
-        for key, (ssym, _) in QUOTES.items():
-            if ssym in schwab:
-                result[key] = schwab[ssym]
-            else:
-                need.append(key)
-        if need:
-            with ThreadPoolExecutor(max_workers=len(need)) as ex:
-                futs = {k: ex.submit(fetch_yahoo_quote, QUOTES[k][1]) for k in need}
-            for k, f in futs.items():
-                try:
-                    result[k] = f.result()
-                except Exception:
-                    result[k] = None
-        return result if any(result.values()) else None
-
-    return cached("quotes", 4, load) or {}
-
-
-# ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (발표 후 1시간 뒤 자동 삭제)
-# ─────────────────────────────────────────────────────────────
-ECON_TITLE_KR = {
-    "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
-    "Average Hourly Earnings y/y": "시간당 평균 임금 (YoY)",
-    "Non-Farm Employment Change": "비농업 고용지수 (NFP)",
-    "Unemployment Rate": "실업률",
-    "Core PCE Price Index m/m": "근원 PCE 물가지수 (MoM)",
-    "Core PCE Price Index y/y": "근원 PCE 물가지수 (YoY)",
-    "PCE Price Index m/m": "PCE 물가지수 (MoM)",
-    "PCE Price Index y/y": "PCE 물가지수 (YoY)",
-    "CPI m/m": "소비자물가지수 (CPI MoM)",
-    "CPI y/y": "소비자물가지수 (CPI YoY)",
-    "Core CPI m/m": "근원 CPI (MoM)",
-    "Core CPI y/y": "근원 CPI (YoY)",
-    "PPI m/m": "생산자물가지수 (PPI MoM)",
-    "Core PPI m/m": "근원 PPI (MoM)",
-    "Unemployment Claims": "신규 실업수당 청구건수",
-    "Advance GDP q/q": "GDP 성장률 (속보치)",
-    "FOMC Statement": "FOMC 성명서 발표",
-    "Federal Funds Rate": "연준 기준금리 결정",
-    "FOMC Press Conference": "파월 의장 기자회견",
-    "ISM Manufacturing PMI": "ISM 제조업 PMI",
-    "ISM Services PMI": "ISM 서비스업 PMI",
-    "Retail Sales m/m": "소매판매 (MoM)",
-}
-
-HIGH_IMPACT_KEYWORDS = [
-    "pce", "cpi", "ppi", "employment", "non-farm", "unemployment", "claims",
-    "gdp", "fomc", "fed ", "federal funds", "powell", "ism", "jolts",
-    "retail sales", "hourly earnings"
-]
-
-
-def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
-    if not actual_str:
-        return {
-            "tag": None,
-            "tone": "pending",
-            "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")
+        function toggleDetailEvidence() {
+            const panel = $('detail-evidence-panel');
+            const arrow = $('evidence-arrow');
+            const toggleText = $('evidence-toggle-text');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                arrow.style.transform = 'rotate(180deg)';
+                toggleText.innerText = '클릭하여 접기';
+            } else {
+                panel.classList.add('hidden');
+                arrow.style.transform = 'rotate(0deg)';
+                toggleText.innerText = '클릭하여 펼치기';
+            }
         }
 
-    act_num = _parse_val(actual_str)
-    fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
-    cmp_label = "예상" if forecast_str else "이전"
-    cmp_str = forecast_str or previous_str
+        function toggleGexStrikes() {
+            const panel = $('gex-strike-panel');
+            const arrow = $('gex-strike-arrow');
+            const toggleText = $('gex-strike-toggle-text');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                arrow.style.transform = 'rotate(180deg)';
+                toggleText.innerText = '클릭하여 접기';
+            } else {
+                panel.classList.add('hidden');
+                arrow.style.transform = 'rotate(0deg)';
+                toggleText.innerText = '클릭하여 펼치기';
+            }
+        }
 
-    t_lower = title_en.lower()
-    is_inflation = any(k in t_lower for k in ["cpi", "pce", "ppi", "hourly earnings", "price index"])
-    is_unemployment = any(k in t_lower for k in ["unemployment rate", "unemployment claims", "jobless claims"])
-    is_nfp = "non-farm" in t_lower or "employment change" in t_lower
+        function markActive(groupSel, btnClass, tf, activeCls) {
+            document.querySelectorAll(groupSel + ' .' + btnClass).forEach((btn) => {
+                btn.className = btnClass + ' px-2.5 py-1 rounded text-xs ' + (btn.getAttribute('data-tf') === tf
+                    ? activeCls + ' text-white font-bold shadow'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition');
+            });
+        }
+        function changeCvdTimeframe(tf) { currentCvdTf = tf; markActive('#cvd-tf-group', 'cvd-tf-btn', tf, 'bg-teal-600'); setText('cvd-title-tf', tf.toUpperCase()); fetchRealMarketData(true); }
 
-    if act_num is not None and fc_num is not None:
-        diff = act_num - fc_num
-        if abs(diff) < 1e-5:
-            return {
-                "tag": "⚪ 부합 (중립)",
-                "tone": "flat",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치 부합 (중립)"
+        function renderQuote(pfx, q, opts = {}) {
+            if (!q) {
+                setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
+                setTone(pfx + '-price', 'text-slate-500'); setTone(pfx + '-change', 'text-slate-500');
+                return;
+            }
+            setText(pfx + '-price', fmt(q.price, 2));
+            const dir = opts.invert ? -q.change : q.change;
+            const chg = isNum(q.change) ? `${sgn(q.change)}${opts.pct && isNum(q.change_pct) ? ` (${sgn(q.change_pct)}%)` : ''}` : NA;
+            setText(pfx + '-change', chg);
+            setTone(pfx + '-price', toneOf(dir));
+            setTone(pfx + '-change', toneOf(dir));
+            const s = $(pfx + '-source');
+            if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
+        }
+
+        function renderShockAlert(alert) {
+            const banner = $('shock-alert-banner');
+            if (!banner) return;
+            if (!alert || !alert.active) {
+                banner.classList.add('hidden');
+                return;
+            }
+            banner.classList.remove('hidden');
+            setText('shock-alert-title', alert.title || '⚡ [변동성 쇼크] 급변동 감지');
+            setText('shock-alert-time', alert.timestamp || '');
+
+            const isSurge = alert.type === 'SURGE';
+            const isDrop = alert.type === 'DROP';
+
+            if (isSurge) {
+                banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-emerald-500 bg-emerald-950/90 shadow-lg shadow-emerald-950/60 transition-all duration-300';
+                $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping inline-block mr-1';
+                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-emerald-200';
+                $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-emerald-500/80 my-1 space-y-0.5 text-emerald-200';
+            } else if (isDrop) {
+                banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-rose-500 bg-rose-950/90 shadow-lg shadow-rose-950/60 transition-all duration-300';
+                $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping inline-block mr-1';
+                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-rose-200';
+                $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-rose-500/80 my-1 space-y-0.5 text-rose-200';
+            } else {
+                banner.className = 'card mb-2 p-2.5 md:p-3 border-2 border-purple-500 bg-purple-950/90 shadow-lg shadow-purple-950/60 transition-all duration-300';
+                $('shock-alert-dot').className = 'w-2.5 h-2.5 rounded-full bg-purple-400 animate-ping inline-block mr-1';
+                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight text-purple-200';
+                $('shock-alert-reasons').className = 'text-[10px] pl-3 border-l-2 border-purple-500/80 my-1 space-y-0.5 text-purple-200';
             }
 
-        if is_inflation:
-            if diff > 0:
-                return {
-                    "tag": "🔴 임금/물가 과열 (하락 편향)",
-                    "tone": "bear",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 압력 가중 (지수 악재)"
+            if (alert.elapsed_text) {
+                const badgeCls = isSurge ? 'bg-emerald-900/80 text-emerald-200' : (isDrop ? 'bg-rose-900/80 text-rose-200' : 'bg-purple-900/80 text-purple-200');
+                $('shock-alert-elapsed').className = `text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${badgeCls}`;
+                setText('shock-alert-elapsed', alert.elapsed_text);
+            }
+
+            const list = $('shock-alert-reasons');
+            if (list) {
+                const details = alert.details || [];
+                const dotColor = isSurge ? 'bg-emerald-400' : (isDrop ? 'bg-rose-400' : 'bg-purple-400');
+                list.innerHTML = details.map((d) => `<div class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full ${dotColor} inline-block"></span><span class="font-bold">${d}</span></div>`).join('');
+            }
+        }
+
+        function renderGex(g, spx) {
+            const ok = g && g.available;
+            const note = $('gex-note');
+            const regime = $('gex-regime');
+            setText('gex-source', g ? g.source : NA);
+            ['marker-put-line', 'marker-flip-line', 'marker-call-line'].forEach((id) => { $(id).style.display = 'none'; });
+            $('em-range-bar').style.width = '0%';
+
+            if (!ok) {
+                note.classList.remove('hidden');
+                note.innerText = (g && g.reason) ? g.reason : 'GEX 데이터 없음';
+                regime.classList.add('hidden');
+                setText('gex-meta', '');
+                ['gex-em', 'gex-put-wall', 'gex-flip', 'gex-call-wall', 'em-low-val', 'em-high-val', 'scale-min', 'scale-max'].forEach((id) => setText(id, NA));
+                setText('marker-current-val', isNum(spx) ? spx.toFixed(1) : NA);
+                $('gex-strike-toggle').classList.add('hidden');
+                $('gex-strike-panel').classList.add('hidden');
+                return;
+            }
+
+            const notes = [];
+            if (!g.is_0dte) notes.push(`0DTE 만기가 아니라 ${g.expiration} 만기 기준입니다`);
+            if (notes.length) { note.classList.remove('hidden'); note.innerText = notes.join(' · '); } else { note.classList.add('hidden'); }
+
+            setText('gex-meta', `만기 ${g.expiration}${g.is_0dte ? ' (0DTE)' : ''} · 이 만기만 집계 · 순 GEX ${g.net_gex} · ${g.strike_count}개 행사가`);
+            setText('gex-em', g.expected_move);
+            setText('gex-put-wall', isNum(g.put_wall) ? g.put_wall : NA);
+            setText('gex-flip', isNum(g.gamma_flip) ? g.gamma_flip : NA);
+            setText('gex-call-wall', isNum(g.call_wall) ? g.call_wall : NA);
+            regime.classList.remove('hidden');
+            regime.innerText = g.regime_text || '';
+
+            const strikeToggle = $('gex-strike-toggle');
+            if (g.by_strike && g.by_strike.length) {
+                strikeToggle.classList.remove('hidden');
+                $('gex-strike-rows').innerHTML = g.by_strike.map((r) => {
+                    const netCls = r.net_gex_m > 0 ? 'text-emerald-400' : (r.net_gex_m < 0 ? 'text-rose-400' : 'text-slate-400');
+                    return `<tr class="border-t border-slate-800/60">
+                        <td class="pr-2 py-0.5 text-slate-200">${r.strike}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-300">${r.call_oi.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-300">${r.put_oi.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-400">${r.call_vol.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right text-slate-400">${r.put_vol.toLocaleString()}</td>
+                        <td class="pr-2 py-0.5 text-right font-bold ${netCls}">${r.net_gex_m}</td>
+                    </tr>`;
+                }).join('');
+                if (g.oi_skew) {
+                    setText('gex-oi-skew', `현재가 기준 · 위: Call OI ${g.oi_skew.call_oi_at_or_above_spot.toLocaleString()} / Put OI ${g.oi_skew.put_oi_at_or_above_spot.toLocaleString()} · 아래: Call OI ${g.oi_skew.call_oi_below_spot.toLocaleString()} / Put OI ${g.oi_skew.put_oi_below_spot.toLocaleString()}`);
                 }
-            return {
-                "tag": "🟢 임금/물가 안정 (상승 편향)",
-                "tone": "bull",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레이션 둔화 및 물가 안정 (지수 호재)"
+                setText('gex-gamma-note', g.gamma_source_note || '');
+            } else {
+                strikeToggle.classList.add('hidden');
+                $('gex-strike-panel').classList.add('hidden');
             }
 
-        elif is_unemployment:
-            if diff > 0:
-                return {
-                    "tag": "⚠️ 실업 증가 (하락 편향)",
-                    "tone": "bear",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업률/실업수당 증가 (경기 둔화 악재)"
+            if (!isNum(spx)) return;
+            const emLow = isNum(g.em_pt) ? spx - g.em_pt : null;
+            const emHigh = isNum(g.em_pt) ? spx + g.em_pt : null;
+            const pts = [spx, emLow, emHigh, g.put_wall, g.call_wall, g.gamma_flip].filter(isNum);
+            const minScale = Math.floor((Math.min(...pts) - 10) / 10) * 10;
+            const maxScale = Math.ceil((Math.max(...pts) + 10) / 10) * 10;
+            const range = maxScale - minScale;
+            const getPct = (v) => Math.max(2, Math.min(98, ((v - minScale) / range) * 100));
+
+            setText('scale-min', minScale);
+            setText('scale-max', maxScale);
+            setText('em-low-val', isNum(emLow) ? emLow.toFixed(1) : NA);
+            setText('em-high-val', isNum(emHigh) ? emHigh.toFixed(1) : NA);
+            setText('marker-current-val', spx.toFixed(1));
+            $('marker-current').style.left = `${getPct(spx)}%`;
+            if (isNum(emLow)) {
+                $('em-range-bar').style.left = `${getPct(emLow)}%`;
+                $('em-range-bar').style.width = `${getPct(emHigh) - getPct(emLow)}%`;
+            }
+            [['marker-put-line', g.put_wall], ['marker-flip-line', g.gamma_flip], ['marker-call-line', g.call_wall]].forEach(([id, v]) => {
+                if (isNum(v)) { $(id).style.left = `${getPct(v)}%`; $(id).style.display = 'block'; }
+            });
+        }
+
+        // 상단 헤더 컴팩트 RSI 배지 렌더러
+        function renderRsi(r) {
+            const badge = $('header-rsi-badge');
+            if (!badge) return;
+            if (!r || !isNum(r.val)) {
+                badge.classList.add('hidden');
+                return;
+            }
+            badge.classList.remove('hidden');
+            const val = r.val.toFixed(1);
+            let statusText = '중립';
+            let colorCls = 'bg-slate-800 text-slate-300 border-slate-700';
+
+            if (r.val >= 70) {
+                statusText = '과매수';
+                colorCls = 'bg-rose-950/90 text-rose-300 border-rose-800/80 animate-pulse';
+            } else if (r.val <= 30) {
+                statusText = '과매도';
+                colorCls = 'bg-emerald-950/90 text-emerald-300 border-emerald-800/80 animate-pulse';
+            } else if (r.val >= 55) {
+                statusText = '상승';
+                colorCls = 'bg-amber-950/70 text-amber-300 border-amber-800/60';
+            } else if (r.val <= 45) {
+                statusText = '하락';
+                colorCls = 'bg-indigo-950/70 text-indigo-300 border-indigo-800/60';
+            }
+
+            badge.className = `text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls}`;
+            badge.innerText = `RSI ${val} (${statusText})`;
+            badge.title = `RSI(14): ${r.val} · ${r.status || ''} · ${r.source || ''}`;
+        }
+
+        function inspectCvdBar(idx) {
+            if (idx === null || !cachedBars[idx]) {
+                $('cvd-inspect-label').innerText = '마지막 봉';
+                $('cvd-last-time').innerText = defaultCvdLastTime;
+                $('cvd-inspect-sub').innerHTML = defaultCvdSub;
+                return;
+            }
+            const b = cachedBars[idx];
+            const d = new Date(b.t * 1000);
+            const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
+            const isLast = (idx === cachedBars.length - 1);
+            const rangeHint = isLast && currentCvdTf === '10m' ? ' (15:50~16:00 마감봉)' : (isLast ? ' (마감봉)' : '');
+            $('cvd-inspect-label').innerText = '선택 봉';
+            $('cvd-last-time').innerText = `${timeStr}${rangeHint}`;
+            const flowTag = b.is_bull ? '<span class="text-emerald-400 font-bold">Buy 우세</span>' : '<span class="text-rose-400 font-bold">Sell 우세</span>';
+            $('cvd-inspect-sub').innerHTML = `볼륨 <span class="text-slate-100 font-bold">${b.vol}K</span> · CVD <span class="${b.cvd_line >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${b.cvd_line > 0 ? '+' : ''}${b.cvd_line}K</span> · ${flowTag}`;
+        }
+
+        function renderCvd(c) {
+            const pill = $('cvd-status-pill');
+            const priorBadge = $('cvd-prior-badge');
+            if (!c) {
+                cachedBars = [];
+                setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
+                ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
+                setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
+                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
+                $('cvd-vertical-grids').innerHTML = '';
+                if (priorBadge) priorBadge.classList.add('hidden');
+                pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
+                pill.innerHTML = '<span>N/A</span>';
+                return;
+            }
+            cachedBars = c.bars || [];
+            
+            if (priorBadge) {
+                priorBadge.classList.remove('hidden');
+                if (c.is_prior) {
+                    priorBadge.className = 'text-[9px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
+                    priorBadge.innerText = `🌙 전일(${c.session_date || '마감'}) 세션 · 09:30 ET 리셋`;
+                } else {
+                    priorBadge.className = 'text-[9px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
+                    priorBadge.innerText = '🟢 당일 정규장 실시간';
                 }
-            return {
-                "tag": "🟢 실업 감소 (상승 편향)",
-                "tone": "bull",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 및 고용 안정 (지수 호재)"
             }
 
-        elif is_nfp:
-            if diff > 0:
-                return {
-                    "tag": "🟢 고용 서프라이즈 (상승 편향)",
-                    "tone": "bull",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 대폭 증가 (경기 연착륙 호재)"
+            const is10mLast = currentCvdTf === '10m' && (c.last_bar_time || '').startsWith('15:50');
+            defaultCvdLastTime = is10mLast ? `${c.data_time} (15:50~16:00 마감)` : c.data_time;
+            defaultCvdSub = `최근 봉 <span class="text-slate-200">${c.recent_vol}</span> · 합계 <span class="text-slate-200">${c.total_vol}</span>`;
+            inspectCvdBar(null);
+
+            setText('cvd-source', c.source);
+            setText('cvd-data-time', `Data as of ${c.data_time}`);
+            setText('cvd-agg-range', c.aggregate_range);
+            setText('cvd-data-desc', c.data_desc);
+            setText('cvd-buy-pct', `▲ Buy ${c.buy_pct}% (${c.buy_vol})`);
+            setText('cvd-sell-pct', `▼ Sell ${c.sell_pct}% (${c.sell_vol})`);
+            $('cvd-bar-fill').style.width = `${c.buy_pct}%`;
+            $('cvd-sell-fill').style.width = `${c.sell_pct}%`;
+            setText('cvd-summary-text', c.summary_text);
+
+            const styles = {
+                bull: ['bg-emerald-950/80 text-emerald-300 border-emerald-800/60', '↑'],
+                bear: ['bg-rose-950/80 text-rose-300 border-rose-800/60', '↓'],
+                flat: ['bg-slate-800 text-slate-300 border-slate-700', '↔'],
+            };
+            const st = styles[c.tone] || styles.flat;
+            pill.className = `text-[10px] ${st[0]} border px-2 py-0.5 rounded font-semibold flex items-center space-x-1`;
+            pill.innerHTML = `<span>${st[1]} ${c.status}</span>`;
+
+            const bars = cachedBars;
+            const maxVol = Math.max(...bars.map((b) => b.vol), 0.1);
+            const maxCvd = Math.max(...bars.map((b) => Math.abs(b.cvd_line)), 1.0);
+            const fmtK = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}M` : `${v.toFixed(1)}K`);
+            setText('cvd-y-max', fmtK(maxVol));
+            setText('cvd-y-mid', fmtK(maxVol / 2));
+
+            const AREA_X0 = 40, AREA_W = 440;
+            const n = Math.max(bars.length, 1);
+            const slot = AREA_W / n;
+            const barW = Math.max(0.8, Math.min(24, slot * 0.7));
+            const cx = (i) => AREA_X0 + i * slot + slot / 2;
+            const strokeW = slot < 2.5 ? '0' : '0.7';
+
+            $('cvd-real-bars').innerHTML = bars.map((b, i) => {
+                const h = Math.max(1.5, (b.vol / maxVol) * 85);
+                const x = cx(i) - barW / 2, y = 110 - h;
+                const fill = b.is_bull ? '#065f46' : '#881337';
+                const stroke = b.is_bull ? '#10b981' : '#f43f5e';
+                const d = new Date(b.t * 1000);
+                const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
+                const isLast = (i === bars.length - 1);
+                const tipRange = isLast && currentCvdTf === '10m' ? ' [15:50~16:00 마감봉]' : '';
+                return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}" class="cursor-pointer transition-opacity hover:opacity-75" onmouseover="inspectCvdBar(${i})" onmouseout="inspectCvdBar(null)" ontouchstart="inspectCvdBar(${i})">
+                    <title>[${timeStr}${tipRange}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K</title>
+                </rect>`;
+            }).join('');
+
+            $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
+                const y = 65 - (b.cvd_line / maxCvd) * 40;
+                return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
+            }).join(' '));
+
+            const gridGroup = $('cvd-vertical-grids');
+            if (!bars.length) { 
+                gridGroup.innerHTML = '';
+            } else {
+                let gridHtml = '';
+                const seenTicks = new Set();
+                bars.forEach((b, i) => {
+                    const d = new Date(b.t * 1000);
+                    const etHour = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
+                    const etMin = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
+                    const totalMinutes = etHour * 60 + etMin;
+
+                    if (totalMinutes % 30 === 0 && !seenTicks.has(totalMinutes)) {
+                        seenTicks.add(totalMinutes);
+                        const gx = cx(i).toFixed(1);
+                        const timeLabel = `${String(etHour).padStart(2, '0')}:${String(etMin).padStart(2, '0')}`;
+                        gridHtml += `<line x1="${gx}" y1="18" x2="${gx}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
+                        gridHtml += `<text x="${gx}" y="125" fill="#94a3b8" font-size="9" font-weight="bold" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
+                    }
+                });
+
+                const lastBar = bars[bars.length - 1];
+                const lastD = new Date(lastBar.t * 1000);
+                const lastHour = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
+                const lastMin = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
+
+                if (lastHour === 15 && lastMin >= 40) {
+                    gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>`;
+                    gridHtml += `<text x="478" y="125" fill="#94a3b8" font-size="6.8" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
                 }
-            return {
-                "tag": "🔴 고용 쇼크 (하락 편향)",
-                "tone": "bear",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 부진/고용 급랭 우려 (지수 악재)"
+                gridGroup.innerHTML = gridHtml;
             }
+        }
 
-        else:
-            if diff > 0:
-                return {
-                    "tag": "🟢 경기 호조 (상승 편향)",
-                    "tone": "bull",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 지표 강세 (지수 호재)"
+        function renderDirection(d) {
+            const tfKeys = ['5m', '1m', '15m', '1h'];
+            const list = $('evidence-list');
+            if (!d || !d.available) {
+                setText('dir-main-status', NA); setText('dir-top-score', '종합 점수 N/A');
+                setText('dir-summary', (d && d.reason) ? d.reason : '실시간 봉 데이터를 가져오지 못해 방향을 판단할 수 없습니다.');
+                setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
+                setTone('dir-top-score', 'text-slate-500');
+                $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
+                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
+                list.innerHTML = '';
+                return;
+            }
+            const tc = toneByName(d.tone);
+            setText('dir-main-status', d.status);
+            setText('dir-top-score', `종합 점수 ${d.score_text}`);
+            setTone('dir-top-score', tc);
+            $('dir-head').className = `flex items-center space-x-1.5 text-xs font-bold ${tc}`;
+            setText('dir-summary', d.summary);
+            setText('dir-source', `Source ${d.source}`);
+            $('dir-source').title = d.source;
+            setText('tf-match-pct', d.match_pct);
+            const pct = Math.max(2, Math.min(98, ((d.score + 6) / 12) * 100));
+            $('dir-gauge-pin').style.left = `${pct}%`;
+            $('dir-gauge-pin').className = `absolute top-0 bottom-0 w-2 rounded shadow ${d.tone === 'bull' ? 'bg-emerald-400' : (d.tone === 'bear' ? 'bg-rose-400' : 'bg-slate-400')}`;
+
+            tfKeys.forEach((k) => {
+                const t = d.tfs ? d.tfs[k] : null;
+                if (!t) {
+                    setText(`tf-${k}-status`, '데이터 부족'); setText(`tf-${k}-score`, NA);
+                    setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300');
+                    return;
                 }
-            return {
-                "tag": "🔴 경기 위축 (하락 편향)",
-                "tone": "bear",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 지표 부진 (지수 악재)"
+                const c = toneByName(t.tone);
+                setText(`tf-${k}-status`, t.status);
+                setText(`tf-${k}-score`, sgn(t.score, 1));
+                setTone(`tf-${k}-status`, c); setTone(`tf-${k}-label`, c);
+            });
+
+            const dot = { bull: 'bg-emerald-400', bear: 'bg-rose-400', flat: 'bg-slate-400', na: 'bg-slate-600' };
+            const txt = { bull: 'text-emerald-400', bear: 'text-rose-400', flat: 'text-slate-300', na: 'text-slate-500' };
+            list.innerHTML = (d.evidence || []).map((e) => `
+                <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
+                    <div class="flex items-center space-x-1 font-bold ${txt[e.signal] || txt.na}">
+                        <span class="w-1.5 h-1.5 rounded-full ${dot[e.signal] || dot.na} inline-block"></span>
+                        <span>${e.title}</span>
+                    </div>
+                    <div class="text-slate-300 pl-3">${e.text}</div>
+                </div>`).join('');
+        }
+
+        function renderYields(y) {
+            const pairs = [
+                ['yield-3m', 'y3m', 'yield-3m-src', 'yield-3m-chg', 'y3m_change_text', 'y3m_change_bp'],
+                ['yield-10y', 'y10', 'yield-10y-src', 'yield-10y-chg', 'y10_change_text', 'y10_change_bp'],
+                ['yield-30y', 'y30', 'yield-30y-src', 'yield-30y-chg', 'y30_change_text', 'y30_change_bp'],
+            ];
+            pairs.forEach(([id, key, srcId, chgId, chgTextKey, chgBpKey]) => {
+                setText(id, y ? y[key] : null);
+                setTone(id, y && y[key] ? 'text-slate-200' : 'text-slate-500');
+                const s = y && y.sources ? y.sources[key] : null;
+                setText(srcId, srcShort(s));
+                const bp = y ? y[chgBpKey] : null;
+                setText(chgId, y ? y[chgTextKey] : null);
+                setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-emerald-400' : (bp < 0 ? 'text-rose-400' : 'text-slate-400')));
+            });
+            setText('yield-spread', y ? y.spread : null);
+            const bp = y && y.spread ? parseInt(y.spread, 10) : NaN;
+            setTone('yield-spread', isNaN(bp) ? 'text-slate-500' : (bp < 0 ? 'text-rose-400' : 'text-emerald-400'));
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // [완벽 방어] 장중 100% 보존 + 실시간 지수 영향 배지 렌더러
+        function renderEconEvents(e) {
+            const card = $('econ-card');
+            card.classList.remove('hidden');
+            setText('econ-source', (e && e.source) ? e.source : '공식 경제 캘린더 (ET 전용)');
+
+            const items = (e && e.items) ? e.items : [];
+            if (!items.length) {
+                $('econ-list').innerHTML = '<div class="text-[11px] text-slate-500 py-0.5">현재 예정되거나 진행 중인 발표가 없습니다.</div>';
+                return;
             }
 
-    return {
-        "tag": "발표 완료",
-        "tone": "flat",
-        "sentence": f"실제 {actual_str} ({cmp_label}: {cmp_str})"
-    }
-
-
-def fetch_global_econ_calendar():
-    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=6.0)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        parsed = []
-        for it in data:
-            if it.get("country") != "USD":
-                continue
-            title = (it.get("title") or "").strip()
-            impact = it.get("impact", "")
-            t_lower = title.lower()
-
-            if not ((impact == "High") or any(k in t_lower for k in HIGH_IMPACT_KEYWORDS)):
-                continue
-
-            raw_date = it.get("date", "")
-            if not raw_date:
-                continue
-
-            try:
-                dt_obj = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(ET)
-            except Exception:
-                continue
-
-            kr_name = ECON_TITLE_KR.get(title, title)
-            parsed.append({
-                "title": kr_name,
-                "title_en": title,
-                "dt": dt_obj,
-                "ts": dt_obj.timestamp(),
-                "time": dt_obj.strftime("%H:%M ET"),
-                "impact": impact,
-                "forecast": (it.get("forecast") or "").strip(),
-                "previous": (it.get("previous") or "").strip(),
-                "actual": (it.get("actual") or "").strip()
-            })
-        return parsed
-    except Exception:
-        return None
-
-
-def get_today_econ_events(now_et):
-    events = cached("econ_events_data", 45, fetch_global_econ_calendar)
-    now_ts = now_et.timestamp()
-    if not events:
-        return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
-
-    today = now_et.date()
-    tomorrow = today + timedelta(days=1)
-    today_items = [e for e in events if e["dt"].date() == today]
-
-    # 발표 전이거나, 발표된 지 1시간(3600초) 이내인 항목만 목록에 유지 (1시간 지나면 자동 소멸)
-    active_today_items = [e for e in today_items if (e["ts"] > now_ts) or (now_ts - e["ts"] <= 3600)]
-
-    is_tomorrow = False
-    target_items = active_today_items
-    if not active_today_items and now_et.hour >= 16:
-        tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
-        if tomorrow_items:
-            target_items = tomorrow_items
-            is_tomorrow = True
-
-    target_items.sort(key=lambda x: x["ts"])
-    out_items = []
-    for it in target_items:
-        passed = (it["ts"] <= now_ts)
-        has_actual = bool(it["actual"])
-        prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
-        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"])
-
-        out_items.append({
-            "title": f"{prefix}{it['title']}",
-            "title_en": it["title_en"],
-            "time": it["time"],
-            "ts": it["ts"],
-            "passed": passed,
-            "has_actual": has_actual,
-            "impact": it.get("impact", "High"),
-            "actual": it["actual"],
-            "forecast": it["forecast"],
-            "previous": it["previous"],
-            "eval_tag": eval_res["tag"],
-            "eval_tone": eval_res["tone"],
-            "eval_sentence": eval_res["sentence"],
-        })
-
-    return {"items": out_items, "source": "공식 경제 캘린더 (ET 전용 · 1시간 후 자동 정리)", "error": None}
-
-
-# ─────────────────────────────────────────────────────────────
-# 캔들 데이터 / CVD / Volume Profile
-# ─────────────────────────────────────────────────────────────
-TF_SPEC = {
-    "1m": ("1m", "2d", 1, 2, None), "5m": ("5m", "5d", 5, 5, None), "10m": ("5m", "5d", 5, 5, 10),
-    "15m": ("5m", "5d", 5, 5, 15), "30m": ("5m", "5d", 5, 5, 30), "1h": ("60m", "1mo", 30, 10, 60),
-}
-TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
-INSTR = {"spx": ("$SPX", "^GSPC"), "spy": ("SPY", "SPY"), "es": (None, "ES=F")}
-
-
-def normalize_tf(tf):
-    key = str(tf or "").strip().lower()
-    return key if key in TF_SPEC else "10m"
-
-
-def yahoo_candles(symbol, interval, range_str):
-    chart = fetch_yahoo_chart(symbol, interval, range_str)
-    ts = chart.get("timestamp") or []
-    quote = ((chart.get("indicators") or {}).get("quote") or [{}])[0] or {}
-    opens, highs, lows, closes, vols = quote.get("open") or [], quote.get("high") or [], quote.get("low") or [], quote.get("close") or [], quote.get("volume") or []
-    out = []
-    for i, t in enumerate(ts):
-        if i >= len(closes) or i >= len(opens) or i >= len(highs) or i >= len(lows):
-            break
-        o, h, l, c = num(opens[i]), num(highs[i]), num(lows[i]), num(closes[i])
-        if None in (o, h, l, c):
-            continue
-        v = num(vols[i]) if i < len(vols) else 0.0
-        out.append({"t": int(t), "o": o, "h": h, "l": l, "c": c, "v": v or 0.0})
-    return out
-
-
-def schwab_candles(token, symbol, freq, days):
-    now_ms = int(time.time() * 1000)
-    data = schwab_get(token, "/pricehistory", {"symbol": symbol, "periodType": "day", "period": days, "frequencyType": "minute", "frequency": freq, "endDate": now_ms, "needExtendedHoursData": "true"}, timeout=5)
-    out = []
-    if isinstance(data, dict):
-        for cd in data.get("candles") or []:
-            if isinstance(cd, dict):
-                o, h, l, c, t = num(cd.get("open")), num(cd.get("high")), num(cd.get("low")), num(cd.get("close")), num(cd.get("datetime"))
-                if None not in (o, h, l, c, t):
-                    out.append({"t": int(t / 1000), "o": o, "h": h, "l": l, "c": c, "v": num(cd.get("volume")) or 0.0})
-    return out
-
-
-def aggregate_candles(candles, minutes):
-    groups = OrderedDict()
-    for cd in candles:
-        dt = datetime.fromtimestamp(cd["t"], ET)
-        key = (dt.date(), (dt.hour * 60 + dt.minute - 570) // minutes)
-        if key not in groups:
-            groups[key] = dict(cd)
-        else:
-            groups[key]["h"] = max(groups[key]["h"], cd["h"])
-            groups[key]["l"] = min(groups[key]["l"], cd["l"])
-            groups[key]["c"] = cd["c"]
-            groups[key]["v"] += cd["v"]
-    return list(groups.values())
-
-
-def get_candles(token, inst, tf):
-    key = normalize_tf(tf)
-
-    def load():
-        y_int, y_rng, s_freq, s_days, agg = TF_SPEC[key]
-        ssym, ysym = INSTR[inst]
-        now_et = datetime.now(ET)
-        today = now_et.date()
-        is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
-
-        if token and ssym:
-            cs = schwab_candles(token, ssym, s_freq, s_days)
-            if cs:
-                has_today = any(datetime.fromtimestamp(c["t"], ET).date() == today for c in cs)
-                if not is_rth or has_today:
-                    if agg:
-                        cs = aggregate_candles(cs, agg)
-                    return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
-
-        cs = yahoo_candles(ysym, y_int, y_rng)
-        if cs:
-            if agg:
-                cs = aggregate_candles(cs, agg)
-            return {"candles": cs, "source": f"{SRC_YAHOO} ({ysym} {TF_LABEL[key]})"}
-        return None
-
-    return cached(f"candles:{inst}:{key}", 6 if key in ("1m", "5m", "10m") else 20, load)
-
-
-def get_rth_session(candles, now_et=None):
-    if not candles:
-        return [], False, None
-    if now_et is None:
-        now_et = datetime.now(ET)
-    today = now_et.date()
-    is_weekday = (now_et.weekday() < 5)
-    is_rth = is_weekday and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
-    is_after = is_weekday and (now_et.hour >= 16)
-
-    sessions = OrderedDict()
-    for c in candles:
-        dt = datetime.fromtimestamp(c["t"], ET)
-        d = dt.date()
-        d_open = int(ET.localize(datetime(d.year, d.month, d.day, 9, 30, 0)).timestamp())
-        d_close = int(ET.localize(datetime(d.year, d.month, d.day, 16, 0, 0)).timestamp())
-        if d_open <= c["t"] <= d_close:
-            sessions.setdefault(d, []).append(c)
-
-    all_dates = sorted(sessions.keys())
-    if is_rth:
-        return sessions.get(today, []), False, today.strftime("%m/%d")
-    if is_after and today in sessions:
-        return sessions[today], False, today.strftime("%m/%d")
-    priors = [d for d in all_dates if d < today]
-    if priors:
-        return sessions[priors[-1]], True, priors[-1].strftime("%m/%d")
-    if all_dates:
-        return sessions[all_dates[-1]], (all_dates[-1] != today), all_dates[-1].strftime("%m/%d")
-    return [], False, today.strftime("%m/%d")
-
-
-def compute_vwap(spy_candles, ratio, now_et=None):
-    sess, _, _ = get_rth_session(spy_candles, now_et)
-    if not sess or not ratio:
-        return None
-    cum_v = cum_tp = 0.0
-    val = None
-    for c in sess:
-        if c["v"] <= 0:
-            continue
-        tp = (c["h"] + c["l"] + c["c"]) / 3.0 * ratio
-        cum_v += c["v"]
-        cum_tp += tp * c["v"]
-        val = cum_tp / cum_v
-    return {"val": round(val, 2)} if val else None
-
-
-def compute_volume_profile(spy_candles, ratio, source, now_et=None):
-    sess, is_prior, sess_date = get_rth_session(spy_candles, now_et)
-    if not sess or not ratio:
-        return None
-    bins, total = {}, 0.0
-    for c in sess:
-        if c["v"] <= 0:
-            continue
-        lo, hi = min(c["l"], c["h"]) * ratio, max(c["l"], c["h"]) * ratio
-        b_lo, b_hi = min(c["o"], c["c"]) * ratio, max(c["o"], c["c"]) * ratio
-        lo_b, hi_b = int(round(lo / 5.0)) * 5, int(round(hi / 5.0)) * 5
-        rng = list(range(lo_b, hi_b + 5, 5))
-        if not rng:
-            continue
-        weights = [2.5 if b_lo - 2.5 <= b <= b_hi + 2.5 else 1.0 for b in rng]
-        w_sum = sum(weights)
-        for b, w in zip(rng, weights):
-            each = c["v"] * (w / w_sum)
-            bins[b] = bins.get(b, 0.0) + each
-            total += each
-
-    if not bins or total <= 0:
-        return None
-    keys = sorted(bins)
-    poc = max(bins, key=bins.get)
-    target = total * 0.70
-    cur, lo_i, hi_i = bins[poc], keys.index(poc), keys.index(poc)
-    while cur < target and (lo_i > 0 or hi_i < len(keys) - 1):
-        up = bins[keys[hi_i + 1]] if hi_i + 1 < len(keys) else -1.0
-        dn = bins[keys[lo_i - 1]] if lo_i > 0 else -1.0
-        if up >= dn:
-            hi_i += 1
-            cur += up
-        else:
-            lo_i -= 1
-            cur += dn
-
-    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
-    return {
-        "val": float(keys[lo_i]), "poc": float(poc), "vah": float(keys[hi_i]),
-        "source": f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 · 5pt 구간 POC",
-    }
-
-
-def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
-    if not candles:
-        return None
-    tf_label = TF_LABEL.get(tf_key, tf_key)
-    if now_et is None:
-        now_et = datetime.now(ET)
-    bars, is_prior, sess_date = get_rth_session(candles, now_et)
-    if not bars:
-        return None
-
-    buy = sell = running = 0.0
-    out = []
-    for c in bars:
-        v, h, l, cl = c["v"], c["h"], c["l"], c["c"]
-        rng = h - l
-        buy_ratio = (cl - l) / rng if rng > 0 else 0.5
-        b_v = v * buy_ratio
-        s_v = v * (1.0 - buy_ratio)
-        delta = b_v - s_v
-        buy += b_v
-        sell += s_v
-        running += delta
-        out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": delta >= 0, "cvd_line": round(running / 1000.0, 2)})
-
-    total = buy + sell
-    if total <= 0:
-        return None
-    buy_pct = int(round(buy / total * 100))
-    sell_pct = 100 - buy_pct
-    status, tone = ("Buying Pressure", "bull") if buy_pct >= 53 else (("Selling Pressure", "bear") if buy_pct <= 47 else ("Balanced", "flat"))
-
-    end_ts = bars[-1]["t"]
-    aggregate_range = f"{sess_date} {'전일' if is_prior else ''}정규장 (09:30 ~ {datetime.fromtimestamp(end_ts, ET).strftime('%H:%M:%S ET')}) · {len(bars)}개 {tf_label} 봉"
-    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
-
-    def fmt_v(v):
-        return f"{v/1e6:.2f}M" if v >= 1e6 else (f"{v/1e3:.1f}K" if v >= 1e3 else f"{v:.0f}")
-
-    return {
-        "source": f"{source} {'· [전일 마감]' if is_prior else ''}",
-        "data_time": datetime.fromtimestamp(end_ts, ET).strftime("%m/%d %H:%M:%S ET"),
-        "last_bar_time": datetime.fromtimestamp(end_ts, ET).strftime("%H:%M:%S ET"),
-        "is_prior": is_prior, "session_date": sess_date,
-        "status": f"{status}{' (전일)' if is_prior else ''}", "tone": tone,
-        "aggregate_range": aggregate_range,
-        "data_desc": f"{symbol} {prefix}정규장 · {source} · 체결 압력 CVD",
-        "buy_pct": buy_pct, "sell_pct": sell_pct, "buy_vol": fmt_v(buy), "sell_vol": fmt_v(sell),
-        "recent_vol": fmt_v(bars[-1]["v"]), "total_vol": fmt_v(total),
-        "bars": out, "summary_text": f"CVD Flow: Buy {buy_pct}% / Sell {sell_pct}% in session.",
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-# GEX & 방향 분석 & 변동성 쇼크
-# ─────────────────────────────────────────────────────────────
-def bs_gamma(S, K, T, sigma, r=0.0):
-    if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
-        return 0.0
-    try:
-        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
-        pdf = math.exp(-0.5 * d1 * d1) / math.sqrt(2.0 * math.pi)
-        g = pdf / (S * sigma * math.sqrt(T))
-        return g if math.isfinite(g) else 0.0
-    except Exception:
-        return 0.0
-
-
-def ema_series(values, period):
-    if not values:
-        return []
-    k = 2.0 / (period + 1)
-    out = [values[0]]
-    for v in values[1:]:
-        out.append(v * k + out[-1] * (1 - k))
-    return out
-
-
-def rsi_series(closes, period=14):
-    if len(closes) < period + 1:
-        return []
-    gains, losses = [], []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        gains.append(max(d, 0.0))
-        losses.append(max(-d, 0.0))
-    avg_g = sum(gains[:period]) / period
-    avg_l = sum(losses[:period]) / period
-    calc = lambda g, l: 50.0 if l == 0 and g == 0 else (100.0 if l == 0 else 100.0 - (100.0 / (1.0 + g / l)))
-    out = [round(calc(avg_g, avg_l), 1)]
-    for i in range(period, len(gains)):
-        avg_g = (avg_g * (period - 1) + gains[i]) / period
-        avg_l = (avg_l * (period - 1) + losses[i]) / period
-        out.append(round(calc(avg_g, avg_l), 1))
-    return out
-
-
-def parse_schwab_chain(data, exp_date):
-    contracts = []
-    for side, mkey in (("C", "callExpDateMap"), ("P", "putExpDateMap")):
-        for ekey, strikes in (data.get(mkey) or {}).items():
-            if ekey.split(":")[0] != exp_date:
-                continue
-            for skey, arr in (strikes or {}).items():
-                for o in arr or []:
-                    if not isinstance(o, dict):
-                        continue
-                    K = num(o.get("strikePrice")) or num(skey)
-                    if K is None:
-                        continue
-                    iv = num(o.get("volatility"))
-                    contracts.append({
-                        "K": K, "side": side, "oi": num(o.get("openInterest")) or 0.0,
-                        "vol": num(o.get("totalVolume")) or num(o.get("volume")) or 0.0,
-                        "iv": (iv / 100.0) if iv and 0.01 <= (iv / 100.0) <= 5.0 else None,
-                        "gamma": num(o.get("gamma")), "bid": num(o.get("bid")), "ask": num(o.get("ask")), "last": num(o.get("last")),
-                    })
-    return contracts
-
-
-def fetch_schwab_chain(token, today_date):
-    if not token:
-        return None, {"reason": "토큰 없음"}
-    t_str = today_date.isoformat()
-    data = schwab_get(token, "/chains", {"symbol": "$SPX", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t_str, "toDate": t_str}, timeout=6)
-    used_sym = "$SPX"
-    exps = set()
-    if isinstance(data, dict):
-        for mk in ("callExpDateMap", "putExpDateMap"):
-            for k in (data.get(mk) or {}).keys():
-                exps.add(k.split(":")[0])
-    if t_str not in exps:
-        data_spxw = schwab_get(token, "/chains", {"symbol": "$SPXW", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t_str, "toDate": t_str}, timeout=6)
-        if isinstance(data_spxw, dict):
-            data, used_sym = data_spxw, "$SPXW"
-            exps = {k.split(":")[0] for mk in ("callExpDateMap", "putExpDateMap") for k in (data.get(mk) or {}).keys()}
-    if not exps:
-        return None, {"reason": "만기 없음"}
-    exp = t_str if t_str in exps else sorted(exps)[0]
-    contracts = parse_schwab_chain(data, exp)
-    return (contracts, exp) if contracts else None, {"used_symbol": used_sym, "is_0dte": exp == t_str}
-
-
-def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
-    S = spot / scale
-    y, m, d = (int(x) for x in exp_date.split("-"))
-    exp_dt = ET.localize(datetime(y, m, d, 16, 0))
-    secs = max((exp_dt - now_et).total_seconds(), 1800.0)
-    T = secs / SECONDS_PER_YEAR
-
-    use = [c for c in contracts if 0.88 * S <= c["K"] <= 1.12 * S and (c["oi"] > 0 or c.get("vol", 0) > 0)]
-    if len(use) < 6:
-        return None
-
-    per = {}
-    gamma_schwab = gamma_calc = 0
-    for c in use:
-        raw_g = c["gamma"]
-        g = raw_g or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
-        if g:
-            gamma_schwab += 1 if raw_g else 0
-            gamma_calc += 0 if raw_g else 1
-
-        e = per.setdefault(c["K"], {"call_gex": 0.0, "put_gex": 0.0, "call_oi": 0.0, "put_oi": 0.0, "call_vol": 0.0, "put_vol": 0.0})
-        eff_qty = max(c["oi"], c.get("vol", 0.0))
-
-        if c["side"] == "C":
-            e["call_oi"] += c["oi"]
-            e["call_vol"] += c.get("vol", 0.0)
-        else:
-            e["put_oi"] += c["oi"]
-            e["put_vol"] += c.get("vol", 0.0)
-
-        if g and eff_qty > 0:
-            dg = g * eff_qty * 100.0 * S * S * 0.01
-            if c["side"] == "C":
-                e["call_gex"] += dg
-            else:
-                e["put_gex"] -= dg
-
-    if not per:
-        return None
-
-    calls_gex = [k for k, e in per.items() if e["call_gex"] > 0]
-    puts_gex = [k for k, e in per.items() if e["put_gex"] < 0]
-    call_wall = max(calls_gex, key=lambda k: per[k]["call_gex"]) * scale if calls_gex else None
-    put_wall = min(puts_gex, key=lambda k: per[k]["put_gex"]) * scale if puts_gex else None
-    net_total = sum(e["call_gex"] + e["put_gex"] for e in per.values())
-
-    by_k = {}
-    for c in contracts:
-        m_val = ((c["bid"] + c["ask"]) / 2.0) if (c.get("bid") and c.get("ask")) else c.get("last")
-        if m_val:
-            by_k.setdefault(c["K"], {})[c["side"]] = m_val
-    both = {k: v for k, v in by_k.items() if "C" in v and "P" in v}
-    straddle = (both[min(both, key=lambda x: abs(x - S))]["C"] + both[min(both, key=lambda x: abs(x - S))]["P"]) if both else None
-    em_pt = straddle * scale if straddle else None
-
-    by_strike = []
-    for K, e in sorted(sorted(per.items(), key=lambda kv: abs(kv[0] - S))[:14], key=lambda kv: kv[0]):
-        by_strike.append({
-            "strike": round(K * scale, 1), "call_oi": int(e["call_oi"]), "put_oi": int(e["put_oi"]),
-            "call_vol": int(e["call_vol"]), "put_vol": int(e["put_vol"]),
-            "net_gex_m": round((e["call_gex"] + e["put_gex"]) / 1e6, 1),
-        })
-
-    is_0dte_session = bool((now_et.hour < 16 and exp_date == now_et.date().isoformat()) or (now_et.hour >= 16 and exp_date >= now_et.date().isoformat()))
-
-    return {
-        "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session,
-        "call_wall": round(call_wall, 1) if call_wall else None, "put_wall": round(put_wall, 1) if put_wall else None,
-        "gamma_flip": round(spot, 1), "gamma_flip_note": None,
-        "em_pt": round(em_pt, 1) if em_pt else None, "expected_move": f"±{em_pt:.1f}pt ({em_pt / spot * 100:.2f}%)" if em_pt else None,
-        "net_gex": fmt_dollars(net_total), "regime": "positive" if net_total >= 0 else "negative",
-        "regime_text": "양(+) 감마 우세 - 딜러 헤지가 변동성 억제" if net_total >= 0 else "음(−) 감마 우세 - 변동성 증폭 구간",
-        "strike_count": len(per), "by_strike": by_strike,
-        "gamma_source_note": f"감마 {gamma_schwab}개 Schwab 제공값, {gamma_calc}개 BS 실시간 계산값",
-        "oi_skew": {
-            "call_oi_at_or_above_spot": int(sum(e["call_oi"] for k, e in per.items() if k >= S)),
-            "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
-            "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
-            "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
-        },
-    }
-
-
-def get_gex(token, spx_p, ratio, now_et):
-    if spx_p is None:
-        return {"available": False, "source": "N/A", "reason": "SPX 현재가 없음"}
-    start = now_et.date() if now_et.hour < 16 else now_et.date() + timedelta(days=1)
-
-    def load():
-        r, diag = fetch_schwab_chain(token, start)
-        if r:
-            return analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag)
-        return {"available": False, "source": "N/A", "reason": "옵션 체인 수집 불가"}
-
-    return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
-
-
-def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
-    if not spx_p:
-        return {"active": False}
-    today = now_et.date()
-    is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
-    if not is_rth:
-        return {"active": False}
-
-    today_open_ts = int(ET.localize(datetime(today.year, today.month, today.day, 9, 30, 0)).timestamp())
-    today_bars = [c for c in (spy_5m_candles or []) if c["t"] >= today_open_ts]
-    recent_bars = today_bars[-6:] if len(today_bars) >= 2 else []
-
-    reasons, shock_type, level = [], "NORMAL", "NORMAL"
-    elapsed_text = ""
-
-    if recent_bars and ratio:
-        high_bar = max(recent_bars, key=lambda b: b["h"])
-        low_bar = min(recent_bars, key=lambda b: b["l"])
-        curr_c = recent_bars[-1]["c"] * ratio
-        drop = curr_c - (high_bar["h"] * ratio)
-        rally = curr_c - (low_bar["l"] * ratio)
-
-        if drop <= -14.0:
-            elapsed_min = int(max((now_et.timestamp() - high_bar["t"]) // 60, 1))
-            if elapsed_min <= 30:
-                shock_type = "DROP"
-                level = "CRITICAL" if drop <= -24.0 else "WARNING"
-                s_label = datetime.fromtimestamp(high_bar["t"], ET).strftime("%H:%M ET")
-                elapsed_text = f"{s_label} 시작 ({elapsed_min}분 경과)"
-                reasons.append(f"{s_label}부터 {drop:.1f}pt 단기 급락 발생")
-
-        elif rally >= 14.0:
-            elapsed_min = int(max((now_et.timestamp() - low_bar["t"]) // 60, 1))
-            if elapsed_min <= 30:
-                shock_type = "SURGE"
-                level = "CRITICAL" if rally >= 24.0 else "WARNING"
-                s_label = datetime.fromtimestamp(low_bar["t"], ET).strftime("%H:%M ET")
-                elapsed_text = f"{s_label} 시작 ({elapsed_min}분 경과)"
-                reasons.append(f"{s_label}부터 +{rally:.1f}pt 단기 급등 발생")
-
-    if gex and gex.get("available") and gex.get("is_0dte"):
-        pw, cw = gex.get("put_wall"), gex.get("call_wall")
-        if pw and spx_p < pw:
-            reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({spx_p - pw:.1f}pt)")
-            shock_type, level = "DROP", "CRITICAL"
-        if cw and spx_p > cw:
-            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{spx_p - cw:.1f}pt)")
-            shock_type, level = "SURGE", "CRITICAL"
-
-    if cvd and not cvd.get("is_prior"):
-        if cvd.get("sell_pct", 0) >= 65 and shock_type == "DROP":
-            reasons.append(f"기관 매도 덤핑 폭발 (Sell {cvd['sell_pct']}%)")
-        elif cvd.get("buy_pct", 0) >= 65 and shock_type == "SURGE":
-            reasons.append(f"기관 매수 스퀴즈 유입 (Buy {cvd['buy_pct']}%)")
-
-    if vix_active and shock_type == "DROP":
-        vix_pct = vix_active.get("change_pct")
-        if vix_pct and vix_pct >= 6.0:
-            reasons.append(f"0DTE 변동성(VIX1D) 스파이크 폭등 (+{vix_pct:.1f}%)")
-
-    is_active = len(reasons) > 0 and (shock_type in ("DROP", "SURGE"))
-    title = "🚨 [변동성 쇼크 · 급락 경보]" if shock_type == "DROP" and level == "CRITICAL" else ("⚠️ [변동성 쇼크 · 하방 주의보]" if shock_type == "DROP" else ("🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]"))
-
-    return {
-        "active": is_active, "type": shock_type, "level": level, "title": title,
-        "elapsed_text": elapsed_text, "details": reasons, "timestamp": now_et.strftime("%H:%M:%S ET")
-    }
-
-
-def analyze_tf(candles):
-    closes = [c["c"] for c in candles]
-    if len(closes) < 15:
-        return None
-    e5, e13, e21 = ema_series(closes, 5), ema_series(closes, 13), ema_series(closes, 21)
-    p_vs_e5 = 1.0 if closes[-1] > e5[-1] else -1.0
-    e5_vs_e13 = 1.0 if e5[-1] > e13[-1] else -1.0
-    e13_vs_e21 = 1.0 if e13[-1] > e21[-1] else -1.0
-    e5_slope = 1.0 if (len(e5) >= 2 and e5[-1] > e5[-2]) else -1.0
-
-    rs = rsi_series(closes, period=9)
-    rsi_val = rs[-1] if rs else 50.0
-    rsi_score = 1.0 if rsi_val >= 55 else (-1.0 if rsi_val <= 45 else 0.0)
-
-    score = max(-6.0, min(6.0, p_vs_e5 + e5_vs_e13 + e13_vs_e21 + e5_slope + rsi_score))
-    label, tone = ("상승 우세", "bull") if score >= 3.0 else (("상승 편향", "bull") if score >= 1.2 else (("중립", "flat") if score > -1.2 else (("하락 편향", "bear") if score > -3.0 else ("하락 우세", "bear"))))
-    return {"score": round(score, 1), "status": label, "tone": tone}
-
-
-def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
-    avail = {k: v for k, v in tf_results.items() if v}
-    if not avail:
-        return {"available": False, "source": "N/A", "reason": "실시간 봉 수집 불가"}
-
-    weights = {"5m": 0.35, "1m": 0.25, "15m": 0.25, "1h": 0.15}
-    score = sum(weights[k] * avail[k]["score"] for k in avail) / sum(weights[k] for k in avail)
-
-    vwap_diff = (spx_p - vwap_calc["val"]) if (spx_p and vwap_calc and vwap_calc.get("val")) else None
-    if vwap_diff is not None:
-        score += 1.0 if vwap_diff > 1.0 else (-1.5 if vwap_diff < -1.0 else 0)
-    if cvd_data:
-        score += 1.0 if cvd_data.get("tone") == "bull" else (-1.5 if cvd_data.get("tone") == "bear" else 0)
-
-    score = max(-6.0, min(6.0, score))
-    label, tone = ("상승 우세", "bull") if score >= 3.0 else (("상승 편향", "bull") if score >= 1.2 else (("중립", "flat") if score > -1.2 else (("하락 편향", "bear") if score > -3.0 else ("하락 우세", "bear"))))
-    match_pct = int(round(sum(1 for v in avail.values() if v["tone"] == tone) / len(avail) * 100))
-
-    evidence = []
-    if vwap_diff is not None:
-        evidence.append({"title": "VWAP 위치", "signal": "bull" if vwap_diff > 0 else ("bear" if vwap_diff < 0 else "flat"), "text": f"현재가가 당일 VWAP {'위' if vwap_diff > 0 else '아래'} ({vwap_diff:+.2f}pt)"})
-    if cvd_data:
-        evidence.append({"title": "CVD 볼륨 압력", "signal": cvd_data["tone"], "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)"})
-
-    return {
-        "available": True, "score": round(score, 1), "score_text": f"{score:+.1f}",
-        "status": label, "tone": tone, "match_pct": match_pct,
-        "summary": f"단기 모멘텀과 체결 압력이 {'상승' if tone=='bull' else ('하락' if tone=='bear' else '중립')} 쪽입니다. {match_pct}% 일치.",
-        "tfs": {k: ({**avail[k], "source": tf_sources.get(k)} if k in avail else None) for k in ("1h", "15m", "5m", "1m")},
-        "evidence": evidence, "source": "Schwab+Yahoo (SPY) · 0DTE EMA(5/13/21)·VWAP·CVD 결합",
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-# API 엔드포인트
-# ─────────────────────────────────────────────────────────────
-@app.get("/api/test-alert")
-def test_telegram_alert():
-    now_et = datetime.now(ET)
-    mock = {
-        "active": True, "type": "DROP", "level": "CRITICAL",
-        "title": "🚨 [시스템 테스트] 텔레그램 연동 정상 작동 확인",
-        "timestamp": now_et.strftime("%H:%M:%S ET"), "elapsed_text": f"{now_et.strftime('%H:%M ET')} 테스트 발송",
-        "details": ["환경변수 연동 성공", "실시간 급변동 감지 시 이와 동일하게 자동 전송됩니다."]
-    }
-    return {"status": "ok", "result": send_telegram_shock_alert(mock, 5750.0, force_test=True)}
-
-
-@app.get("/api/market-data")
-def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
-    now_et = datetime.now(ET)
-    now_str = now_et.strftime("%m/%d %H:%M:%S ET")
-
-    token, schwab_msg = get_schwab_token()
-    quotes = get_all_quotes(token) or {}
-    q_spx, q_spy = quotes.get("spx"), quotes.get("spy")
-    spx_p = q_spx["price"] if q_spx else None
-    ratio_q = (spx_p / q_spy["price"]) if (spx_p and q_spy and q_spy.get("price")) else None
-
-    r_key, c_key = normalize_tf(rsi_tf), normalize_tf(cvd_tf)
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        f_spy_dir = {k: ex.submit(get_candles, token, "spy", k) for k in {"1h", "15m", "5m", "1m"}}
-        f_spx_r = ex.submit(get_candles, token, "spx", r_key)
-        f_spy_c = ex.submit(get_candles, token, "spy", c_key)
-        f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
-        f_econ = ex.submit(get_today_econ_events, now_et)
-
-    spy_dir_c = {k: f.result() for k, f in f_spy_dir.items()}
-    spx_r = f_spx_r.result()
-    spy_c = f_spy_c.result()
-    gex = f_gex.result() or {"available": False, "source": "N/A"}
-    econ_events = f_econ.result() or {"items": [], "source": "N/A"}
-
-    spy_5m = spy_dir_c.get("5m")
-    ratio = ratio_q or ((spx_p / spy_5m["candles"][-1]["c"]) if (spx_p and spy_5m and spy_5m.get("candles")) else None)
-
-    vwap_calc = compute_vwap(spy_5m["candles"], ratio, now_et) if spy_5m else None
-    vp = compute_volume_profile(spy_5m["candles"], ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
-    cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
-
-    rsi = None
-    if spx_r and spx_r.get("candles"):
-        rs = rsi_series([c["c"] for c in spx_r["candles"]])
-        if rs:
-            cur = rs[-1]
-            rsi = {
-                "val": cur,
-                "status": "과매수" if cur >= 70 else ("과매도" if cur <= 30 else ("상승" if cur >= 55 else ("하락" if cur <= 45 else "중립"))),
-                "source": f"{spx_r['source']} · Wilder RSI(14)",
+            $('econ-list').innerHTML = items.map((it) => {
+                const isPassed = it.passed;
+                const hasActual = it.has_actual;
+                
+                let statusBadge = '';
+                let dot = 'bg-slate-500';
+                let sentenceColor = 'text-slate-400';
+
+                if (hasActual) {
+                    if (it.eval_tone === 'bull') {
+                        statusBadge = `<span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(it.eval_tag)}</span>`;
+                        sentenceColor = 'text-emerald-300 font-bold';
+                    } else if (it.eval_tone === 'bear') {
+                        statusBadge = `<span class="text-[9px] bg-rose-950 text-rose-300 border border-rose-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(it.eval_tag)}</span>`;
+                        sentenceColor = 'text-rose-300 font-bold';
+                    } else {
+                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(it.eval_tag)}</span>`;
+                        sentenceColor = 'text-slate-300 font-medium';
+                    }
+                } else if (!isPassed) {
+                    dot = 'bg-amber-400 animate-pulse';
+                    if (it.forecast) {
+                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                    }
+                } else {
+                    dot = 'bg-slate-500';
+                    if (it.forecast) {
+                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                    }
+                }
+
+                const titleCls = hasActual ? 'text-slate-200 font-bold' : (isPassed ? 'text-slate-300 font-medium' : 'text-amber-300 font-bold');
+                const timeStatus = isPassed ? '발표완료' : '발표예정';
+
+                return `<div class="py-1.5 border-b border-slate-800/60 last:border-0">
+                    <div class="flex items-center justify-between text-[11px]">
+                        <span class="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                            <span class="w-1.5 h-1.5 rounded-full ${dot} inline-block"></span>
+                            <span class="${titleCls}">${escapeHtml(it.title)}</span>
+                            ${statusBadge}
+                        </span>
+                        <span class="font-mono text-[10px] text-slate-400 shrink-0 ml-2">${escapeHtml(it.time)} · ${timeStatus}</span>
+                    </div>
+                    ${it.eval_sentence ? `<div class="text-[10px] pl-3 mt-0.5 ${sentenceColor}">↳ ${escapeHtml(it.eval_sentence)}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        function renderStatus(data) {
+            const badge = $('global-source-badge');
+            badge.innerText = `Source: ${data.source_summary}`;
+            const line = $('schwab-status-line');
+            const okSchwab = (data.schwab_status || '').startsWith('연결됨') && !(data.schwab_status || '').includes('Yahoo 로 대체');
+            if (okSchwab) {
+                line.classList.add('hidden');
+            } else {
+                line.classList.remove('hidden');
+                const yahooUsed = /Yahoo [1-9]/.test(data.source_summary || '');
+                line.innerText = `⚠ ${data.schwab_status}${yahooUsed ? ' → Yahoo 로 자동 대체 중' : ''}`;
             }
+        }
 
-    tf_results, tf_sources = {}, {}
-    for k in ("1h", "15m", "5m", "1m"):
-        d = spy_dir_c.get(k)
-        tf_results[k] = analyze_tf(d["candles"]) if (d and d.get("candles")) else None
-        tf_sources[k] = d["source"] if d else None
+        async function fetchRealMarketData(force = false) {
+            if (inFlight && !force) return;
+            inFlight = true;
+            const mySeq = ++reqSeq;
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 15000);
+            try {
+                const url = `${API_URL}?cvd_tf=${currentCvdTf}`;
+                const res = await fetch(url, { signal: ctrl.signal });
+                const data = await res.json();
+                if (mySeq !== reqSeq) return;
+                if (data.status !== 'success') throw new Error('API status ' + data.status);
 
-    c1h = spy_dir_c["1h"]["candles"] if (spy_dir_c.get("1h") and spy_dir_c["1h"].get("candles")) else []
-    direction = build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd)
+                const blocks = [
+                    () => renderShockAlert(data.shock_alert),
+                    () => renderStatus(data),
+                    () => renderEconEvents(data.econ_events),
+                    () => renderRsi(data.rsi),
+                    () => renderQuote('spx', data.spx, { pct: true }),
+                    () => renderQuote('es', data.es, { pct: true }),
+                    () => {
+                        renderQuote('vix1d', data.vix1d, { invert: true });
+                        renderQuote('vix', data.vix, { invert: true });
+                    },
+                    () => renderQuote('mag7', data.mag7, { pct: true }),
+                    () => renderQuote('wti', data.wti, { pct: true }),
+                    () => renderQuote('brent', data.brent, { pct: true }),
+                    () => renderYields(data.yields),
+                    () => {
+                        const vp = data.volume_profile;
+                        setText('val-price', vp ? vp.val : null); setText('poc-price', vp ? vp.poc : null); setText('vah-price', vp ? vp.vah : null);
+                        setText('vp-source', vp ? vp.source : NA); setText('vp-timestamp', data.timestamp);
+                    },
+                    () => renderGex(data.gex, data.spx ? data.spx.price : null),
+                    () => renderCvd(data.cvd),
+                    () => renderDirection(data.direction),
+                ];
+                blocks.forEach((fn) => { try { fn(); } catch (e) { console.error('렌더링 오류:', e); } });
+            } catch (err) {
+                console.error('데이터 동기화 에러:', err);
+                if (mySeq === reqSeq) setText('global-source-badge', 'API 연결 실패 · 재시도 중');
+            } finally {
+                clearTimeout(timer);
+                if (mySeq === reqSeq) inFlight = false;
+            }
+        }
 
-    spy_5m_bars = spy_5m.get("candles") if spy_5m else []
-    vix_target = quotes.get("vix1d") or quotes.get("vix")
-    shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
-    if shock_alert and shock_alert.get("active"):
-        send_telegram_shock_alert(shock_alert, spx_p)
-
-    def yield_info(q):
-        if not q or q.get("price") is None:
-            return None, None
-        s = 10.0 if q["price"] > 25 else 1.0
-        lvl = q["price"] / s
-        bp = int(round((q["change"] / s) * 100)) if q.get("change") is not None else None
-        return lvl, bp
-
-    y10, y10_bp = yield_info(quotes.get("tnx"))
-    y30, y30_bp = yield_info(quotes.get("tyx"))
-    y3m, y3m_bp = yield_info(quotes.get("irx"))
-    spread_bp = int(round((y10 - y3m) * 100)) if (y10 is not None and y3m is not None) else None
-
-    yields = {
-        "y3m": f"{y3m:.3f}%" if y3m else None, "y10": f"{y10:.3f}%" if y10 else None, "y30": f"{y30:.3f}%" if y30 else None,
-        "y3m_change_text": f"{'+' if y3m_bp > 0 else ''}{y3m_bp} bp" if y3m_bp is not None else None,
-        "y10_change_text": f"{'+' if y10_bp > 0 else ''}{y10_bp} bp" if y10_bp is not None else None,
-        "y30_change_text": f"{'+' if y30_bp > 0 else ''}{y30_bp} bp" if y30_bp is not None else None,
-        "spread": f"{'+' if spread_bp > 0 else ''}{spread_bp} bp" if spread_bp is not None else None,
-        "sources": {"y3m": quotes.get("irx", {}).get("source"), "y10": quotes.get("tnx", {}).get("source"), "y30": quotes.get("tyx", {}).get("source")},
-    }
-
-    def slim(q):
-        return {"price": q["price"], "change": q["change"], "change_pct": q.get("change_pct"), "source": q["source"]} if q else None
-
-    used = [q["source"] for q in quotes.values() if q]
-    counts = {"schwab": sum(1 for s in used if src_kind(s) == "schwab"), "yahoo": sum(1 for s in used if src_kind(s) == "yahoo")}
-
-    return {
-        "status": "success", "timestamp": now_str, "source_summary": f"Schwab {counts['schwab']} · Yahoo {counts['yahoo']}",
-        "schwab_status": schwab_msg, "shock_alert": shock_alert, "spx": q_spx, "es": quotes.get("es"),
-        "vix1d": slim(quotes.get("vix1d")), "vix": slim(quotes.get("vix")),
-        "mag7": quotes.get("mag7"), "econ_events": econ_events,
-        "wti": quotes.get("wti"), "brent": quotes.get("brent"), "yields": yields,
-        "volume_profile": vp, "gex": gex, "rsi": rsi, "cvd": cvd, "direction": direction,
-    }
-
-
-@app.get("/api/callback", response_class=HTMLResponse)
-def schwab_callback(request: Request, code: Optional[str] = None):
-    if not code:
-        return HTMLResponse("<h1>인증 실패</h1>", status_code=400)
-    app_key = os.environ.get("SCHWAB_APP_KEY")
-    app_secret = os.environ.get("SCHWAB_SECRET")
-    redirect_uri = os.environ.get("SCHWAB_REDIRECT_URI") or str(request.url).split("?")[0]
-    res = requests.post(
-        "https://api.schwabapi.com/v1/oauth/token",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
-        auth=(app_key, app_secret),
-        timeout=8,
-    )
-    if res.status_code != 200:
-        return HTMLResponse("<h1>토큰 교환 실패</h1>", status_code=400)
-    body = res.json()
-    refresh_token = body.get("refresh_token", "")
-    access_token = body.get("access_token", "")
-    ttl = int(num(body.get("expires_in")) or 1800)
-    if KV_AVAILABLE:
-        now = time.time()
-        kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TOKEN_TTL)
-        kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
-        kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
-    return HTMLResponse(f"<h1>✅ Schwab 인증 성공</h1><p>새 토큰: {html_lib.escape(refresh_token[:20])}...</p>")
+        fetchRealMarketData(true);
+        setInterval(() => fetchRealMarketData(false), POLL_MS);
+    </script>
+</body>
+</html>
