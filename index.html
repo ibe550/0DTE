@@ -13,9 +13,9 @@
 </head>
 <body class="p-2 md:p-4 max-w-5xl mx-auto text-slate-100">
 
-    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80 bg-amber-950/70 border-amber-800/60 bg-indigo-950/70 text-indigo-300 border-indigo-800/60"></div>
+    <div class="hidden bg-emerald-950/80 text-emerald-300 border-emerald-800/60 bg-rose-950/80 text-rose-300 border-rose-800/60 bg-slate-800 text-slate-300 border-slate-700 bg-emerald-400 bg-rose-400 bg-slate-400 text-emerald-400 text-rose-400 text-slate-500 text-amber-400 bg-amber-950 text-amber-400 border-rose-500 border-emerald-500 border-purple-500 bg-rose-950/90 bg-emerald-950/90 bg-purple-950/90 text-rose-200 text-emerald-200 text-purple-200 bg-rose-900/80 bg-emerald-900/80 bg-purple-900/80 border-rose-500/80 border-emerald-500/80 border-purple-500/80 bg-amber-950/70 border-amber-800/60 bg-indigo-950/70 text-indigo-300 border-indigo-800/60 border-emerald-600 border-rose-600 border-slate-600 border-amber-600"></div>
 
-    <!-- 0. 최상단 실시간 변동성 쇼크 배너 -->
+    <!-- 0. 변동성 쇼크 배너 -->
     <div id="shock-alert-banner" class="hidden card mb-2 p-2.5 md:p-3 border-2 shadow-lg transition-all duration-300">
         <div class="flex items-center justify-between mb-1">
             <span class="flex items-center space-x-1.5 text-xs md:text-sm font-black tracking-tight" id="shock-alert-head">
@@ -30,14 +30,14 @@
         <div class="text-[10px] pl-3 border-l-2 my-1 space-y-0.5" id="shock-alert-reasons"></div>
     </div>
 
-    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지 탑재) -->
+    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지) -->
     <div class="flex justify-between items-center px-1 mb-1">
         <div class="flex items-center space-x-2">
             <span class="text-blue-500 font-bold text-sm md:text-base flex items-center">
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v15.7</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.1</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] text-slate-400">
@@ -48,7 +48,7 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (장중 100% 보존 + 지수 영향 배지) -->
+    <!-- 2. 오늘의 중요 발표 (장 마감까지 보존 + 호재/악재 평가 배지) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
@@ -132,7 +132,7 @@
     </div>
 
     <!-- 4-1. 유가 2열 -->
-    <div class="grid grid-cols-2 gap-1.5 md:gap-2.5 mb-2">
+    <div class="grid grid-cols-2 gap-1.5 md:gap-2.5 mb-1.5">
         <div class="card p-1.5 md:p-3 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] md:text-[11px] text-slate-400 font-medium">WTI CRUDE OIL (CL)</span>
@@ -148,6 +148,19 @@
             </div>
             <div id="brent-price" class="text-sm sm:text-lg md:text-xl font-bold text-slate-500 tracking-tight truncate">--</div>
             <div id="brent-change" class="text-[8px] md:text-xs font-semibold text-slate-500 truncate">--</div>
+        </div>
+    </div>
+
+    <!-- 4-2. Polymarket SPX 1줄 컴팩트 배지 -->
+    <div class="card px-2.5 py-1.5 mb-2 flex items-center justify-between text-[10px] bg-slate-900/80 border-indigo-900/50">
+        <div class="flex items-center space-x-1.5 truncate">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+            <span class="text-indigo-300 font-bold whitespace-nowrap">POLYMARKET</span>
+            <span id="poly-title" class="text-slate-300 font-medium truncate">SPX 마켓 집계 중...</span>
+        </div>
+        <div class="flex items-center space-x-1.5 shrink-0 font-mono">
+            <span id="poly-summary" class="bg-indigo-950 text-indigo-200 border border-indigo-800/80 px-1.5 py-0.5 rounded font-bold">--</span>
+            <span id="poly-source" class="text-[8px] text-slate-500">CLOB</span>
         </div>
     </div>
 
@@ -638,7 +651,6 @@
             });
         }
 
-        // 상단 헤더 컴팩트 RSI 배지 렌더러
         function renderRsi(r) {
             const badge = $('header-rsi-badge');
             if (!badge) return;
@@ -696,7 +708,9 @@
                 setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
                 ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
                 setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
+                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
+                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
+                $('cvd-vertical-grids').innerHTML = '';
                 if (priorBadge) priorBadge.classList.add('hidden');
                 pill.className = 'text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
                 pill.innerHTML = '<span>N/A</span>';
@@ -882,7 +896,18 @@
             return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
-        // [안정화 렌더러] 장 마감까지 100% 보존 + 실시간 컬러 배지 즉시 적용
+        function renderPolymarket(p) {
+            if (!p || !p.available) {
+                setText('poly-title', 'SPX 예측 마켓 수신 중...');
+                setText('poly-summary', '--');
+                return;
+            }
+            setText('poly-title', p.title);
+            setText('poly-summary', p.summary);
+            const srcEl = $('poly-source');
+            if (srcEl && p.source) srcEl.innerText = p.source;
+        }
+
         function renderEconEvents(e) {
             const card = $('econ-card');
             card.classList.remove('hidden');
@@ -915,6 +940,11 @@
                     }
                 } else if (!isPassed) {
                     dot = 'bg-amber-400 animate-pulse';
+                    if (it.forecast) {
+                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                    }
+                } else {
+                    dot = 'bg-slate-500';
                     if (it.forecast) {
                         statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
                     }
@@ -979,6 +1009,7 @@
                     () => renderQuote('wti', data.wti, { pct: true }),
                     () => renderQuote('brent', data.brent, { pct: true }),
                     () => renderYields(data.yields),
+                    () => renderPolymarket(data.polymarket),
                     () => {
                         const vp = data.volume_profile;
                         setText('val-price', vp ? vp.val : null); setText('poc-price', vp ? vp.poc : null); setText('vah-price', vp ? vp.vah : null);
