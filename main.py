@@ -401,7 +401,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (타임아웃 자동 전환 및 정밀 판정 로직)
+# 미국 경제 캘린더 (정확히 1시간 후 자동 제거 로직 탑재)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -436,21 +436,18 @@ HIGH_IMPACT_KEYWORDS = [
 
 
 def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed, elapsed_sec):
-    # 실제 수치가 아직 비어있는 경우
     if not actual_str:
         if is_passed:
-            # 발표 후 20분(1200초) 이내면 수치 대기 상태
             if elapsed_sec <= 1200:
                 return {
                     "tag": "⏳ 속보 수신 중",
                     "tone": "pending",
                     "sentence": f"시장 예상치: {forecast_str or 'N/A'} · 공식 집계 수치 반영 대기 중"
                 }
-            # 발표 후 20분이 지났는데도 외부 피드에 수치가 없으면 '발표 완료'로 자동 전이 (무한 정체 방지)
             return {
                 "tag": "⚪ 발표 완료",
                 "tone": "flat",
-                "sentence": f"예상치 {forecast_str or 'N/A'} · 지표 발표 완료 (수치 지연 또는 시장 부합 소화)"
+                "sentence": f"예상치 {forecast_str or 'N/A'} · 지표 발표 완료 (수치 지연 또는 시장 부합)"
             }
         return {
             "tag": None,
@@ -458,7 +455,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
             "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")
         }
 
-    # 실제 수치가 존재하는 경우
     act_num = _parse_val(actual_str)
     fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
     cmp_label = "예상" if forecast_str else "이전"
@@ -504,7 +500,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
 
 
 def fetch_global_econ_calendar():
-    # Cloudflare 묵은 캐시 방지를 위해 타임스탬프 쿼리 및 no-cache 헤더 적용
     now_sec = int(time.time())
     url = f"https://nfs.faireconomy.media/ff_calendar_thisweek.json?_={now_sec}"
     req_headers = {
@@ -547,7 +542,6 @@ def fetch_global_econ_calendar():
 
 
 def get_today_econ_events(now_et):
-    # 캐시 수명을 15초로 단축하여 실시간 갱신성 보장
     events = cached("econ_events_data", 15, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
@@ -557,9 +551,12 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
+    # [수정 핵심] 발표 전이거나, 발표 시점으로부터 1시간(3600초) 이내인 당일 이벤트만 유지
+    active_today_items = [e for e in today_items if (now_ts - e["ts"]) <= 3600]
+
     is_tomorrow = False
-    target_items = today_items
-    if (not today_items or now_et.hour >= 17) and now_et.hour >= 16:
+    target_items = active_today_items
+    if not active_today_items and now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
             target_items = tomorrow_items
@@ -570,6 +567,11 @@ def get_today_econ_events(now_et):
     for it in target_items:
         passed = (it["ts"] <= now_ts)
         elapsed_sec = int(now_ts - it["ts"]) if passed else 0
+
+        # 당일 지표 중 1시간 경과 시점 즉시 배제
+        if not is_tomorrow and passed and elapsed_sec > 3600:
+            continue
+
         has_actual = bool(it["actual"])
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
         eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed, elapsed_sec)
