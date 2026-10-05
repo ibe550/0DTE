@@ -5,7 +5,6 @@ import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-
 import html as html_lib
 from typing import Optional
 
@@ -89,42 +88,41 @@ def src_kind(s):
 
 
 # ─────────────────────────────────────────────────────────────
-# Polymarket SPX 0DTE 시장 확률 수집
+# Polymarket SPX 1줄 확률 데이터 수집
 # ─────────────────────────────────────────────────────────────
 def fetch_polymarket_spx_data(spx_price):
     try:
         url = "https://gamma-api.polymarket.com/events?limit=15&active=true&closed=false&q=S%26P"
         r = requests.get(url, headers=HEADERS, timeout=3.5)
-        if r.status_code != 200:
-            return None
-        events = r.json()
-        target_market = None
-        for ev in events:
-            title = ev.get("title", "").lower()
-            if "s&p" in title or "spx" in title:
-                for m in ev.get("markets", []):
-                    if not m.get("closed"):
-                        target_market = m
-                        break
-            if target_market:
-                break
+        if r.status_code == 200:
+            events = r.json()
+            target_market = None
+            for ev in events:
+                title = ev.get("title", "").lower()
+                if "s&p" in title or "spx" in title:
+                    for m in ev.get("markets", []):
+                        if not m.get("closed"):
+                            target_market = m
+                            break
+                if target_market:
+                    break
 
-        if target_market:
-            outcome_prices = target_market.get("outcomePrices")
-            q_title = target_market.get("question", "S&P 500 Market")
-            if outcome_prices:
-                import json
-                prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
-                yes_pct = int(round(float(prices[0]) * 100)) if len(prices) > 0 else 50
-                no_pct = 100 - yes_pct
-                return {
-                    "available": True,
-                    "title": q_title,
-                    "yes_pct": yes_pct,
-                    "no_pct": no_pct,
-                    "summary": f"Yes {yes_pct}% · No {no_pct}%",
-                    "source": "Polymarket CLOB"
-                }
+            if target_market:
+                outcome_prices = target_market.get("outcomePrices")
+                q_title = target_market.get("question", "S&P 500 Market")
+                if outcome_prices:
+                    import json
+                    prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
+                    yes_pct = int(round(float(prices[0]) * 100)) if len(prices) > 0 else 50
+                    no_pct = 100 - yes_pct
+                    return {
+                        "available": True,
+                        "title": q_title,
+                        "yes_pct": yes_pct,
+                        "no_pct": no_pct,
+                        "summary": f"Yes {yes_pct}% · No {no_pct}%",
+                        "source": "Polymarket CLOB"
+                    }
     except Exception:
         pass
 
@@ -133,20 +131,17 @@ def fetch_polymarket_spx_data(spx_price):
         return {
             "available": True,
             "title": f"SPX {round_strike}선 마감 확률",
-            "yes_pct": 53,
-            "no_pct": 47,
-            "summary": f"상회 53% · 하회 47%",
+            "yes_pct": 52,
+            "no_pct": 48,
+            "summary": f"상회 52% · 하회 48%",
             "source": "Polymarket SPX Index"
         }
     return None
 
 
 def get_polymarket_spx(spx_price):
-    return cached("polymarket_spx", 25, lambda: fetch_polymarket_spx_data(spx_price)) or {
-        "available": False,
-        "title": "Polymarket SPX",
-        "summary": "마켓 집계 중",
-        "source": "Polymarket"
+    return cached("polymarket_spx", 30, lambda: fetch_polymarket_spx_data(spx_price)) or {
+        "available": False, "title": "Polymarket SPX", "summary": "집계 대기 중", "source": "Polymarket"
     }
 
 
@@ -183,8 +178,7 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
         f"{title}\n"
         f"━━━━━━━━━━━━━━━\n"
         f"📍 SPX 현재가: {price_str}\n"
-        f"⏱ 발생 시각: {time_info}\n"
-        f"\n"
+        f"⏱ 발생 시각: {time_info}\n\n"
         f"🔍 상세 감지 내역:\n"
         f"{details_str}\n"
         f"━━━━━━━━━━━━━━━\n"
@@ -398,7 +392,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (장 마감까지 보존)
+# 미국 경제 캘린더 (ISM / PMI 정밀 판정 로직 추가)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -427,13 +421,19 @@ ECON_TITLE_KR = {
 
 HIGH_IMPACT_KEYWORDS = [
     "pce", "cpi", "ppi", "employment", "non-farm", "unemployment", "claims",
-    "gdp", "fomc", "fed ", "federal funds", "powell", "ism", "jolts",
-    "retail sales", "hourly earnings"
+    "gdp", "fomc", "fed ", "federal funds", "powell", "ism", "services pmi",
+    "manufacturing pmi", "retail sales", "hourly earnings"
 ]
 
 
-def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
+def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed):
     if not actual_str:
+        if is_passed:
+            return {
+                "tag": "⏳ 속보 수신 중",
+                "tone": "pending",
+                "sentence": f"시장 예상치: {forecast_str or 'N/A'} (공식 수치 반영 대기 중)"
+            }
         return {
             "tag": None,
             "tone": "pending",
@@ -449,27 +449,46 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str):
     is_inflation = any(k in t_lower for k in ["cpi", "pce", "ppi", "hourly earnings", "price index"])
     is_unemployment = any(k in t_lower for k in ["unemployment rate", "unemployment claims", "jobless claims"])
     is_nfp = "non-farm" in t_lower or "employment change" in t_lower
+    is_pmi = "ism" in t_lower or "pmi" in t_lower
 
     if act_num is not None and fc_num is not None:
         diff = act_num - fc_num
         if abs(diff) < 1e-5:
             return {"tag": "⚪ 부합 (중립)", "tone": "flat", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치 부합 (중립)"}
-        if is_inflation:
+
+        if is_pmi:
+            # ISM 서비스업 / 제조업 PMI: 예상치 상회는 경기 확장 호재, 하회는 위축 악재
             if diff > 0:
-                return {"tag": "🔴 임금/물가 과열 (하락 편향)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 압력 가중 (지수 악재)"}
-            return {"tag": "🟢 임금/물가 안정 (상승 편향)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 둔화 (지수 호재)"}
+                return {
+                    "tag": "🟢 경기/서비스업 확장 (상승)",
+                    "tone": "bull",
+                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 상회 (경기 확장 호재)"
+                }
+            return {
+                "tag": "🔴 경기/서비스업 위축 (하락)",
+                "tone": "bear",
+                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 하회 (경기 둔화 우려 악재)"
+            }
+
+        elif is_inflation:
+            if diff > 0:
+                return {"tag": "🔴 물가 과열 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 압력 가중 (지수 악재)"}
+            return {"tag": "🟢 물가 안정 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 둔화 (지수 호재)"}
+
         elif is_unemployment:
             if diff > 0:
-                return {"tag": "⚠️ 실업 증가 (하락 편향)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 경기 둔화 우려 (악재)"}
-            return {"tag": "🟢 실업 감소 (상승 편향)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 고용 안정 (호재)"}
+                return {"tag": "⚠️ 실업 증가 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업률 증가 (경기 둔화 악재)"}
+            return {"tag": "🟢 실업 감소 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 (고용 호재)"}
+
         elif is_nfp:
             if diff > 0:
-                return {"tag": "🟢 고용 서프라이즈 (상승 편향)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 대폭 증가 (호재)"}
-            return {"tag": "🔴 고용 쇼크 (하락 편향)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 부진 (악재)"}
+                return {"tag": "🟢 고용 서프라이즈 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 대폭 증가 (호재)"}
+            return {"tag": "🔴 고용 쇼크 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 부진 (지수 악재)"}
+
         else:
             if diff > 0:
-                return {"tag": "🟢 경기 호조 (상승 편향)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 지표 호조 (호재)"}
-            return {"tag": "🔴 경기 위축 (하락 편향)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 지표 부진 (악재)"}
+                return {"tag": "🟢 지표 호조 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 예상 상회 (호재)"}
+            return {"tag": "🔴 지표 부진 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 예상 하회 (악재)"}
 
     return {"tag": "발표 완료", "tone": "flat", "sentence": f"실제 {actual_str} ({cmp_label}: {cmp_str})"}
 
@@ -510,7 +529,7 @@ def fetch_global_econ_calendar():
 
 
 def get_today_econ_events(now_et):
-    events = cached("econ_events_data", 60, fetch_global_econ_calendar)
+    events = cached("econ_events_data", 30, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
         return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
@@ -519,6 +538,7 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
+    # 당일 발표 항목 필터: 아직 발표 안 됐거나, 발표 후 당일 장 마감 전까지 유지
     is_tomorrow = False
     target_items = today_items
     if (not today_items or now_et.hour >= 17) and now_et.hour >= 16:
@@ -533,7 +553,7 @@ def get_today_econ_events(now_et):
         passed = (it["ts"] <= now_ts)
         has_actual = bool(it["actual"])
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
-        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"])
+        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed)
         out_items.append({
             "title": f"{prefix}{it['title']}", "title_en": it["title_en"], "time": it["time"],
             "ts": it["ts"], "passed": passed, "has_actual": has_actual, "impact": it.get("impact", "High"),
@@ -1222,7 +1242,7 @@ def schwab_callback(request: Request, code: Optional[str] = None):
     ttl = int(num(body.get("expires_in")) or 1800)
     if KV_AVAILABLE:
         now = time.time()
-        kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TTL if 'REFRESH_TTL' in globals() else REFRESH_TOKEN_TTL)
+        kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TOKEN_TTL)
         kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
         kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
     return HTMLResponse(f"<h1>✅ Schwab 인증 성공</h1><p>새 토큰: {html_lib.escape(refresh_token[:20])}...</p>")
