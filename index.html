@@ -37,7 +37,7 @@
                 <svg class="icon-sm mr-1 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.2</span>
+            <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.3</span>
             <span id="global-source-badge" class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] text-slate-400">
@@ -48,7 +48,7 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 (ISM / 고용 / 물가 실시간 지수 영향 배지) -->
+    <!-- 2. 오늘의 중요 발표 (장 마감까지 보존 + 호재/악재 평가 배지) -->
     <div id="econ-card" class="card p-2 md:p-3 mb-2 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
             <span class="text-[10px] text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 (Eastern Time)</span>
@@ -829,7 +829,7 @@
                 setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
                 setTone('dir-top-score', 'text-slate-500');
                 $('dir-head').className = 'flex items-center space-x-1.5 text-xs font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
+                $('dir-gauge-pin').style.left = '50%'; $('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
                 tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
                 list.innerHTML = '';
                 return;
@@ -908,6 +908,7 @@
             if (srcEl && p.source) srcEl.innerText = p.source;
         }
 
+        // [버그 수정 완료] 하드코딩 제거 및 백엔드 판정 결과 동적 렌더러
         function renderEconEvents(e) {
             const card = $('econ-card');
             card.classList.remove('hidden');
@@ -922,35 +923,41 @@
             $('econ-list').innerHTML = items.map((it) => {
                 const isPassed = it.passed;
                 const hasActual = it.has_actual;
-                
+                const tone = it.eval_tone;
+                const tag = it.eval_tag;
+
                 let statusBadge = '';
                 let dot = 'bg-slate-500';
                 let sentenceColor = 'text-slate-400';
 
-                if (hasActual) {
-                    if (it.eval_tone === 'bull') {
-                        statusBadge = `<span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(it.eval_tag)}</span>`;
-                        sentenceColor = 'text-emerald-300 font-bold';
-                    } else if (it.eval_tone === 'bear') {
-                        statusBadge = `<span class="text-[9px] bg-rose-950 text-rose-300 border border-rose-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(it.eval_tag)}</span>`;
-                        sentenceColor = 'text-rose-300 font-bold';
-                    } else {
-                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(it.eval_tag)}</span>`;
-                        sentenceColor = 'text-slate-300 font-medium';
-                    }
-                } else if (isPassed) {
-                    dot = 'bg-amber-400 animate-pulse';
-                    statusBadge = `<span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-600 px-1.5 py-0.5 rounded font-bold">⏳ 속보 수신 중</span>`;
-                    sentenceColor = 'text-amber-300/80 font-mono';
+                if (tone === 'bull') {
+                    dot = 'bg-emerald-400';
+                    statusBadge = `<span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(tag)}</span>`;
+                    sentenceColor = 'text-emerald-300 font-bold';
+                } else if (tone === 'bear') {
+                    dot = 'bg-rose-400';
+                    statusBadge = `<span class="text-[9px] bg-rose-950 text-rose-300 border border-rose-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(tag)}</span>`;
+                    sentenceColor = 'text-rose-300 font-bold';
+                } else if (tone === 'flat') {
+                    dot = 'bg-slate-400';
+                    statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(tag || '발표 완료')}</span>`;
+                    sentenceColor = 'text-slate-300 font-medium';
                 } else {
-                    dot = 'bg-amber-400';
-                    if (it.forecast) {
-                        statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                    // tone === 'pending'
+                    if (isPassed) {
+                        dot = 'bg-amber-400 animate-pulse';
+                        statusBadge = `<span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(tag || '⏳ 속보 수신 중')}</span>`;
+                        sentenceColor = 'text-amber-300/80 font-mono';
+                    } else {
+                        dot = 'bg-slate-500';
+                        if (it.forecast) {
+                            statusBadge = `<span class="text-[9px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
+                        }
                     }
                 }
 
-                const titleCls = hasActual ? 'text-slate-200 font-bold' : (isPassed ? 'text-amber-200 font-bold' : 'text-slate-300');
-                const timeStatus = hasActual ? '발표완료' : (isPassed ? '수치 반영 중' : '발표예정');
+                const titleCls = hasActual ? 'text-slate-200 font-bold' : (isPassed && tone === 'pending' ? 'text-amber-200 font-bold' : 'text-slate-300');
+                const timeStatus = hasActual ? '발표완료' : (isPassed ? (tone === 'pending' ? '속보 수신' : '발표완료') : '발표예정');
 
                 return `<div class="py-1.5 border-b border-slate-800/60 last:border-0">
                     <div class="flex items-center justify-between text-[11px]">
