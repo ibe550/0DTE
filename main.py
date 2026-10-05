@@ -97,68 +97,56 @@ def src_kind(s):
 
 
 # ─────────────────────────────────────────────────────────────
-# Polymarket SPX 1줄 확률 데이터 수집
+# 영속 저장소 (Vercel KV / Redis)
 # ─────────────────────────────────────────────────────────────
-def fetch_polymarket_spx_data(spx_price):
-    try:
-        url = "https://gamma-api.polymarket.com/events?limit=15&active=true&closed=false&q=S%26P"
-        r = requests.get(url, headers=HEADERS, timeout=3.5)
-        if r.status_code == 200:
-            events = r.json()
-            target_market = None
-            for ev in events:
-                title = ev.get("title", "").lower()
-                if "s&p" in title or "spx" in title:
-                    for m in ev.get("markets", []):
-                        if not m.get("closed"):
-                            target_market = m
-                            break
-                if target_market:
-                    break
+def _kv_config():
+    url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
+    token = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    return (url.rstrip("/"), token) if url and token else (None, None)
 
-            if target_market:
-                outcome_prices = target_market.get("outcomePrices")
-                q_title = target_market.get("question", "S&P 500 Market")
-                if outcome_prices:
-                    import json
-                    prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
-                    yes_pct = int(round(float(prices[0]) * 100)) if len(prices) > 0 else 50
-                    no_pct = 100 - yes_pct
-                    return {
-                        "available": True,
-                        "title": q_title,
-                        "yes_pct": yes_pct,
-                        "no_pct": no_pct,
-                        "summary": f"Yes {yes_pct}% · No {no_pct}%",
-                        "source": "Polymarket CLOB"
-                    }
+
+def kv_cmd(*args):
+    url, token = _kv_config()
+    if not url:
+        return None
+    try:
+        r = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=list(args),
+            timeout=4,
+        )
+        if r.status_code == 200:
+            return r.json().get("result")
     except Exception:
         pass
-
-    if spx_price:
-        round_strike = int(round(spx_price / 10.0)) * 10
-        return {
-            "available": True,
-            "title": f"SPX {round_strike}선 마감 확률",
-            "yes_pct": 52,
-            "no_pct": 48,
-            "summary": f"상회 52% · 하회 48%",
-            "source": "Polymarket SPX Index"
-        }
     return None
 
 
-def get_polymarket_spx(spx_price):
-    return cached("polymarket_spx", 30, lambda: fetch_polymarket_spx_data(spx_price)) or {
-        "available": False, "title": "Polymarket SPX", "summary": "집계 대기 중", "source": "Polymarket"
-    }
+def kv_get(key):
+    return kv_cmd("GET", key)
+
+
+def kv_set(key, value, ex_seconds=None):
+    if ex_seconds:
+        return kv_cmd("SET", key, value, "EX", str(int(ex_seconds))) is not None
+    return kv_cmd("SET", key, value) is not None
+
+
+KV_AVAILABLE = _kv_config()[0] is not None
+_TOKEN = {"value": None, "exp": 0.0}
+SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
+KV_KEY_ACCESS = "schwab:access_token"
+KV_KEY_ACCESS_EXP = "schwab:access_token_exp"
+KV_KEY_REFRESH = "schwab:refresh_token"
+REFRESH_TOKEN_TTL = 8 * 24 * 3600
 
 
 # ─────────────────────────────────────────────────────────────
-# 텔레그램 실시간 알림 시스템
+# 텔레그램 실시간 알림 시스템 (핑퐁 방지 및 절대 쿨다운 적용)
 # ─────────────────────────────────────────────────────────────
 _LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
-TELEGRAM_COOLDOWN_SEC = 600
+TELEGRAM_COOLDOWN_SEC = 600  # 절대 쿨다운: 10분(600초)
 
 
 def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
@@ -171,12 +159,20 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
 
     now_ts = time.time()
     s_type = shock_alert.get("type")
+
     if not force_test:
-        if now_ts - _LAST_TELEGRAM_SHOCK["ts"] < TELEGRAM_COOLDOWN_SEC and _LAST_TELEGRAM_SHOCK["type"] == s_type:
-            return {"status": "skipped", "reason": "쿨다운 중"}
+        # Vercel 인스턴스 재생성 대비 KV 기반 영속 타임스탬프 조회
+        kv_last_ts = num(kv_get("alert:telegram:last_ts")) if KV_AVAILABLE else None
+        last_ts = max(_LAST_TELEGRAM_SHOCK["ts"], kv_last_ts or 0.0)
+
+        # [버그 수정] 유형(DROP/SURGE)과 무관하게 10분 동안은 어떠한 쇼크 알림도 재발송 금지
+        if now_ts - last_ts < TELEGRAM_COOLDOWN_SEC:
+            return {"status": "skipped", "reason": "쿨다운 침묵 중 (핑퐁 방지)"}
 
     _LAST_TELEGRAM_SHOCK["ts"] = now_ts
     _LAST_TELEGRAM_SHOCK["type"] = s_type
+    if KV_AVAILABLE:
+        kv_set("alert:telegram:last_ts", str(now_ts), ex_seconds=TELEGRAM_COOLDOWN_SEC)
 
     title = shock_alert.get("title", "⚡ [변동성 쇼크]")
     time_info = shock_alert.get("elapsed_text") or shock_alert.get("timestamp") or ""
@@ -207,46 +203,8 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
 
 
 # ─────────────────────────────────────────────────────────────
-# 영속 저장소 & Schwab 인증
+# Schwab 토큰 인증 관리
 # ─────────────────────────────────────────────────────────────
-def _kv_config():
-    url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
-    token = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-    return (url.rstrip("/"), token) if url and token else (None, None)
-
-
-def kv_cmd(*args):
-    url, token = _kv_config()
-    if not url:
-        return None
-    try:
-        r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=list(args), timeout=4)
-        if r.status_code == 200:
-            return r.json().get("result")
-    except Exception:
-        pass
-    return None
-
-
-def kv_get(key):
-    return kv_cmd("GET", key)
-
-
-def kv_set(key, value, ex_seconds=None):
-    if ex_seconds:
-        return kv_cmd("SET", key, value, "EX", str(int(ex_seconds))) is not None
-    return kv_cmd("SET", key, value) is not None
-
-
-KV_AVAILABLE = _kv_config()[0] is not None
-_TOKEN = {"value": None, "exp": 0.0}
-SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
-KV_KEY_ACCESS = "schwab:access_token"
-KV_KEY_ACCESS_EXP = "schwab:access_token_exp"
-KV_KEY_REFRESH = "schwab:refresh_token"
-REFRESH_TOKEN_TTL = 8 * 24 * 3600
-
-
 def get_schwab_token(force_refresh=False):
     now = time.time()
     if not force_refresh and _TOKEN["value"] and now < _TOKEN["exp"]:
@@ -401,7 +359,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (정확히 1시간 후 자동 제거 로직 탑재)
+# 미국 경제 캘린더 (1시간 경과 시 자동 제거)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -551,7 +509,7 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
-    # [수정 핵심] 발표 전이거나, 발표 시점으로부터 1시간(3600초) 이내인 당일 이벤트만 유지
+    # 발표 후 1시간(3600초) 이내의 항목만 화면에 유지
     active_today_items = [e for e in today_items if (now_ts - e["ts"]) <= 3600]
 
     is_tomorrow = False
@@ -568,7 +526,6 @@ def get_today_econ_events(now_et):
         passed = (it["ts"] <= now_ts)
         elapsed_sec = int(now_ts - it["ts"]) if passed else 0
 
-        # 당일 지표 중 1시간 경과 시점 즉시 배제
         if not is_tomorrow and passed and elapsed_sec > 3600:
             continue
 
@@ -583,6 +540,64 @@ def get_today_econ_events(now_et):
         })
 
     return {"items": out_items, "source": "공식 경제 캘린더 (ET 전용)", "error": None}
+
+
+# ─────────────────────────────────────────────────────────────
+# Polymarket SPX 마켓 데이터 수집
+# ─────────────────────────────────────────────────────────────
+def fetch_polymarket_spx_data(spx_price):
+    try:
+        url = "https://gamma-api.polymarket.com/events?limit=15&active=true&closed=false&q=S%26P"
+        r = requests.get(url, headers=HEADERS, timeout=3.5)
+        if r.status_code == 200:
+            events = r.json()
+            target_market = None
+            for ev in events:
+                title = ev.get("title", "").lower()
+                if "s&p" in title or "spx" in title:
+                    for m in ev.get("markets", []):
+                        if not m.get("closed"):
+                            target_market = m
+                            break
+                if target_market:
+                    break
+
+            if target_market:
+                outcome_prices = target_market.get("outcomePrices")
+                q_title = target_market.get("question", "S&P 500 Market")
+                if outcome_prices:
+                    import json
+                    prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
+                    yes_pct = int(round(float(prices[0]) * 100)) if len(prices) > 0 else 50
+                    no_pct = 100 - yes_pct
+                    return {
+                        "available": True,
+                        "title": q_title,
+                        "yes_pct": yes_pct,
+                        "no_pct": no_pct,
+                        "summary": f"Yes {yes_pct}% · No {no_pct}%",
+                        "source": "Polymarket CLOB"
+                    }
+    except Exception:
+        pass
+
+    if spx_price:
+        round_strike = int(round(spx_price / 10.0)) * 10
+        return {
+            "available": True,
+            "title": f"SPX {round_strike}선 마감 확률",
+            "yes_pct": 52,
+            "no_pct": 48,
+            "summary": f"상회 52% · 하회 48%",
+            "source": "Polymarket SPX Index"
+        }
+    return None
+
+
+def get_polymarket_spx(spx_price):
+    return cached("polymarket_spx", 30, lambda: fetch_polymarket_spx_data(spx_price)) or {
+        "available": False, "title": "Polymarket SPX", "summary": "집계 대기 중", "source": "Polymarket"
+    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -820,7 +835,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
 
 
 # ─────────────────────────────────────────────────────────────
-# GEX & 방향 분석 & 변동성 쇼크
+# GEX & 방향 분석 & 변동성 쇼크 (완충 버퍼 및 핑퐁 방지)
 # ─────────────────────────────────────────────────────────────
 def bs_gamma(S, K, T, sigma, r=0.0):
     if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
@@ -1006,6 +1021,7 @@ def get_gex(token, spx_p, ratio, now_et):
     return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
 
+# [완벽 수정] 핑퐁 오발송 및 반등 오경보 차단 로직
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
     if not spx_p:
         return {"active": False}
@@ -1021,40 +1037,51 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
     reasons, shock_type, level = [], "NORMAL", "NORMAL"
     elapsed_text = ""
 
-    if recent_bars and ratio:
-        high_bar = max(recent_bars, key=lambda b: b["h"])
-        low_bar = min(recent_bars, key=lambda b: b["l"])
+    # 1. 캔들 기반 순방향(Net) 변위 측정
+    # 극단값 꼬리(High-Low)를 재활용하지 않고, 봉의 시작가 대비 종가 순변위(Net Change)로만 방향 판정
+    if len(recent_bars) >= 2 and ratio:
         curr_c = recent_bars[-1]["c"] * ratio
-        drop = curr_c - (high_bar["h"] * ratio)
-        rally = curr_c - (low_bar["l"] * ratio)
+        net_15m = curr_c - (recent_bars[-3]["o"] * ratio if len(recent_bars) >= 3 else recent_bars[0]["o"] * ratio)
+        fast_5m = curr_c - (recent_bars[-2]["c"] * ratio)
 
-        if drop <= -14.0:
-            elapsed_min = int(max((now_et.timestamp() - high_bar["t"]) // 60, 1))
-            if elapsed_min <= 30:
-                shock_type = "DROP"
-                level = "CRITICAL" if drop <= -24.0 else "WARNING"
-                s_label = datetime.fromtimestamp(high_bar["t"], ET).strftime("%H:%M ET")
-                elapsed_text = f"{s_label} 시작 ({elapsed_min}분 경과)"
-                reasons.append(f"{s_label}부터 {drop:.1f}pt 단기 급락 발생")
+        if fast_5m <= -10.0 or net_15m <= -16.0:
+            shock_type = "DROP"
+            level = "CRITICAL" if (fast_5m <= -15.0 or net_15m <= -24.0) else "WARNING"
+            val = fast_5m if fast_5m <= -10.0 else net_15m
+            reasons.append(f"단기 급락 압력 발생 ({val:.1f}pt 하락)")
 
-        elif rally >= 14.0:
-            elapsed_min = int(max((now_et.timestamp() - low_bar["t"]) // 60, 1))
-            if elapsed_min <= 30:
-                shock_type = "SURGE"
-                level = "CRITICAL" if rally >= 24.0 else "WARNING"
-                s_label = datetime.fromtimestamp(low_bar["t"], ET).strftime("%H:%M ET")
-                elapsed_text = f"{s_label} 시작 ({elapsed_min}분 경과)"
-                reasons.append(f"{s_label}부터 +{rally:.1f}pt 단기 급등 발생")
+        elif fast_5m >= 10.0 or net_15m >= 16.0:
+            shock_type = "SURGE"
+            level = "CRITICAL" if (fast_5m >= 15.0 or net_15m >= 24.0) else "WARNING"
+            val = fast_5m if fast_5m >= 10.0 else net_15m
+            reasons.append(f"단기 급등 모멘텀 발생 (+{val:.1f}pt 상승)")
 
+    # 2. GEX Wall 돌파/붕괴 (완충 버퍼 2.5pt 적용으로 미세 떨림 무시)
     if gex and gex.get("available") and gex.get("is_0dte"):
         pw, cw = gex.get("put_wall"), gex.get("call_wall")
-        if pw and spx_p < pw:
+        BUFFER = 2.5  # 2.5pt 완충 구역
+
+        if pw and spx_p < (pw - BUFFER):
             reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({spx_p - pw:.1f}pt)")
             shock_type, level = "DROP", "CRITICAL"
-        if cw and spx_p > cw:
-            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 (+{spx_p - cw:.1f}pt)")
+
+        elif cw and spx_p > (cw + BUFFER):
+            reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 이탈 (+{spx_p - cw:.1f}pt)")
             shock_type, level = "SURGE", "CRITICAL"
 
+        # [핑퐁 버그 원천 차단]
+        # 방금 Put Wall 밑으로 떨어졌다가 살짝 올라온 것은 단순 '박스권 복귀'이지 '급등(SURGE)'이 아님!
+        if shock_type == "SURGE" and pw:
+            if spx_p <= pw + 4.0:
+                # Put Wall 근처의 턱걸이 반등은 급등 경보를 절대 울리지 않고 취소
+                return {"active": False}
+
+        if shock_type == "DROP" and cw:
+            if spx_p >= cw - 4.0:
+                # Call Wall 근처의 숨고르기 풀백은 급락 경보를 울리지 않고 취소
+                return {"active": False}
+
+    # 3. 보조 지표 확인 (CVD/VIX1D)
     if cvd and not cvd.get("is_prior"):
         if cvd.get("sell_pct", 0) >= 65 and shock_type == "DROP":
             reasons.append(f"기관 매도 덤핑 폭발 (Sell {cvd['sell_pct']}%)")
@@ -1067,11 +1094,24 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
             reasons.append(f"0DTE 변동성(VIX1D) 스파이크 폭등 (+{vix_pct:.1f}%)")
 
     is_active = len(reasons) > 0 and (shock_type in ("DROP", "SURGE"))
-    title = "🚨 [변동성 쇼크 · 급락 경보]" if shock_type == "DROP" and level == "CRITICAL" else ("⚠️ [변동성 쇼크 · 하방 주의보]" if shock_type == "DROP" else ("🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]"))
+    title = (
+        "🚨 [변동성 쇼크 · 급락 경보]"
+        if shock_type == "DROP" and level == "CRITICAL"
+        else (
+            "⚠️ [변동성 쇼크 · 하방 주의보]"
+            if shock_type == "DROP"
+            else ("🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]")
+        )
+    )
 
     return {
-        "active": is_active, "type": shock_type, "level": level, "title": title,
-        "elapsed_text": elapsed_text, "details": reasons, "timestamp": now_et.strftime("%H:%M:%S ET")
+        "active": is_active,
+        "type": shock_type,
+        "level": level,
+        "title": title,
+        "elapsed_text": elapsed_text or now_et.strftime("%H:%M ET"),
+        "details": reasons,
+        "timestamp": now_et.strftime("%H:%M:%S ET"),
     }
 
 
@@ -1090,7 +1130,15 @@ def analyze_tf(candles):
     rsi_score = 1.0 if rsi_val >= 55 else (-1.0 if rsi_val <= 45 else 0.0)
 
     score = max(-6.0, min(6.0, p_vs_e5 + e5_vs_e13 + e13_vs_e21 + e5_slope + rsi_score))
-    label, tone = ("상승 우세", "bull") if score >= 3.0 else (("상승 편향", "bull") if score >= 1.2 else (("중립", "flat") if score > -1.2 else (("하락 편향", "bear") if score > -3.0 else ("하락 우세", "bear"))))
+    label, tone = (
+        ("상승 우세", "bull")
+        if score >= 3.0
+        else (
+            ("상승 편향", "bull")
+            if score >= 1.2
+            else (("중립", "flat") if score > -1.2 else (("하락 편향", "bear") if score > -3.0 else ("하락 우세", "bear")))
+        )
+    )
     return {"score": round(score, 1), "status": label, "tone": tone}
 
 
@@ -1109,21 +1157,46 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
         score += 1.0 if cvd_data.get("tone") == "bull" else (-1.5 if cvd_data.get("tone") == "bear" else 0)
 
     score = max(-6.0, min(6.0, score))
-    label, tone = ("상승 우세", "bull") if score >= 3.0 else (("상승 편향", "bull") if score >= 1.2 else (("중립", "flat") if score > -1.2 else (("하락 편향", "bear") if score > -3.0 else ("하락 우세", "bear"))))
+    label, tone = (
+        ("상승 우세", "bull")
+        if score >= 3.0
+        else (
+            ("상승 편향", "bull")
+            if score >= 1.2
+            else (("중립", "flat") if score > -1.2 else (("하락 편향", "bear") if score > -3.0 else ("하락 우세", "bear")))
+        )
+    )
     match_pct = int(round(sum(1 for v in avail.values() if v["tone"] == tone) / len(avail) * 100))
 
     evidence = []
     if vwap_diff is not None:
-        evidence.append({"title": "VWAP 위치", "signal": "bull" if vwap_diff > 0 else ("bear" if vwap_diff < 0 else "flat"), "text": f"현재가가 당일 VWAP {'위' if vwap_diff > 0 else '아래'} ({vwap_diff:+.2f}pt)"})
+        evidence.append(
+            {
+                "title": "VWAP 위치",
+                "signal": "bull" if vwap_diff > 0 else ("bear" if vwap_diff < 0 else "flat"),
+                "text": f"현재가가 당일 VWAP {'위' if vwap_diff > 0 else '아래'} ({vwap_diff:+.2f}pt)",
+            }
+        )
     if cvd_data:
-        evidence.append({"title": "CVD 볼륨 압력", "signal": cvd_data["tone"], "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)"})
+        evidence.append(
+            {
+                "title": "CVD 볼륨 압력",
+                "signal": cvd_data["tone"],
+                "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)",
+            }
+        )
 
     return {
-        "available": True, "score": round(score, 1), "score_text": f"{score:+.1f}",
-        "status": label, "tone": tone, "match_pct": match_pct,
+        "available": True,
+        "score": round(score, 1),
+        "score_text": f"{score:+.1f}",
+        "status": label,
+        "tone": tone,
+        "match_pct": match_pct,
         "summary": f"단기 모멘텀과 체결 압력이 {'상승' if tone=='bull' else ('하락' if tone=='bear' else '중립')} 쪽입니다. {match_pct}% 일치.",
         "tfs": {k: ({**avail[k], "source": tf_sources.get(k)} if k in avail else None) for k in ("1h", "15m", "5m", "1m")},
-        "evidence": evidence, "source": "Schwab+Yahoo (SPY) · 0DTE EMA(5/13/21)·VWAP·CVD 결합",
+        "evidence": evidence,
+        "source": "Schwab+Yahoo (SPY) · 0DTE EMA(5/13/21)·VWAP·CVD 결합",
     }
 
 
@@ -1134,10 +1207,13 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
 def test_telegram_alert():
     now_et = datetime.now(ET)
     mock = {
-        "active": True, "type": "DROP", "level": "CRITICAL",
+        "active": True,
+        "type": "DROP",
+        "level": "CRITICAL",
         "title": "🚨 [시스템 테스트] 텔레그램 연동 정상 작동 확인",
-        "timestamp": now_et.strftime("%H:%M:%S ET"), "elapsed_text": f"{now_et.strftime('%H:%M ET')} 테스트 발송",
-        "details": ["환경변수 연동 성공", "실시간 급변동 감지 시 이와 동일하게 자동 전송됩니다."]
+        "timestamp": now_et.strftime("%H:%M:%S ET"),
+        "elapsed_text": f"{now_et.strftime('%H:%M ET')} 테스트 발송",
+        "details": ["환경변수 연동 성공", "실시간 급변동 감지 시 이와 동일하게 자동 전송됩니다."],
     }
     return {"status": "ok", "result": send_telegram_shock_alert(mock, 5750.0, force_test=True)}
 
@@ -1216,12 +1292,18 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     spread_bp = int(round((y10 - y3m) * 100)) if (y10 is not None and y3m is not None) else None
 
     yields = {
-        "y3m": f"{y3m:.3f}%" if y3m else None, "y10": f"{y10:.3f}%" if y10 else None, "y30": f"{y30:.3f}%" if y30 else None,
+        "y3m": f"{y3m:.3f}%" if y3m else None,
+        "y10": f"{y10:.3f}%" if y10 else None,
+        "y30": f"{y30:.3f}%" if y30 else None,
         "y3m_change_text": f"{'+' if y3m_bp > 0 else ''}{y3m_bp} bp" if y3m_bp is not None else None,
         "y10_change_text": f"{'+' if y10_bp > 0 else ''}{y10_bp} bp" if y10_bp is not None else None,
         "y30_change_text": f"{'+' if y30_bp > 0 else ''}{y30_bp} bp" if y30_bp is not None else None,
         "spread": f"{'+' if spread_bp > 0 else ''}{spread_bp} bp" if spread_bp is not None else None,
-        "sources": {"y3m": quotes.get("irx", {}).get("source"), "y10": quotes.get("tnx", {}).get("source"), "y30": quotes.get("tyx", {}).get("source")},
+        "sources": {
+            "y3m": quotes.get("irx", {}).get("source"),
+            "y10": quotes.get("tnx", {}).get("source"),
+            "y30": quotes.get("tyx", {}).get("source"),
+        },
     }
 
     def slim(q):
@@ -1231,13 +1313,26 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     counts = {"schwab": sum(1 for s in used if src_kind(s) == "schwab"), "yahoo": sum(1 for s in used if src_kind(s) == "yahoo")}
 
     return {
-        "status": "success", "timestamp": now_str, "source_summary": f"Schwab {counts['schwab']} · Yahoo {counts['yahoo']}",
-        "schwab_status": schwab_msg, "shock_alert": shock_alert, "spx": q_spx, "es": quotes.get("es"),
-        "vix1d": slim(quotes.get("vix1d")), "vix": slim(quotes.get("vix")),
-        "mag7": quotes.get("mag7"), "econ_events": econ_events,
-        "wti": quotes.get("wti"), "brent": quotes.get("brent"), "yields": yields,
+        "status": "success",
+        "timestamp": now_str,
+        "source_summary": f"Schwab {counts['schwab']} · Yahoo {counts['yahoo']}",
+        "schwab_status": schwab_msg,
+        "shock_alert": shock_alert,
+        "spx": q_spx,
+        "es": quotes.get("es"),
+        "vix1d": slim(quotes.get("vix1d")),
+        "vix": slim(quotes.get("vix")),
+        "mag7": quotes.get("mag7"),
+        "econ_events": econ_events,
+        "wti": quotes.get("wti"),
+        "brent": quotes.get("brent"),
+        "yields": yields,
         "polymarket": polymarket,
-        "volume_profile": vp, "gex": gex, "rsi": rsi, "cvd": cvd, "direction": direction,
+        "volume_profile": vp,
+        "gex": gex,
+        "rsi": rsi,
+        "cvd": cvd,
+        "direction": direction,
     }
 
 
