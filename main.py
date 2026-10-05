@@ -44,7 +44,16 @@ def num(x):
 def _parse_val(s):
     if not s or not isinstance(s, str):
         return None
-    cleaned = s.replace("%", "").replace("K", "").replace("M", "").replace("B", "").replace(",", "").strip()
+    cleaned = (
+        s.replace("%", "")
+        .replace("K", "")
+        .replace("k", "")
+        .replace("M", "")
+        .replace("m", "")
+        .replace("B", "")
+        .replace(",", "")
+        .strip()
+    )
     try:
         return float(cleaned)
     except ValueError:
@@ -392,7 +401,7 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (ISM / PMI 정밀 판정 로직 추가)
+# 미국 경제 캘린더 (타임아웃 자동 전환 및 정밀 판정 로직)
 # ─────────────────────────────────────────────────────────────
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
@@ -426,13 +435,22 @@ HIGH_IMPACT_KEYWORDS = [
 ]
 
 
-def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed):
+def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed, elapsed_sec):
+    # 실제 수치가 아직 비어있는 경우
     if not actual_str:
         if is_passed:
+            # 발표 후 20분(1200초) 이내면 수치 대기 상태
+            if elapsed_sec <= 1200:
+                return {
+                    "tag": "⏳ 속보 수신 중",
+                    "tone": "pending",
+                    "sentence": f"시장 예상치: {forecast_str or 'N/A'} · 공식 집계 수치 반영 대기 중"
+                }
+            # 발표 후 20분이 지났는데도 외부 피드에 수치가 없으면 '발표 완료'로 자동 전이 (무한 정체 방지)
             return {
-                "tag": "⏳ 속보 수신 중",
-                "tone": "pending",
-                "sentence": f"시장 예상치: {forecast_str or 'N/A'} (공식 수치 반영 대기 중)"
+                "tag": "⚪ 발표 완료",
+                "tone": "flat",
+                "sentence": f"예상치 {forecast_str or 'N/A'} · 지표 발표 완료 (수치 지연 또는 시장 부합 소화)"
             }
         return {
             "tag": None,
@@ -440,6 +458,7 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
             "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")
         }
 
+    # 실제 수치가 존재하는 경우
     act_num = _parse_val(actual_str)
     fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
     cmp_label = "예상" if forecast_str else "이전"
@@ -457,18 +476,9 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
             return {"tag": "⚪ 부합 (중립)", "tone": "flat", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치 부합 (중립)"}
 
         if is_pmi:
-            # ISM 서비스업 / 제조업 PMI: 예상치 상회는 경기 확장 호재, 하회는 위축 악재
             if diff > 0:
-                return {
-                    "tag": "🟢 경기/서비스업 확장 (상승)",
-                    "tone": "bull",
-                    "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 상회 (경기 확장 호재)"
-                }
-            return {
-                "tag": "🔴 경기/서비스업 위축 (하락)",
-                "tone": "bear",
-                "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 하회 (경기 둔화 우려 악재)"
-            }
+                return {"tag": "🟢 경기/서비스업 확장 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 상회 (경기 확장 호재)"}
+            return {"tag": "🔴 경기/서비스업 위축 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 하회 (경기 둔화 우려 악재)"}
 
         elif is_inflation:
             if diff > 0:
@@ -494,9 +504,17 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
 
 
 def fetch_global_econ_calendar():
-    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    # Cloudflare 묵은 캐시 방지를 위해 타임스탬프 쿼리 및 no-cache 헤더 적용
+    now_sec = int(time.time())
+    url = f"https://nfs.faireconomy.media/ff_calendar_thisweek.json?_={now_sec}"
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Accept": "application/json",
+    }
     try:
-        r = requests.get(url, headers=HEADERS, timeout=6.0)
+        r = requests.get(url, headers=req_headers, timeout=5.0)
         if r.status_code != 200:
             return None
         data = r.json()
@@ -529,7 +547,8 @@ def fetch_global_econ_calendar():
 
 
 def get_today_econ_events(now_et):
-    events = cached("econ_events_data", 30, fetch_global_econ_calendar)
+    # 캐시 수명을 15초로 단축하여 실시간 갱신성 보장
+    events = cached("econ_events_data", 15, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
         return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
@@ -538,7 +557,6 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
-    # 당일 발표 항목 필터: 아직 발표 안 됐거나, 발표 후 당일 장 마감 전까지 유지
     is_tomorrow = False
     target_items = today_items
     if (not today_items or now_et.hour >= 17) and now_et.hour >= 16:
@@ -551,9 +569,10 @@ def get_today_econ_events(now_et):
     out_items = []
     for it in target_items:
         passed = (it["ts"] <= now_ts)
+        elapsed_sec = int(now_ts - it["ts"]) if passed else 0
         has_actual = bool(it["actual"])
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
-        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed)
+        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed, elapsed_sec)
         out_items.append({
             "title": f"{prefix}{it['title']}", "title_en": it["title_en"], "time": it["time"],
             "ts": it["ts"], "passed": passed, "has_actual": has_actual, "impact": it.get("impact", "High"),
