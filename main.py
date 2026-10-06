@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import html as html_lib
 from typing import Optional
+import xml.etree.ElementTree as ET_xml
 
 import pytz
 import requests
@@ -143,10 +144,10 @@ REFRESH_TOKEN_TTL = 8 * 24 * 3600
 
 
 # ─────────────────────────────────────────────────────────────
-# 텔레그램 실시간 알림 시스템 (핑퐁 방지 및 절대 쿨다운 적용)
+# 텔레그램 실시간 알림 시스템 (절대 쿨다운 10분)
 # ─────────────────────────────────────────────────────────────
 _LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
-TELEGRAM_COOLDOWN_SEC = 600  # 절대 쿨다운: 10분(600초)
+TELEGRAM_COOLDOWN_SEC = 600
 
 
 def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
@@ -161,11 +162,8 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     s_type = shock_alert.get("type")
 
     if not force_test:
-        # Vercel 인스턴스 재생성 대비 KV 기반 영속 타임스탬프 조회
         kv_last_ts = num(kv_get("alert:telegram:last_ts")) if KV_AVAILABLE else None
         last_ts = max(_LAST_TELEGRAM_SHOCK["ts"], kv_last_ts or 0.0)
-
-        # [버그 수정] 유형(DROP/SURGE)과 무관하게 10분 동안은 어떠한 쇼크 알림도 재발송 금지
         if now_ts - last_ts < TELEGRAM_COOLDOWN_SEC:
             return {"status": "skipped", "reason": "쿨다운 침묵 중 (핑퐁 방지)"}
 
@@ -359,8 +357,98 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 미국 경제 캘린더 (1시간 경과 시 자동 제거)
+# 연준 위원(Fed Speakers) 전용 지능형 분석 엔진
 # ─────────────────────────────────────────────────────────────
+FED_SPEAKERS = {
+    "bowman": {
+        "name": "보우만 이사",
+        "stance": "매파(Hawkish)",
+        "note": "대표적 매파 위원 · 추가 인상 가능성 축소/비둘기파적 발언 시 시장 강력한 숏스퀴즈 상승 호재",
+    },
+    "waller": {
+        "name": "월러 이사",
+        "stance": "매파/실세(Hawkish)",
+        "note": "연준 정책 선행 지표 · 금리 인하 시점 및 경로 발언에 지수 민감 반응",
+    },
+    "powell": {
+        "name": "파월 의장",
+        "stance": "중립/의장(Centrist)",
+        "note": "통화정책 최고 총괄자 · 발언 시 0DTE 양방향 급변동 극대화 주의",
+    },
+    "williams": {
+        "name": "윌리엄스 총재",
+        "stance": "중립/부의장(Centrist)",
+        "note": "FOMC 당연직 부의장 · 연준 지도부 핵심 컨센서스 대변",
+    },
+    "goolsbee": {
+        "name": "굴스비 총재",
+        "stance": "비둘기파(Dovish)",
+        "note": "대표적 완화론자 · 물가 둔화 및 금리 인하 선제 개시 지지",
+    },
+    "kashkari": {
+        "name": "카시카리 총재",
+        "stance": "매파(Hawkish)",
+        "note": "고금리 장기화 선호 위원 · 신중한 금리 인하 강조",
+    },
+    "bostic": {
+        "name": "보스틱 총재",
+        "stance": "중립/신중(Centrist)",
+        "note": "연내 인하 횟수 조절 등 완만한 정책 선호",
+    },
+    "daly": {
+        "name": "데일리 총재",
+        "stance": "중립/비둘기(Dovish)",
+        "note": "노동시장 냉각 경계 및 선제적 정책 완화 지지",
+    },
+    "jefferson": {
+        "name": "제퍼슨 부의장",
+        "stance": "중립(Centrist)",
+        "note": "연준 2인자 · 파월 의장 정책 노선과 일치",
+    },
+    "barr": {
+        "name": "바 부의장",
+        "stance": "중립(Centrist)",
+        "note": "금융감독 담당 부의장 · 유동성 및 은행 건전성 발언 주목",
+    },
+    "kugler": {
+        "name": "쿠글러 이사",
+        "stance": "비둘기파(Dovish)",
+        "note": "노동경제학자 출신 · 고용 안정 및 통화 완화 지지",
+    },
+    "cook": {
+        "name": "쿡 이사",
+        "stance": "비둘기파(Dovish)",
+        "note": "인플레 둔화 지속 시 통화정책 완화 지지",
+    },
+    "logan": {
+        "name": "로건 총재",
+        "stance": "매파(Hawkish)",
+        "note": "양적긴축(QT) 및 유동성 관리 중시",
+    },
+}
+
+
+def fetch_speaker_headline(speaker_key):
+    """실시간 뉴스 RSS에서 해당 연준 위원의 최신 발언 헤드라인 파싱"""
+    def _get():
+        try:
+            url = f"https://news.google.com/rss/search?q=Fed+{speaker_key}+interest+rates&hl=en-US&gl=US&ceid=US:en"
+            r = requests.get(url, headers=HEADERS, timeout=3.5)
+            if r.status_code == 200:
+                root = ET_xml.fromstring(r.text)
+                for it in root.findall(".//item")[:3]:
+                    t = it.findtext("title", "")
+                    if speaker_key.lower() in t.lower() or "fed" in t.lower():
+                        if " - " in t:
+                            t = t.rsplit(" - ", 1)[0]
+                        return t
+        except Exception:
+            pass
+        return None
+
+    return cached(f"fed_news:{speaker_key}", 180, _get)
+
+
 ECON_TITLE_KR = {
     "Average Hourly Earnings m/m": "시간당 평균 임금 (MoM)",
     "Average Hourly Earnings y/y": "시간당 평균 임금 (YoY)",
@@ -389,11 +477,86 @@ ECON_TITLE_KR = {
 HIGH_IMPACT_KEYWORDS = [
     "pce", "cpi", "ppi", "employment", "non-farm", "unemployment", "claims",
     "gdp", "fomc", "fed ", "federal funds", "powell", "ism", "services pmi",
-    "manufacturing pmi", "retail sales", "hourly earnings"
+    "manufacturing pmi", "retail sales", "hourly earnings", "speaks", "speech"
 ]
 
 
 def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed, elapsed_sec):
+    t_lower = title_en.lower()
+    is_speech = any(w in t_lower for w in ["speaks", "speech", "testifies", "press conference", "panel", "discusses"])
+
+    # ─────────────────────────────────────────────────────────────
+    # [특급 개선] 연준 위원 발언/연설 전용 판정 로직
+    # ─────────────────────────────────────────────────────────────
+    if is_speech:
+        speaker_key = None
+        for k in FED_SPEAKERS:
+            if k in t_lower:
+                speaker_key = k
+                break
+
+        spk = FED_SPEAKERS.get(speaker_key, {
+            "name": "연준 위원",
+            "stance": "통화정책 위원",
+            "note": "금리 및 인플레이션 전망 발언에 따른 장중 급변동 주의"
+        })
+
+        if not is_passed:
+            return {
+                "tag": f"🎙️ {spk['name']} 발언 예정",
+                "tone": "flat",
+                "sentence": f"{spk['stance']} · {spk['note']}"
+            }
+
+        # 발언 시작 후: 실시간 뉴스 헤드라인 검색 및 비둘기/매파 판정
+        headline = fetch_speaker_headline(speaker_key) if speaker_key else None
+        if headline:
+            h_lower = headline.lower()
+            # 비둘기파 키워드 (금리인상 희박, 인하 지지, 물가 진전 등)
+            is_dovish = any(w in h_lower for w in [
+                "unlikely", "less likely", "cut", "cool", "ease", "soften",
+                "progress", "slow", "pause", "drop", "ready to cut", "no hike"
+            ])
+            # 매파 키워드 (인상 가능성, 고금리 유지, 인플레 끈적 등)
+            is_hawkish = any(w in h_lower for w in [
+                "hike", "raise", "sticky", "high for longer", "not ready", "cautious", "risk", "too soon"
+            ])
+
+            if is_dovish and not is_hawkish:
+                return {
+                    "tag": "🟢 비둘기 발언 (호재)",
+                    "tone": "bull",
+                    "sentence": f"↳ 헤드라인: \"{headline}\" (추가 인상 희박/완화 호재)"
+                }
+            elif is_hawkish:
+                return {
+                    "tag": "🔴 매파 발언 (경계)",
+                    "tone": "bear",
+                    "sentence": f"↳ 헤드라인: \"{headline}\" (긴축 유지/경계 발언)"
+                }
+            else:
+                return {
+                    "tag": "🎙️ 발언 헤드라인",
+                    "tone": "flat",
+                    "sentence": f"↳ 헤드라인: \"{headline}\""
+                }
+
+        # 헤드라인 집계 전이라도 '수집중'이 아닌 '위원 성향과 핵심 관전 포인트' 노출
+        if elapsed_sec <= 2400:
+            return {
+                "tag": f"🎙️ {spk['name']} 연설 중",
+                "tone": "pending",
+                "sentence": f"{spk['stance']} 발언 진행 중 · {spk['note']}"
+            }
+        return {
+            "tag": f"🎙️ {spk['name']} 연설 종료",
+            "tone": "flat",
+            "sentence": f"{spk['stance']} · 시장 헤드라인 소화 완료"
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # 일반 수치 발표 지표 (CPI, PPI, PMI, 고용 등) 판정 로직
+    # ─────────────────────────────────────────────────────────────
     if not actual_str:
         if is_passed:
             if elapsed_sec <= 1200:
@@ -418,7 +581,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
     cmp_label = "예상" if forecast_str else "이전"
     cmp_str = forecast_str or previous_str
 
-    t_lower = title_en.lower()
     is_inflation = any(k in t_lower for k in ["cpi", "pce", "ppi", "hourly earnings", "price index"])
     is_unemployment = any(k in t_lower for k in ["unemployment rate", "unemployment claims", "jobless claims"])
     is_nfp = "non-farm" in t_lower or "employment change" in t_lower
@@ -478,7 +640,7 @@ def fetch_global_econ_calendar():
             title = (it.get("title") or "").strip()
             impact = it.get("impact", "")
             t_lower = title.lower()
-            if not ((impact == "High") or any(k in t_lower for k in HIGH_IMPACT_KEYWORDS)):
+            if not ((impact in ("High", "Medium")) or any(k in t_lower for k in HIGH_IMPACT_KEYWORDS)):
                 continue
             raw_date = it.get("date", "")
             if not raw_date:
@@ -487,7 +649,17 @@ def fetch_global_econ_calendar():
                 dt_obj = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(ET)
             except Exception:
                 continue
-            kr_name = ECON_TITLE_KR.get(title, title)
+
+            # 연준 위원 연설 한국어 이름 친화적 번역
+            kr_name = ECON_TITLE_KR.get(title)
+            if not kr_name:
+                for spk_k, spk_v in FED_SPEAKERS.items():
+                    if spk_k in t_lower:
+                        kr_name = f"연준 {spk_v['name']} 연설/발언"
+                        break
+            if not kr_name:
+                kr_name = title
+
             parsed.append({
                 "title": kr_name, "title_en": title, "dt": dt_obj, "ts": dt_obj.timestamp(),
                 "time": dt_obj.strftime("%H:%M ET"), "impact": impact,
@@ -509,7 +681,6 @@ def get_today_econ_events(now_et):
     tomorrow = today + timedelta(days=1)
     today_items = [e for e in events if e["dt"].date() == today]
 
-    # 발표 후 1시간(3600초) 이내의 항목만 화면에 유지
     active_today_items = [e for e in today_items if (now_ts - e["ts"]) <= 3600]
 
     is_tomorrow = False
@@ -835,7 +1006,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
 
 
 # ─────────────────────────────────────────────────────────────
-# GEX & 방향 분석 & 변동성 쇼크 (완충 버퍼 및 핑퐁 방지)
+# GEX & 방향 분석 & 변동성 쇼크
 # ─────────────────────────────────────────────────────────────
 def bs_gamma(S, K, T, sigma, r=0.0):
     if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
@@ -1021,7 +1192,6 @@ def get_gex(token, spx_p, ratio, now_et):
     return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
 
-# [완벽 수정] 핑퐁 오발송 및 반등 오경보 차단 로직
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
     if not spx_p:
         return {"active": False}
@@ -1037,8 +1207,6 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
     reasons, shock_type, level = [], "NORMAL", "NORMAL"
     elapsed_text = ""
 
-    # 1. 캔들 기반 순방향(Net) 변위 측정
-    # 극단값 꼬리(High-Low)를 재활용하지 않고, 봉의 시작가 대비 종가 순변위(Net Change)로만 방향 판정
     if len(recent_bars) >= 2 and ratio:
         curr_c = recent_bars[-1]["c"] * ratio
         net_15m = curr_c - (recent_bars[-3]["o"] * ratio if len(recent_bars) >= 3 else recent_bars[0]["o"] * ratio)
@@ -1056,10 +1224,9 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
             val = fast_5m if fast_5m >= 10.0 else net_15m
             reasons.append(f"단기 급등 모멘텀 발생 (+{val:.1f}pt 상승)")
 
-    # 2. GEX Wall 돌파/붕괴 (완충 버퍼 2.5pt 적용으로 미세 떨림 무시)
     if gex and gex.get("available") and gex.get("is_0dte"):
         pw, cw = gex.get("put_wall"), gex.get("call_wall")
-        BUFFER = 2.5  # 2.5pt 완충 구역
+        BUFFER = 2.5
 
         if pw and spx_p < (pw - BUFFER):
             reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({spx_p - pw:.1f}pt)")
@@ -1069,19 +1236,12 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
             reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 이탈 (+{spx_p - cw:.1f}pt)")
             shock_type, level = "SURGE", "CRITICAL"
 
-        # [핑퐁 버그 원천 차단]
-        # 방금 Put Wall 밑으로 떨어졌다가 살짝 올라온 것은 단순 '박스권 복귀'이지 '급등(SURGE)'이 아님!
-        if shock_type == "SURGE" and pw:
-            if spx_p <= pw + 4.0:
-                # Put Wall 근처의 턱걸이 반등은 급등 경보를 절대 울리지 않고 취소
-                return {"active": False}
+        if shock_type == "SURGE" and pw and spx_p <= pw + 4.0:
+            return {"active": False}
 
-        if shock_type == "DROP" and cw:
-            if spx_p >= cw - 4.0:
-                # Call Wall 근처의 숨고르기 풀백은 급락 경보를 울리지 않고 취소
-                return {"active": False}
+        if shock_type == "DROP" and cw and spx_p >= cw - 4.0:
+            return {"active": False}
 
-    # 3. 보조 지표 확인 (CVD/VIX1D)
     if cvd and not cvd.get("is_prior"):
         if cvd.get("sell_pct", 0) >= 65 and shock_type == "DROP":
             reasons.append(f"기관 매도 덤핑 폭발 (Sell {cvd['sell_pct']}%)")
