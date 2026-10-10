@@ -21,7 +21,7 @@ function toggleGexStrikes() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 0DTE GEX 대칭 막대 그래프 렌더링 엔진 (PC/모바일 고해상도 최적화)
+// 0DTE GEX 대칭 막대 그래프 렌더링 엔진 (초고해상도 & 가독성 강화)
 // ─────────────────────────────────────────────────────────────
 let chartBars = [];
 
@@ -40,15 +40,14 @@ function drawGexBarChart() {
 
     const w = rect.width;
     const h = rect.height;
-    const padTop = 36;
-    const padBottom = 38; // 하단 행사가 텍스트 여백 넉넉히 확보
-    const padX = 40;      // 좌측 Y축 눈금 여백 확보
+    const padTop = 38;
+    const padBottom = 40;
+    const padX = 64; // Y축 수치가 여유 있게 들어가도록 좌측 여백 확장
     const drawH = h - padTop - padBottom;
     const midY = padTop + drawH / 2;
 
     const strikes = [...currentGexData.by_strike].sort((a, b) => a.strike - b.strike);
     
-    // Y축 최대 스케일 계산
     let maxVal = 10;
     strikes.forEach(s => {
         const cGex = s.call_gex_m ?? Math.max(0, (s.net_gex_m || 0));
@@ -56,11 +55,11 @@ function drawGexBarChart() {
         if (cGex > maxVal) maxVal = cGex;
         if (pGex > maxVal) maxVal = pGex;
     });
-    maxVal = Math.ceil((maxVal * 1.15) / 100) * 100; // 100 단위로 깔끔하게 올림
+    maxVal = Math.ceil((maxVal * 1.15) / 100) * 100;
 
     ctx.clearRect(0, 0, w, h);
 
-    // 1. 배경 가로 그리드 점선 및 Y축 라벨 (+max, +half, 0, -half, -max)
+    // 1. 가로 그리드 점선 및 선명한 Y축 레이블 (+1100M, 0, -1100M)
     const gridLevels = [
         { val: maxVal, y: padTop },
         { val: maxVal / 2, y: padTop + drawH * 0.25 },
@@ -70,26 +69,33 @@ function drawGexBarChart() {
     ];
 
     gridLevels.forEach(gl => {
-        ctx.strokeStyle = gl.val === 0 ? 'rgba(100, 116, 139, 0.8)' : 'rgba(51, 65, 85, 0.35)';
+        ctx.strokeStyle = gl.val === 0 ? 'rgba(148, 163, 184, 0.9)' : 'rgba(51, 65, 85, 0.45)';
         ctx.lineWidth = gl.val === 0 ? 1.5 : 1;
-        ctx.setLineDash(gl.val === 0 ? [] : [3, 3]);
+        ctx.setLineDash(gl.val === 0 ? [] : [4, 4]);
         ctx.beginPath();
-        ctx.moveTo(padX - 8, gl.y);
+        ctx.moveTo(padX - 10, gl.y);
         ctx.lineTo(w - 16, gl.y);
         ctx.stroke();
 
-        // Y축 텍스트
-        ctx.fillStyle = gl.val === 0 ? '#94a3b8' : '#64748b';
-        ctx.font = '10px monospace';
+        // 좌측 Y축 텍스트 (bold 12px 고대비 폰트)
+        ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'right';
-        const txt = gl.val > 0 ? `+${gl.val}M` : (gl.val < 0 ? `${gl.val}M` : '0');
-        ctx.fillText(txt, padX - 12, gl.y + 3);
+        if (gl.val > 0) {
+            ctx.fillStyle = '#34d399'; // 밝은 에메랄드
+            ctx.fillText(`+${gl.val}M`, padX - 14, gl.y + 4);
+        } else if (gl.val < 0) {
+            ctx.fillStyle = '#fb7185'; // 밝은 로즈
+            ctx.fillText(`${gl.val}M`, padX - 14, gl.y + 4);
+        } else {
+            ctx.fillStyle = '#f8fafc'; // 깨끗한 화이트
+            ctx.fillText('0', padX - 14, gl.y + 4);
+        }
     });
     ctx.setLineDash([]);
 
-    // 2. 동적 막대 너비 산출 (PC 화면에서도 꽉 차도록 확장)
+    // 2. 동적 막대 너비 렌더링
     const stepX = (w - padX - 16) / strikes.length;
-    const barWidth = Math.max(14, Math.min(46, stepX * 0.65)); // 18px 제한 해제 -> 최대 46px까지 확장
+    const barWidth = Math.max(16, Math.min(48, stepX * 0.65));
     chartBars = [];
 
     strikes.forEach((s, idx) => {
@@ -100,49 +106,47 @@ function drawGexBarChart() {
         const callBarH = (cGex / maxVal) * (drawH / 2);
         const putBarH = (pGex / maxVal) * (drawH / 2);
 
-        // Call GEX 상방 막대 (끝 모서리 둥글게)
+        // Call GEX 상방 막대
         if (callBarH > 1) {
             ctx.fillStyle = '#10b981';
             ctx.beginPath();
-            ctx.roundRect(x - barWidth / 2, midY - callBarH, barWidth, callBarH, [3, 3, 0, 0]);
+            ctx.roundRect(x - barWidth / 2, midY - callBarH, barWidth, callBarH, [4, 4, 0, 0]);
             ctx.fill();
         }
 
-        // Put GEX 하방 막대 (끝 모서리 둥글게)
+        // Put GEX 하방 막대
         if (putBarH > 1) {
             ctx.fillStyle = '#f43f5e';
             ctx.beginPath();
-            ctx.roundRect(x - barWidth / 2, midY, barWidth, putBarH, [0, 0, 3, 3]);
+            ctx.roundRect(x - barWidth / 2, midY, barWidth, putBarH, [0, 0, 4, 4]);
             ctx.fill();
         }
 
-        // X축 행사가 라벨 (11~12px 고대비 볼드 폰트)
+        // X축 행사가 라벨 (12px 볼드)
         const isPin = currentGexData.abs_pin_strike && Math.abs(currentGexData.abs_pin_strike - s.strike) < 2;
-        ctx.font = isPin ? 'bold 12px monospace' : '11px monospace';
+        ctx.font = isPin ? 'bold 13px monospace' : 'bold 12px monospace';
         ctx.textAlign = 'center';
 
         if (isPin) {
-            // Abs Pin 자석 행사가 라벨 강조 배지
             ctx.fillStyle = '#312e81';
-            ctx.strokeStyle = '#6366f1';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#818cf8';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.roundRect(x - 20, h - padBottom + 6, 40, 18, 4);
+            ctx.roundRect(x - 22, h - padBottom + 6, 44, 20, 5);
             ctx.fill();
             ctx.stroke();
-            ctx.fillStyle = '#c7d2fe';
-            ctx.fillText(s.strike.toString(), x, h - padBottom + 19);
+            ctx.fillStyle = '#e0e7ff';
+            ctx.fillText(s.strike.toString(), x, h - padBottom + 20);
         } else {
-            ctx.fillStyle = '#cbd5e1'; // 뚜렷한 밝은 회색
-            ctx.fillText(s.strike.toString(), x, h - padBottom + 18);
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillText(s.strike.toString(), x, h - padBottom + 19);
         }
 
-        // 작은 눈금 틱 마크
-        ctx.strokeStyle = 'rgba(100, 116, 139, 0.5)';
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, h - padBottom);
-        ctx.lineTo(x, h - padBottom + 4);
+        ctx.lineTo(x, h - padBottom + 5);
         ctx.stroke();
 
         chartBars.push({ x, barWidth, strikeData: s, cGex, pGex });
@@ -156,7 +160,6 @@ function drawGexBarChart() {
             const spotPct = (currentSpotPrice - minK) / (maxK - minK);
             const spotX = padX + spotPct * (w - padX - 16);
 
-            // 세로 점선
             ctx.strokeStyle = '#818cf8';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 3]);
@@ -166,20 +169,19 @@ function drawGexBarChart() {
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // 현재가 배지
             const badgeTxt = currentSpotPrice.toFixed(2);
-            ctx.font = 'bold 11px monospace';
-            const txtW = ctx.measureText(badgeTxt).width + 10;
+            ctx.font = 'bold 12px monospace';
+            const txtW = ctx.measureText(badgeTxt).width + 12;
             ctx.fillStyle = '#312e81';
-            ctx.strokeStyle = '#818cf8';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#a5b4fc';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.roundRect(spotX - txtW / 2, 6, txtW, 18, 4);
+            ctx.roundRect(spotX - txtW / 2, 6, txtW, 20, 4);
             ctx.fill();
             ctx.stroke();
             ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'center';
-            ctx.fillText(badgeTxt, spotX, 19);
+            ctx.fillText(badgeTxt, spotX, 20);
         }
     }
 }
@@ -208,7 +210,7 @@ function initChartInteraction() {
             }
         });
 
-        if (closest && minDiff < 32) {
+        if (closest && minDiff < 36) {
             const s = closest.strikeData;
             setText('tt-strike', `${s.strike} Strike`);
             const netVal = s.net_gex_m || (closest.cGex - closest.pGex);
@@ -226,10 +228,10 @@ function initChartInteraction() {
             setText('tt-put-vol', (s.put_vol || 0).toLocaleString());
 
             tt.classList.remove('hidden');
-            let ttLeft = closest.x + 14;
-            if (ttLeft + 185 > rect.width) ttLeft = closest.x - 195;
+            let ttLeft = closest.x + 16;
+            if (ttLeft + 190 > rect.width) ttLeft = closest.x - 200;
             let ttTop = Math.max(10, mouseY - 70);
-            if (ttTop + 185 > rect.height) ttTop = rect.height - 190;
+            if (ttTop + 190 > rect.height) ttTop = rect.height - 195;
 
             tt.style.left = `${ttLeft}px`;
             tt.style.top = `${ttTop}px`;
@@ -269,7 +271,7 @@ function renderSpreadOptimizer(opt) {
         const stEl = $('opt-call-status');
         if (stEl) {
             stEl.innerText = c.badge || '대기';
-            stEl.className = `text-[9px] sm:text-xs font-mono font-bold px-1.5 py-0.5 rounded ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border border-emerald-600' : (c.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-400 border border-slate-700' : (c.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border border-indigo-700' : 'bg-amber-950 text-amber-300 border border-amber-600'))}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (c.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-300 border-slate-600' : (c.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-amber-950 text-amber-300 border-amber-500'))}`;
         }
     }
     const p = opt.put_spread;
@@ -281,7 +283,7 @@ function renderSpreadOptimizer(opt) {
         const stEl = $('opt-put-status');
         if (stEl) {
             stEl.innerText = p.badge || '대기';
-            stEl.className = `text-[9px] sm:text-xs font-mono font-bold px-1.5 py-0.5 rounded ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border border-emerald-600' : (p.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-400 border border-slate-700' : (p.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border border-indigo-700' : 'bg-amber-950 text-amber-300 border border-amber-600'))}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (p.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-300 border-slate-600' : (p.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-amber-950 text-amber-300 border-amber-500'))}`;
         }
     }
 }
