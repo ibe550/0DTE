@@ -4,13 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SPX 0DTE DEFENDER</title>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #080d1a !important; color: #f3f4f6 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; }
-        .card { background-color: #0f172a !important; border: 1px solid #1e293b !important; border-radius: 6px !important; }
-        @media (min-width: 1024px) { .card { border-radius: 8px !important; } }
-        .icon-sm { width: 14px !important; height: 14px !important; min-width: 14px !important; display: inline-block; }
-        @media (min-width: 1024px) { .icon-sm { width: 18px !important; height: 18px !important; min-width: 18px !important; } }
+        body { 
+            background-color: #080d1a !important; 
+            color: #f3f4f6 !important; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+        }
+        .card { 
+            background-color: #0f172a !important; 
+            border: 1px solid #1e293b !important; 
+            border-radius: 6px !important; 
+        }
+        @media (min-width: 1024px) { 
+            .card { border-radius: 8px !important; } 
+        }
+        .icon-sm { 
+            width: 14px !important; 
+            height: 14px !important; 
+            min-width: 14px !important; 
+            display: inline-block; 
+        }
+        @media (min-width: 1024px) { 
+            .icon-sm { width: 18px !important; height: 18px !important; min-width: 18px !important; } 
+        }
     </style>
 </head>
 <body class="p-2 md:p-4 lg:p-6 max-w-6xl mx-auto text-slate-100">
@@ -80,7 +98,7 @@
         </div>
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-center">
-                <span class="text-[9px] sm:text-[11px] lg:text-xs text-purple-400 font-bold">VIX 1D (0DTE)</span>
+                <span class="text-[9px] sm:text-[11px] lg:text-xs text-purple-400 font-bold">VIX 1D</span>
                 <span id="vix1d-price" class="text-[10px] sm:text-sm lg:text-base font-bold text-slate-500">--</span>
             </div>
             <div id="vix1d-change" class="text-[8px] sm:text-[10px] lg:text-xs text-slate-500 text-right -mt-0.5">--</div>
@@ -102,7 +120,7 @@
         </div>
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
-                <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">MAG7 (MAGS)</span>
+                <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">MAG7</span>
                 <span id="mag7-source" class="text-[7px] sm:text-[8px] lg:text-[10px] text-slate-400 bg-slate-800/80 px-1 rounded truncate">--</span>
             </div>
             <div id="mag7-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
@@ -141,7 +159,7 @@
     <div class="grid grid-cols-2 gap-1.5 sm:gap-2 lg:gap-3 mb-1.5 lg:mb-2.5">
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
-                <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">WTI CRUDE OIL (CL)</span>
+                <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">WTI CRUDE (CL)</span>
                 <span id="wti-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
             </div>
             <div id="wti-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
@@ -181,15 +199,15 @@
         </div>
         <div class="grid grid-cols-3 gap-1.5 sm:gap-2 text-center mb-1.5">
             <div class="bg-slate-900 p-1.5 sm:p-2 rounded border border-slate-800">
-                <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 mb-0.5">Value Area Low (VAL)</div>
+                <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 mb-0.5">VAL</div>
                 <div id="val-price" class="text-xs sm:text-base lg:text-xl font-bold text-white">--</div>
             </div>
             <div class="bg-slate-900 p-1.5 sm:p-2 rounded border border-slate-800">
-                <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 mb-0.5">Point of Control (POC)</div>
+                <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 mb-0.5">POC</div>
                 <div id="poc-price" class="text-xs sm:text-base lg:text-xl font-bold text-emerald-400">--</div>
             </div>
             <div class="bg-slate-900 p-1.5 sm:p-2 rounded border border-slate-800">
-                <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 mb-0.5">Value Area High (VAH)</div>
+                <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 mb-0.5">VAH</div>
                 <div id="vah-price" class="text-xs sm:text-base lg:text-xl font-bold text-white">--</div>
             </div>
         </div>
@@ -255,7 +273,7 @@
         <div id="gex-strike-toggle" class="hidden border-t border-slate-800 pt-1.5 mt-2 flex justify-between items-center text-[10px] sm:text-xs lg:text-sm text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleGexStrikes()">
             <span class="flex items-center space-x-1 font-semibold text-slate-300">
                 <svg id="gex-strike-arrow" class="icon-sm transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                <span>행사가별 GEX 보기 (다른 사이트와 대조용)</span>
+                <span>행사가별 GEX 보기</span>
             </span>
             <span id="gex-strike-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
@@ -297,16 +315,13 @@
                 <span>--</span>
             </span>
         </div>
-        <div class="flex justify-between items-center mb-2">
-            <div class="flex space-x-1 sm:space-x-1.5" id="cvd-tf-group">
-                <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
-                <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
-                <button onclick="changeCvdTimeframe('10m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-teal-600 text-white font-bold shadow" data-tf="10m">10m</button>
-                <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
-                <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
-                <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
-            </div>
-            <span class="text-[10px] sm:text-xs text-yellow-500 bg-slate-800/60 px-2 py-1 rounded font-mono font-bold">— CVD</span>
+        <div class="flex space-x-1 sm:space-x-1.5 mb-2" id="cvd-tf-group">
+            <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
+            <button onclick="changeCvdTimeframe('5m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="5m">5m</button>
+            <button onclick="changeCvdTimeframe('10m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-teal-600 text-white font-bold shadow" data-tf="10m">10m</button>
+            <button onclick="changeCvdTimeframe('15m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="15m">15m</button>
+            <button onclick="changeCvdTimeframe('30m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="30m">30m</button>
+            <button onclick="changeCvdTimeframe('1H')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1H">1H</button>
         </div>
         <div class="text-[9px] sm:text-xs text-slate-400 space-y-0.5 mb-2 font-mono">
             <div><span class="text-slate-500">집계 구간</span> <span id="cvd-agg-range" class="text-slate-300">--</span></div>
