@@ -311,6 +311,45 @@
         </div>
     </div>
 
+    <!-- 6-1. 0DTE CREDIT SPREAD OPTIMIZER -->
+    <div id="spread-optimizer-card" class="card p-2 sm:p-2.5 lg:p-3.5 mb-2 lg:mb-3 bg-slate-900/90 border-indigo-900/40">
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-bold text-slate-200">
+                <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                <span>🎯 0DTE CREDIT SPREAD OPTIMIZER (Width 10)</span>
+            </div>
+            <span class="text-[9px] sm:text-xs text-indigo-400 bg-indigo-950/80 border border-indigo-800/80 px-2 py-0.5 rounded font-mono font-bold">목표 $1.00~$1.30 (10~13%)</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <!-- Bear Call Spread -->
+            <div class="bg-slate-950 p-2 sm:p-2.5 rounded border border-slate-800/80">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[10px] sm:text-xs font-bold text-rose-300">BEAR CALL SPREAD</span>
+                    <span id="opt-call-status" class="text-[9px] sm:text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">대기 중</span>
+                </div>
+                <div class="text-xs sm:text-sm lg:text-base font-mono font-bold text-white mb-0.5" id="opt-call-strikes">Short -- / Long --</div>
+                <div class="flex justify-between text-[9px] sm:text-[10px] text-slate-400 font-mono">
+                    <span>예상 크레딧: <span id="opt-call-credit" class="text-amber-300 font-bold">--</span></span>
+                    <span>최소 안전선: <span id="opt-call-bound" class="text-slate-300">--</span></span>
+                </div>
+                <div class="text-[9px] sm:text-[10px] text-slate-400 mt-1" id="opt-call-guide">--</div>
+            </div>
+            <!-- Bull Put Spread -->
+            <div class="bg-slate-950 p-2 sm:p-2.5 rounded border border-slate-800/80">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[10px] sm:text-xs font-bold text-emerald-300">BULL PUT SPREAD</span>
+                    <span id="opt-put-status" class="text-[9px] sm:text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">대기 중</span>
+                </div>
+                <div class="text-xs sm:text-sm lg:text-base font-mono font-bold text-white mb-0.5" id="opt-put-strikes">Short -- / Long --</div>
+                <div class="flex justify-between text-[9px] sm:text-[10px] text-slate-400 font-mono">
+                    <span>예상 크레딧: <span id="opt-put-credit" class="text-amber-300 font-bold">--</span></span>
+                    <span>최대 안전선: <span id="opt-put-bound" class="text-slate-300">--</span></span>
+                </div>
+                <div class="text-[9px] sm:text-[10px] text-slate-400 mt-1" id="opt-put-guide">--</div>
+            </div>
+        </div>
+    </div>
+    
     <!-- 7. SPY VOLUME + CVD -->
     <div class="card p-2 sm:p-2.5 lg:p-4 mb-2 lg:mb-3">
         <div class="flex justify-between items-start mb-2 gap-2">
