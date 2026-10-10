@@ -1172,7 +1172,11 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
 
     reasons, shock_type, level = [], "NORMAL", "NORMAL"
     elapsed_text = ""
+    is_pre_alert = False
 
+    # ─────────────────────────────────────────────────────────────
+    # 1. 단기 가격 캔들 급변동 (원래 코드 100% 동일)
+    # ─────────────────────────────────────────────────────────────
     if len(recent_bars) >= 2 and ratio:
         curr_c = recent_bars[-1]["c"] * ratio
         net_15m = curr_c - (recent_bars[-3]["o"] * ratio if len(recent_bars) >= 3 else recent_bars[0]["o"] * ratio)
@@ -1190,10 +1194,15 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
             val = fast_5m if fast_5m >= 10.0 else net_15m
             reasons.append(f"단기 급등 모멘텀 발생 (+{val:.1f}pt 상승)")
 
+    # ─────────────────────────────────────────────────────────────
+    # 2. GEX Wall: 기존 사후 이탈 + [신규] 돌파 사전 경보(Pre-Alert)
+    # ─────────────────────────────────────────────────────────────
     if gex and gex.get("available") and gex.get("is_0dte"):
         pw, cw = gex.get("put_wall"), gex.get("call_wall")
+        by_strike = gex.get("by_strike", [])
         BUFFER = 2.5
 
+        # (A) [기존 로직] 이미 Wall을 뚫고 지나갔을 때 (사후 이탈)
         if pw and spx_p < (pw - BUFFER):
             reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({spx_p - pw:.1f}pt)")
             shock_type, level = "DROP", "CRITICAL"
@@ -1202,34 +1211,94 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
             reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 이탈 (+{spx_p - cw:.1f}pt)")
             shock_type, level = "SURGE", "CRITICAL"
 
-        if shock_type == "SURGE" and pw and spx_p <= pw + 4.0:
-            return {"active": False}
+        # (B) [신규 추가] Call Wall 도달 전 감마 스퀴즈 사전 감지 (10pt 이내 접근 시)
+        elif cw and (cw - 10.0 <= spx_p <= cw + BUFFER):
+            cw_row = next((s for s in by_strike if abs(s["strike"] - cw) < 1.0), None)
+            if cw_row:
+                c_vol, c_oi = cw_row.get("call_vol", 0), cw_row.get("call_oi", 0)
+                net_gex_m = cw_row.get("net_gex_m", 0)
+                
+                # 거래량이 미결제를 압도하거나 딜러 숏 감마(Net GEX 음수) 상태
+                vol_threat = (c_oi > 0 and c_vol >= c_oi * 1.5) or (c_vol >= 8000)
+                short_gamma = (net_gex_m < 0)
+                cvd_bullish = (cvd and not cvd.get("is_prior") and cvd.get("buy_pct", 0) >= 54)
 
-        if shock_type == "DROP" and cw and spx_p >= cw - 4.0:
-            return {"active": False}
+                if (vol_threat or short_gamma) and cvd_bullish:
+                    shock_type, level = "SURGE", "CRITICAL"
+                    is_pre_alert = True
+                    reasons.append(f"Call Wall({cw:.0f}) 돌파 임박 접근 (현재 {spx_p:.1f}, 이격 {cw - spx_p:.1f}pt)")
+                    if vol_threat:
+                        reasons.append(f"{cw:.0f} Call 거래량({c_vol:,})이 미결제({c_oi:,}) 대비 폭발 (신규 매수벽 공격)")
+                    if short_gamma:
+                        reasons.append(f"{cw:.0f} Net GEX 음수({net_gex_m}M$)로 딜러 숏 감마 스퀴즈 가속")
+                    reasons.append("⚠️ Bear Call Spread 신규 진입 즉시 보류")
 
+        # (C) [신규 추가] Put Wall 도달 전 붕괴 사전 감지 (10pt 이내 접근 시)
+        elif pw and (pw - BUFFER <= spx_p <= pw + 10.0):
+            pw_row = next((s for s in by_strike if abs(s["strike"] - pw) < 1.0), None)
+            if pw_row:
+                p_vol, p_oi = pw_row.get("put_vol", 0), pw_row.get("put_oi", 0)
+                vol_threat = (p_oi > 0 and p_vol >= p_oi * 1.5) or (p_vol >= 8000)
+                cvd_bearish = (cvd and not cvd.get("is_prior") and cvd.get("sell_pct", 0) >= 54)
+
+                if vol_threat and cvd_bearish:
+                    shock_type, level = "DROP", "CRITICAL"
+                    is_pre_alert = True
+                    reasons.append(f"Put Wall({pw:.0f}) 지지선 붕괴 임박 접근 (현재 {spx_p:.1f}, 이격 {spx_p - pw:.1f}pt)")
+                    reasons.append(f"{pw:.0f} Put 거래량({p_vol:,})이 미결제({p_oi:,}) 대비 폭발 (지지선 이탈 위험)")
+                    reasons.append("⚠️ Bull Put Spread 신규 진입 즉시 보류")
+
+        # [기존 로직] 안전 취소 필터 (사전 경보가 아닐 때만 기존대로 작동)
+        if not is_pre_alert:
+            if shock_type == "SURGE" and pw and spx_p <= pw + 4.0:
+                return {"active": False}
+            if shock_type == "DROP" and cw and spx_p >= cw - 4.0:
+                return {"active": False}
+
+    # ─────────────────────────────────────────────────────────────
+    # 3. CVD 기관 체결 압력 (원래 코드 100% 동일)
+    # ─────────────────────────────────────────────────────────────
     if cvd and not cvd.get("is_prior"):
         if cvd.get("sell_pct", 0) >= 65 and shock_type == "DROP":
             reasons.append(f"기관 매도 덤핑 폭발 (Sell {cvd['sell_pct']}%)")
         elif cvd.get("buy_pct", 0) >= 65 and shock_type == "SURGE":
             reasons.append(f"기관 매수 스퀴즈 유입 (Buy {cvd['buy_pct']}%)")
 
+    # ─────────────────────────────────────────────────────────────
+    # 4. VIX 변동성 스파이크 (원래 코드 100% 동일)
+    # ─────────────────────────────────────────────────────────────
     if vix_active and shock_type == "DROP":
         vix_pct = vix_active.get("change_pct")
         if vix_pct and vix_pct >= 6.0:
             reasons.append(f"0DTE 변동성(VIX1D) 스파이크 폭등 (+{vix_pct:.1f}%)")
 
+    # ─────────────────────────────────────────────────────────────
+    # 5. 활성화 판정 및 타이틀 조립 (원래 체계 100% 보존)
+    # ─────────────────────────────────────────────────────────────
     is_active = len(reasons) > 0 and (shock_type in ("DROP", "SURGE"))
-    title = (
-        "🚨 [변동성 쇼크 · 급락 경보]"
-        if shock_type == "DROP" and level == "CRITICAL"
-        else (
-            "⚠️ [변동성 쇼크 · 하방 주의보]"
-            if shock_type == "DROP"
-            else ("🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]")
-        )
-    )
 
+    if is_pre_alert:
+        title = "🚨 [감마 스퀴즈 경보] Call Wall 돌파 임박" if shock_type == "SURGE" else "🚨 [감마 플러시 경보] Put Wall 붕괴 임박"
+    else:
+        title = (
+            "🚨 [변동성 쇼크 · 급락 경보]"
+            if shock_type == "DROP" and level == "CRITICAL"
+            else (
+                "⚠️ [변동성 쇼크 · 하방 주의보]"
+                if shock_type == "DROP"
+                else ("🚀 [변동성 쇼크 · 급등 경보]" if level == "CRITICAL" else "⚡ [변동성 쇼크 · 상방 모멘텀]")
+            )
+        )
+
+    return {
+        "active": is_active,
+        "type": shock_type,
+        "level": level,
+        "title": title,
+        "elapsed_text": elapsed_text or now_et.strftime("%H:%M ET"),
+        "details": reasons,
+        "timestamp": now_et.strftime("%H:%M:%S ET"),
+    }
     return {
         "active": is_active,
         "type": shock_type,
