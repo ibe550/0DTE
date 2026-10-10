@@ -357,6 +357,61 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
+# [신규] FLASH 실시간 매크로/정치/지정학 뉴스 속보 엔진
+# ─────────────────────────────────────────────────────────────
+def fetch_flash_market_news():
+    """트럼프, 에너지, 연준, 지정학적 딜 등 시장 충격 유발 속보 실시간 수집"""
+    def _fetch():
+        try:
+            # S&P 500, 트럼프 정책, 관세, 원유, 러시아/중국 딜 관련 최신 2시간 뉴스 RSS
+            url = "https://news.google.com/rss/search?q=(Trump+OR+Fed+OR+Oil+OR+Russia+OR+Tariff)+AND+(market+OR+stocks+OR+deal+OR+energy)+when:2h&hl=en-US&gl=US&ceid=US:en"
+            r = requests.get(url, headers=HEADERS, timeout=4.0)
+            if r.status_code != 200:
+                return []
+            root = ET_xml.fromstring(r.text)
+            news_items = []
+            for it in root.findall(".//item")[:4]:
+                title = it.findtext("title", "")
+                pub_date = it.findtext("pubDate", "")
+                if " - " in title:
+                    title, source = title.rsplit(" - ", 1)
+                else:
+                    source = "Flash Wire"
+
+                t_lower = title.lower()
+
+                # 지수 영향도 평가
+                bull_words = ["deal", "peace", "boost", "surge", "gain", "optimism", "cut", "easing", "cool", "soar", "agreement"]
+                bear_words = ["tariff", "war", "escalat", "sanction", "drop", "plunge", "hike", "threat", "ban", "tensions", "crisis"]
+                
+                is_bull = any(w in t_lower for w in bull_words)
+                is_bear = any(w in t_lower for w in bear_words)
+                
+                if is_bull and not is_bear:
+                    tag = "🟢 지수 호재 (Bullish)"
+                    tone = "bull"
+                elif is_bear:
+                    tag = "🔴 지수 악재 (Bearish)"
+                    tone = "bear"
+                else:
+                    tag = "⚡ 변동성 촉매 (Catalyst)"
+                    tone = "pending"
+
+                news_items.append({
+                    "title": title.strip(),
+                    "source": source.strip(),
+                    "tag": tag,
+                    "tone": tone,
+                    "time": "속보",
+                })
+            return news_items
+        except Exception:
+            return []
+
+    return cached("flash_market_news", 60, _fetch) or []
+
+
+# ─────────────────────────────────────────────────────────────
 # 연준 위원 데이터베이스 & 발언 파서
 # ─────────────────────────────────────────────────────────────
 FED_SPEAKERS = {
@@ -422,14 +477,10 @@ HIGH_IMPACT_KEYWORDS = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────
-# [핵심] 실시간 시세 반응 결합형 경제 지표 평가 엔진
-# ─────────────────────────────────────────────────────────────
 def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed, elapsed_sec, market_reaction):
     t_lower = title_en.lower()
     is_speech = any(w in t_lower for w in ["speaks", "speech", "testifies", "press conference", "panel"])
 
-    # 1. 연준 위원 발언인 경우
     if is_speech:
         speaker_key = next((k for k in FED_SPEAKERS if k in t_lower), None)
         spk = FED_SPEAKERS.get(speaker_key, {"name": "연준 위원", "stance": "통화정책 위원", "note": "금리 발언 주의"})
@@ -448,7 +499,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
                 return {"tag": "🔴 매파 발언 (경계)", "tone": "bear", "sentence": f"↳ 헤드라인: \"{headline}\" (긴축 유지 경계)"}
             return {"tag": "🎙️ 발언 헤드라인", "tone": "flat", "sentence": f"↳ 헤드라인: \"{headline}\""}
 
-        # 헤드라인이 아직 없더라도 시장 즉각 반응이 감지되면 배지 표기
         if market_reaction and market_reaction.get("detected"):
             mr = market_reaction
             tag = "🟢 시장 호재 반응" if mr["dir"] == "bull" else ("🔴 시장 악재 반응" if mr["dir"] == "bear" else "⚪ 시장 중립")
@@ -456,7 +506,6 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
 
         return {"tag": f"🎙️ {spk['name']} 발언 진행/종료", "tone": "flat", "sentence": f"{spk['stance']} · {spk['note']}"}
 
-    # 2. 일반 지표 (실제 수치 존재 시: 수치 수학적 비교)
     act_num = _parse_val(actual_str)
     fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
     cmp_label = "예상" if forecast_str else "이전"
@@ -482,11 +531,9 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
         else:
             tone, tag_label = ("bull", "🟢 지표 호조 (상승)") if diff > 0 else ("bear", "🔴 지표 부진 (하락)")
 
-        # 실제 수치 + 시장 반응 결합 문장 완성
         mr_suffix = f" · 시장 {market_reaction['diff_str']}" if (market_reaction and market_reaction.get("detected")) else ""
         return {"tag": tag_label, "tone": tone, "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str}{mr_suffix}"}
 
-    # 3. [핵심 혁신] 외부 피드가 수치를 아직 안 보냈을 때 (시세 반응 100% 실시간 판정)
     if is_passed:
         if market_reaction and market_reaction.get("detected"):
             mr = market_reaction
@@ -494,13 +541,13 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
                 return {
                     "tag": f"🟢 시장 호재 반응 ({mr['diff_str']})",
                     "tone": "bull",
-                    "sentence": f"수치 집계 지연 중이나 발표 직후 SPX {mr['diff_str']} 급반등 (시장 호재 소화)",
+                    "sentence": f"수치 지연 중이나 발표 직후 SPX {mr['diff_str']} 급반등 (시장 호재 소화)",
                 }
             elif mr["dir"] == "bear":
                 return {
                     "tag": f"🔴 시장 악재 반응 ({mr['diff_str']})",
                     "tone": "bear",
-                    "sentence": f"수치 집계 지연 중이나 발표 직후 SPX {mr['diff_str']} 급락 발생 (시장 악재 소화)",
+                    "sentence": f"수치 지연 중이나 발표 직후 SPX {mr['diff_str']} 급락 발생 (시장 악재 소화)",
                 }
             else:
                 return {
@@ -518,10 +565,8 @@ def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_pa
 
 
 def detect_event_market_reaction(event_ts, spy_5m_candles, ratio):
-    """발표 시점 전후 5분 봉을 대조하여 시장이 실제 급등했는지 급락했는지 15초 내 포착"""
     if not spy_5m_candles or not ratio:
         return None
-    # 이벤트 시각과 가장 일치하는 5분 봉 탐색
     matched_idx = None
     for idx, cd in enumerate(spy_5m_candles):
         if abs(cd["t"] - event_ts) < 240:
@@ -529,7 +574,6 @@ def detect_event_market_reaction(event_ts, spy_5m_candles, ratio):
             break
 
     if matched_idx is None:
-        # 이벤트 시각 이후 첫 번째 봉
         for idx, cd in enumerate(spy_5m_candles):
             if cd["t"] >= event_ts:
                 matched_idx = idx
@@ -541,7 +585,6 @@ def detect_event_market_reaction(event_ts, spy_5m_candles, ratio):
     target_bar = spy_5m_candles[matched_idx]
     prev_bar = spy_5m_candles[matched_idx - 1] if matched_idx > 0 else target_bar
 
-    # 발표 직전 대비 발표 봉의 실질 SPX 변동폭 계산
     diff_pt = (target_bar["c"] - prev_bar["c"]) * ratio
     diff_str = f"{diff_pt:+.1f}pt"
 
@@ -606,9 +649,10 @@ def fetch_global_econ_calendar():
 
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
     events = cached("econ_events_data", 15, fetch_global_econ_calendar)
+    flash_news = fetch_flash_market_news()
     now_ts = now_et.timestamp()
     if not events:
-        return {"items": [], "source": "N/A", "error": "경제 캘린더 조회 실패"}
+        return {"items": [], "flash_news": flash_news, "source": "N/A", "error": "경제 캘린더 조회 실패"}
 
     today = now_et.date()
     tomorrow = today + timedelta(days=1)
@@ -636,7 +680,6 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
         has_actual = bool(it["actual"])
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
 
-        # 실시간 시세 반응 포착 엔진 호출
         market_reaction = detect_event_market_reaction(it["ts"], spy_5m_candles, ratio) if passed else None
         eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed, elapsed_sec, market_reaction)
 
@@ -647,7 +690,7 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
             "eval_tag": eval_res["tag"], "eval_tone": eval_res["tone"], "eval_sentence": eval_res["sentence"],
         })
 
-    return {"items": out_items, "source": "공식 캘린더 + 실시간 시세 반응 엔진", "error": None}
+    return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1343,7 +1386,6 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     spy_5m = spy_dir_c.get("5m")
     ratio = ratio_q or ((spx_p / spy_5m["candles"][-1]["c"]) if (spx_p and spy_5m and spy_5m.get("candles")) else None)
 
-    # 경제 일정 분석 시 5분봉 캔들과 배율을 함께 전달하여 실시간 시세 반응 판정
     spy_5m_bars = spy_5m.get("candles") if spy_5m else []
     econ_events = get_today_econ_events(now_et, spy_5m_bars, ratio)
 
