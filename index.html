@@ -329,24 +329,44 @@
             </span>
             <span id="gex-strike-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
-        <div id="gex-strike-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60">
-            <div id="gex-oi-skew" class="text-[9px] sm:text-xs text-slate-400 font-mono mb-1.5"></div>
-            <div id="gex-gamma-note" class="text-[9px] sm:text-xs text-slate-500 font-mono mb-1.5"></div>
-            <div class="overflow-x-auto">
-            <table class="w-full text-[9px] md:text-xs lg:text-sm font-mono border-collapse">
-                <thead>
-                    <tr class="text-slate-500 border-b border-slate-800/80 text-left">
-                        <th class="py-0.5 md:py-1.5 lg:py-2 pr-2">Strike</th>
-                        <th class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right">Call OI</th>
-                        <th class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right">Put OI</th>
-                        <th class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right">Call Vol</th>
-                        <th class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right">Put Vol</th>
-                        <th class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right">Net GEX($M)</th>
-                        <th class="py-1 pr-2 text-right text-indigo-400">Abs GEX</th>
-                    </tr>
-                </thead>
-                <tbody id="gex-strike-rows"></tbody>
-            </table>
+        
+<!-- 행사가별 GEX 시각화 차트 패널 -->
+        <div id="gex-strike-panel" class="hidden mt-3 pt-3 border-t border-slate-800/80">
+            <div class="flex justify-between items-center mb-2 px-1 text-[11px] text-slate-400">
+                <div class="flex items-center space-x-3">
+                    <span class="flex items-center"><span class="w-2.5 h-2.5 bg-emerald-400 rounded-sm mr-1"></span>Call GEX (+)</span>
+                    <span class="flex items-center"><span class="w-2.5 h-2.5 bg-rose-500 rounded-sm mr-1"></span>Put GEX (-)</span>
+                    <span class="flex items-center"><span class="w-2 h-0.5 border-t border-indigo-400 border-dashed mr-1"></span>현재 지수</span>
+                </div>
+                <span class="text-[10px] text-slate-500 font-mono">막대에 마우스 호버 또는 터치 시 상세 분석</span>
+            </div>
+
+            <!-- 차트 캔버스 래퍼 -->
+            <div class="relative w-full h-72 sm:h-80 bg-slate-950/90 rounded border border-slate-800/80 overflow-hidden">
+                <canvas id="gex-chart-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+                <!-- 실전형 플로팅 툴팁 (마우스/터치 인터랙션) -->
+                <div id="gex-chart-tooltip" class="absolute hidden pointer-events-none z-30 bg-slate-900/95 border border-indigo-500/60 rounded-lg p-2.5 shadow-2xl backdrop-blur-md text-[11px] font-mono min-w-[170px]">
+                    <div id="tt-strike" class="text-sm font-black text-white border-b border-slate-800 pb-1 mb-1.5 flex justify-between">
+                        <span>-- Strike</span>
+                    </div>
+                    <div class="space-y-0.5 text-slate-300">
+                        <div class="flex justify-between"><span>Net GEX:</span><span id="tt-net" class="font-bold">--</span></div>
+                        <div class="flex justify-between text-emerald-400"><span>Calls:</span><span id="tt-calls">--</span></div>
+                        <div class="flex justify-between text-rose-400"><span>Puts:</span><span id="tt-puts">--</span></div>
+                        <div class="flex justify-between text-indigo-300"><span>Absolute:</span><span id="tt-abs">--</span></div>
+                    </div>
+                    <div class="border-t border-dashed border-slate-700/80 my-1.5"></div>
+                    <div class="space-y-0.5 text-[10px] text-slate-400">
+                        <div class="flex justify-between"><span>Call OI:</span><span id="tt-call-oi" class="text-slate-200">--</span></div>
+                        <div class="flex justify-between"><span>Put OI:</span><span id="tt-put-oi" class="text-slate-200">--</span></div>
+                    </div>
+                    <div class="border-t border-dashed border-slate-700/80 my-1.5"></div>
+                    <div class="space-y-0.5 text-[10px] text-slate-400">
+                        <div class="flex justify-between"><span>Call Vol:</span><span id="tt-call-vol" class="text-emerald-300">--</span></div>
+                        <div class="flex justify-between"><span>Put Vol:</span><span id="tt-put-vol" class="text-rose-300">--</span></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
