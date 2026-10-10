@@ -1267,7 +1267,68 @@ def get_gex(token, spx_p, ratio, now_et):
 
     return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
+# ─────────────────────────────────────────────────────────────
+# 야간장(Globex) 및 프리마켓 /ES 급변동 감지 엔진
+# ─────────────────────────────────────────────────────────────
+_last_overnight_alert_time = 0
 
+def detect_extended_hours_shock(es_quote, es_candles, now_et):
+    global _last_overnight_alert_time
+    if not es_quote or not es_quote.get("price"):
+        return {"active": False}
+
+    is_rth = (now_et.weekday() < 5) and (
+        (now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16
+    )
+    if is_rth:
+        return {"active": False}
+
+    curr_p = es_quote["price"]
+    chg_pt = es_quote.get("change", 0.0)
+    chg_pct = es_quote.get("change_pct", 0.0)
+
+    reasons = []
+    shock_type = "NORMAL"
+
+    # 1. 전일 정규장 종가 대비 누적 갭 변동폭 (±0.75% 또는 ±38pt)
+    if chg_pct >= 0.75 or chg_pt >= 38.0:
+        shock_type = "SURGE"
+        reasons.append(f"야간 누적 상방 갭 발생 (+{chg_pt:.1f}pt / +{chg_pct:.2f}%)")
+    elif chg_pct <= -0.75 or chg_pt <= -38.0:
+        shock_type = "DROP"
+        reasons.append(f"야간 누적 하방 갭 발생 ({chg_pt:.1f}pt / {chg_pct:.2f}%)")
+
+    # 2. 최근 15분 단기 스파이크 (캔들 데이터 기준 ±14pt)
+    if es_candles and len(es_candles) >= 3:
+        fast_15m = curr_p - es_candles[-3]["o"]
+        if fast_15m >= 14.0:
+            shock_type = "SURGE"
+            reasons.append(f"단기 15분 급등 스파이크 (+{fast_15m:.1f}pt)")
+        elif fast_15m <= -14.0:
+            shock_type = "DROP"
+            reasons.append(f"단기 15분 급락 스파이크 ({fast_15m:.1f}pt)")
+
+    if not reasons:
+        return {"active": False}
+
+    # 30분 쿨다운 검증
+    curr_ts = time.time()
+    if curr_ts - _last_overnight_alert_time < 1800:
+        return {"active": False}
+
+    _last_overnight_alert_time = curr_ts
+    phase_text = "프리마켓" if (now_et.hour >= 4 and now_et.hour < 9) else "야간 Globex"
+    title = f"🌙 [{phase_text} 변동성 경보] /ES 급변동 감지"
+
+    return {
+        "active": True,
+        "type": shock_type,
+        "level": "WARNING",
+        "title": title,
+        "elapsed_text": now_et.strftime("%H:%M ET"),
+        "details": reasons,
+        "timestamp": now_et.strftime("%H:%M:%S ET"),
+    }
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
     if not spx_p:
         return {"active": False}
