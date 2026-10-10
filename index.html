@@ -128,6 +128,19 @@
         </div>
     </div>
 
+    <!-- 3-1. 0DTE VIX 변동성 상태 배너 -->
+    <div id="vix-ratio-card" class="card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-slate-900/80 border-slate-800 transition-all">
+        <div class="flex items-center space-x-2 truncate mr-2">
+            <span id="vix-status-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+            <span class="font-bold text-slate-200 whitespace-nowrap">0DTE 변동성 판정</span>
+            <span id="vix-status-desc" class="text-slate-400 font-medium truncate">VIX 1D 및 VIX 실시간 데이터를 확인하는 중...</span>
+        </div>
+        <div class="flex items-center space-x-2 shrink-0 font-mono">
+            <span id="vix-ratio-val" class="text-slate-400 font-semibold text-[10px] sm:text-xs">Ratio --</span>
+            <span id="vix-status-badge" class="px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-slate-800 text-slate-400 border border-slate-700">집계 대기</span>
+        </div>
+    </div>
+    
     <!-- 4. 국채 금리 4열 -->
     <div class="grid grid-cols-4 gap-1.5 sm:gap-2 lg:gap-3 mb-2 lg:mb-3">
         <div class="card p-1.5 sm:p-2.5 lg:p-3">
