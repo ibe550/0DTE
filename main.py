@@ -1140,6 +1140,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
             "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
             "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
             "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
+            "spread_optimizer": compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt),
         },
     }
 
