@@ -165,7 +165,7 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
         kv_last_ts = num(kv_get("alert:telegram:last_ts")) if KV_AVAILABLE else None
         last_ts = max(_LAST_TELEGRAM_SHOCK["ts"], kv_last_ts or 0.0)
         if now_ts - last_ts < TELEGRAM_COOLDOWN_SEC:
-            return {"status": "skipped", "reason": "쿨다운 침묵 중 (핑퐁 방지)"}
+            return {"status": "skipped", "reason": "쿨다운 침묵 중"}
 
     _LAST_TELEGRAM_SHOCK["ts"] = now_ts
     _LAST_TELEGRAM_SHOCK["type"] = s_type
@@ -357,79 +357,22 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# 연준 위원(Fed Speakers) 전용 지능형 분석 엔진
+# 연준 위원 데이터베이스 & 발언 파서
 # ─────────────────────────────────────────────────────────────
 FED_SPEAKERS = {
-    "bowman": {
-        "name": "보우만 이사",
-        "stance": "매파(Hawkish)",
-        "note": "대표적 매파 위원 · 추가 인상 가능성 축소/비둘기파적 발언 시 시장 강력한 숏스퀴즈 상승 호재",
-    },
-    "waller": {
-        "name": "월러 이사",
-        "stance": "매파/실세(Hawkish)",
-        "note": "연준 정책 선행 지표 · 금리 인하 시점 및 경로 발언에 지수 민감 반응",
-    },
-    "powell": {
-        "name": "파월 의장",
-        "stance": "중립/의장(Centrist)",
-        "note": "통화정책 최고 총괄자 · 발언 시 0DTE 양방향 급변동 극대화 주의",
-    },
-    "williams": {
-        "name": "윌리엄스 총재",
-        "stance": "중립/부의장(Centrist)",
-        "note": "FOMC 당연직 부의장 · 연준 지도부 핵심 컨센서스 대변",
-    },
-    "goolsbee": {
-        "name": "굴스비 총재",
-        "stance": "비둘기파(Dovish)",
-        "note": "대표적 완화론자 · 물가 둔화 및 금리 인하 선제 개시 지지",
-    },
-    "kashkari": {
-        "name": "카시카리 총재",
-        "stance": "매파(Hawkish)",
-        "note": "고금리 장기화 선호 위원 · 신중한 금리 인하 강조",
-    },
-    "bostic": {
-        "name": "보스틱 총재",
-        "stance": "중립/신중(Centrist)",
-        "note": "연내 인하 횟수 조절 등 완만한 정책 선호",
-    },
-    "daly": {
-        "name": "데일리 총재",
-        "stance": "중립/비둘기(Dovish)",
-        "note": "노동시장 냉각 경계 및 선제적 정책 완화 지지",
-    },
-    "jefferson": {
-        "name": "제퍼슨 부의장",
-        "stance": "중립(Centrist)",
-        "note": "연준 2인자 · 파월 의장 정책 노선과 일치",
-    },
-    "barr": {
-        "name": "바 부의장",
-        "stance": "중립(Centrist)",
-        "note": "금융감독 담당 부의장 · 유동성 및 은행 건전성 발언 주목",
-    },
-    "kugler": {
-        "name": "쿠글러 이사",
-        "stance": "비둘기파(Dovish)",
-        "note": "노동경제학자 출신 · 고용 안정 및 통화 완화 지지",
-    },
-    "cook": {
-        "name": "쿡 이사",
-        "stance": "비둘기파(Dovish)",
-        "note": "인플레 둔화 지속 시 통화정책 완화 지지",
-    },
-    "logan": {
-        "name": "로건 총재",
-        "stance": "매파(Hawkish)",
-        "note": "양적긴축(QT) 및 유동성 관리 중시",
-    },
+    "bowman": {"name": "보우만 이사", "stance": "매파(Hawkish)", "note": "추가 인상 희박/완화 발언 시 강력한 숏스퀴즈 호재"},
+    "waller": {"name": "월러 이사", "stance": "매파/실세(Hawkish)", "note": "금리 경로 선행 지표 위원"},
+    "powell": {"name": "파월 의장", "stance": "중립/의장(Centrist)", "note": "0DTE 양방향 변동성 극대화 주의"},
+    "williams": {"name": "윌리엄스 총재", "stance": "중립/부의장(Centrist)", "note": "연준 핵심 지도부 컨센서스 대변"},
+    "goolsbee": {"name": "굴스비 총재", "stance": "비둘기파(Dovish)", "note": "선제적 금리 인하 지지파"},
+    "kashkari": {"name": "카시카리 총재", "stance": "매파(Hawkish)", "note": "고금리 장기화 선호 위원"},
+    "bostic": {"name": "보스틱 총재", "stance": "중립/신중(Centrist)", "note": "완만한 완화 속도 선호"},
+    "daly": {"name": "데일리 총재", "stance": "비둘기파(Dovish)", "note": "고용 냉각 경계 및 완화 지지"},
+    "kugler": {"name": "쿠글러 이사", "stance": "비둘기파(Dovish)", "note": "노동시장 안정 및 완화 지지"},
 }
 
 
 def fetch_speaker_headline(speaker_key):
-    """실시간 뉴스 RSS에서 해당 연준 위원의 최신 발언 헤드라인 파싱"""
     def _get():
         try:
             url = f"https://news.google.com/rss/search?q=Fed+{speaker_key}+interest+rates&hl=en-US&gl=US&ceid=US:en"
@@ -439,9 +382,7 @@ def fetch_speaker_headline(speaker_key):
                 for it in root.findall(".//item")[:3]:
                     t = it.findtext("title", "")
                     if speaker_key.lower() in t.lower() or "fed" in t.lower():
-                        if " - " in t:
-                            t = t.rsplit(" - ", 1)[0]
-                        return t
+                        return t.rsplit(" - ", 1)[0] if " - " in t else t
         except Exception:
             pass
         return None
@@ -481,142 +422,135 @@ HIGH_IMPACT_KEYWORDS = [
 ]
 
 
-def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed, elapsed_sec):
+# ─────────────────────────────────────────────────────────────
+# [핵심] 실시간 시세 반응 결합형 경제 지표 평가 엔진
+# ─────────────────────────────────────────────────────────────
+def evaluate_econ_result(title_en, actual_str, forecast_str, previous_str, is_passed, elapsed_sec, market_reaction):
     t_lower = title_en.lower()
-    is_speech = any(w in t_lower for w in ["speaks", "speech", "testifies", "press conference", "panel", "discusses"])
+    is_speech = any(w in t_lower for w in ["speaks", "speech", "testifies", "press conference", "panel"])
 
-    # ─────────────────────────────────────────────────────────────
-    # [특급 개선] 연준 위원 발언/연설 전용 판정 로직
-    # ─────────────────────────────────────────────────────────────
+    # 1. 연준 위원 발언인 경우
     if is_speech:
-        speaker_key = None
-        for k in FED_SPEAKERS:
-            if k in t_lower:
-                speaker_key = k
-                break
-
-        spk = FED_SPEAKERS.get(speaker_key, {
-            "name": "연준 위원",
-            "stance": "통화정책 위원",
-            "note": "금리 및 인플레이션 전망 발언에 따른 장중 급변동 주의"
-        })
+        speaker_key = next((k for k in FED_SPEAKERS if k in t_lower), None)
+        spk = FED_SPEAKERS.get(speaker_key, {"name": "연준 위원", "stance": "통화정책 위원", "note": "금리 발언 주의"})
 
         if not is_passed:
-            return {
-                "tag": f"🎙️ {spk['name']} 발언 예정",
-                "tone": "flat",
-                "sentence": f"{spk['stance']} · {spk['note']}"
-            }
+            return {"tag": f"🎙️ {spk['name']} 발언 예정", "tone": "flat", "sentence": f"{spk['stance']} · {spk['note']}"}
 
-        # 발언 시작 후: 실시간 뉴스 헤드라인 검색 및 비둘기/매파 판정
         headline = fetch_speaker_headline(speaker_key) if speaker_key else None
         if headline:
             h_lower = headline.lower()
-            # 비둘기파 키워드 (금리인상 희박, 인하 지지, 물가 진전 등)
-            is_dovish = any(w in h_lower for w in [
-                "unlikely", "less likely", "cut", "cool", "ease", "soften",
-                "progress", "slow", "pause", "drop", "ready to cut", "no hike"
-            ])
-            # 매파 키워드 (인상 가능성, 고금리 유지, 인플레 끈적 등)
-            is_hawkish = any(w in h_lower for w in [
-                "hike", "raise", "sticky", "high for longer", "not ready", "cautious", "risk", "too soon"
-            ])
-
+            is_dovish = any(w in h_lower for w in ["unlikely", "cut", "cool", "ease", "progress", "slow", "no hike", "less likely"])
+            is_hawkish = any(w in h_lower for w in ["hike", "raise", "sticky", "high for longer", "not ready", "too soon"])
             if is_dovish and not is_hawkish:
-                return {
-                    "tag": "🟢 비둘기 발언 (호재)",
-                    "tone": "bull",
-                    "sentence": f"↳ 헤드라인: \"{headline}\" (추가 인상 희박/완화 호재)"
-                }
+                return {"tag": "🟢 비둘기 발언 (호재)", "tone": "bull", "sentence": f"↳ 헤드라인: \"{headline}\" (추가 인상 희박/완화)"}
             elif is_hawkish:
-                return {
-                    "tag": "🔴 매파 발언 (경계)",
-                    "tone": "bear",
-                    "sentence": f"↳ 헤드라인: \"{headline}\" (긴축 유지/경계 발언)"
-                }
-            else:
-                return {
-                    "tag": "🎙️ 발언 헤드라인",
-                    "tone": "flat",
-                    "sentence": f"↳ 헤드라인: \"{headline}\""
-                }
+                return {"tag": "🔴 매파 발언 (경계)", "tone": "bear", "sentence": f"↳ 헤드라인: \"{headline}\" (긴축 유지 경계)"}
+            return {"tag": "🎙️ 발언 헤드라인", "tone": "flat", "sentence": f"↳ 헤드라인: \"{headline}\""}
 
-        # 헤드라인 집계 전이라도 '수집중'이 아닌 '위원 성향과 핵심 관전 포인트' 노출
-        if elapsed_sec <= 2400:
-            return {
-                "tag": f"🎙️ {spk['name']} 연설 중",
-                "tone": "pending",
-                "sentence": f"{spk['stance']} 발언 진행 중 · {spk['note']}"
-            }
-        return {
-            "tag": f"🎙️ {spk['name']} 연설 종료",
-            "tone": "flat",
-            "sentence": f"{spk['stance']} · 시장 헤드라인 소화 완료"
-        }
+        # 헤드라인이 아직 없더라도 시장 즉각 반응이 감지되면 배지 표기
+        if market_reaction and market_reaction.get("detected"):
+            mr = market_reaction
+            tag = "🟢 시장 호재 반응" if mr["dir"] == "bull" else ("🔴 시장 악재 반응" if mr["dir"] == "bear" else "⚪ 시장 중립")
+            return {"tag": f"{tag} ({mr['diff_str']})", "tone": mr["dir"], "sentence": f"{spk['name']} 발언 직후 SPX {mr['diff_str']} 변동 감지"}
 
-    # ─────────────────────────────────────────────────────────────
-    # 일반 수치 발표 지표 (CPI, PPI, PMI, 고용 등) 판정 로직
-    # ─────────────────────────────────────────────────────────────
-    if not actual_str:
-        if is_passed:
-            if elapsed_sec <= 1200:
-                return {
-                    "tag": "⏳ 속보 수신 중",
-                    "tone": "pending",
-                    "sentence": f"시장 예상치: {forecast_str or 'N/A'} · 공식 집계 수치 반영 대기 중"
-                }
-            return {
-                "tag": "⚪ 발표 완료",
-                "tone": "flat",
-                "sentence": f"예상치 {forecast_str or 'N/A'} · 지표 발표 완료 (수치 지연 또는 시장 부합)"
-            }
-        return {
-            "tag": None,
-            "tone": "pending",
-            "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")
-        }
+        return {"tag": f"🎙️ {spk['name']} 발언 진행/종료", "tone": "flat", "sentence": f"{spk['stance']} · {spk['note']}"}
 
+    # 2. 일반 지표 (실제 수치 존재 시: 수치 수학적 비교)
     act_num = _parse_val(actual_str)
     fc_num = _parse_val(forecast_str) if forecast_str else _parse_val(previous_str)
     cmp_label = "예상" if forecast_str else "이전"
     cmp_str = forecast_str or previous_str
 
-    is_inflation = any(k in t_lower for k in ["cpi", "pce", "ppi", "hourly earnings", "price index"])
-    is_unemployment = any(k in t_lower for k in ["unemployment rate", "unemployment claims", "jobless claims"])
-    is_nfp = "non-farm" in t_lower or "employment change" in t_lower
-    is_pmi = "ism" in t_lower or "pmi" in t_lower
-
     if act_num is not None and fc_num is not None:
         diff = act_num - fc_num
+        is_inflation = any(k in t_lower for k in ["cpi", "pce", "ppi", "hourly earnings", "price index"])
+        is_unemployment = any(k in t_lower for k in ["unemployment rate", "unemployment claims", "jobless claims"])
+        is_nfp = "non-farm" in t_lower or "employment change" in t_lower
+        is_pmi = "ism" in t_lower or "pmi" in t_lower
+
         if abs(diff) < 1e-5:
-            return {"tag": "⚪ 부합 (중립)", "tone": "flat", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 시장 예상치 부합 (중립)"}
-
-        if is_pmi:
-            if diff > 0:
-                return {"tag": "🟢 경기/서비스업 확장 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 상회 (경기 확장 호재)"}
-            return {"tag": "🔴 경기/서비스업 위축 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · PMI 예상치 하회 (경기 둔화 우려 악재)"}
-
+            tone, tag_label = "flat", "⚪ 부합 (중립)"
+        elif is_pmi:
+            tone, tag_label = ("bull", "🟢 서비스/제조업 확장 (상승)") if diff > 0 else ("bear", "🔴 서비스/제조업 위축 (하락)")
         elif is_inflation:
-            if diff > 0:
-                return {"tag": "🔴 물가 과열 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 압력 가중 (지수 악재)"}
-            return {"tag": "🟢 물가 안정 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 인플레 둔화 (지수 호재)"}
-
+            tone, tag_label = ("bear", "🔴 물가 과열 (하락)") if diff > 0 else ("bull", "🟢 물가 안정 (상승)")
         elif is_unemployment:
-            if diff > 0:
-                return {"tag": "⚠️ 실업 증가 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업률 증가 (경기 둔화 악재)"}
-            return {"tag": "🟢 실업 감소 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 실업 감소 (고용 호재)"}
-
+            tone, tag_label = ("bear", "⚠️ 실업 증가 (하락)") if diff > 0 else ("bull", "🟢 실업 감소 (상승)")
         elif is_nfp:
-            if diff > 0:
-                return {"tag": "🟢 고용 서프라이즈 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 대폭 증가 (호재)"}
-            return {"tag": "🔴 고용 쇼크 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 일자리 부진 (지수 악재)"}
-
+            tone, tag_label = ("bull", "🟢 고용 서프라이즈 (상승)") if diff > 0 else ("bear", "🔴 고용 쇼크 (하락)")
         else:
-            if diff > 0:
-                return {"tag": "🟢 지표 호조 (상승)", "tone": "bull", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 예상 상회 (호재)"}
-            return {"tag": "🔴 지표 부진 (하락)", "tone": "bear", "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str} · 예상 하회 (악재)"}
+            tone, tag_label = ("bull", "🟢 지표 호조 (상승)") if diff > 0 else ("bear", "🔴 지표 부진 (하락)")
 
-    return {"tag": "발표 완료", "tone": "flat", "sentence": f"실제 {actual_str} ({cmp_label}: {cmp_str})"}
+        # 실제 수치 + 시장 반응 결합 문장 완성
+        mr_suffix = f" · 시장 {market_reaction['diff_str']}" if (market_reaction and market_reaction.get("detected")) else ""
+        return {"tag": tag_label, "tone": tone, "sentence": f"실제 {actual_str} vs {cmp_label} {cmp_str}{mr_suffix}"}
+
+    # 3. [핵심 혁신] 외부 피드가 수치를 아직 안 보냈을 때 (시세 반응 100% 실시간 판정)
+    if is_passed:
+        if market_reaction and market_reaction.get("detected"):
+            mr = market_reaction
+            if mr["dir"] == "bull":
+                return {
+                    "tag": f"🟢 시장 호재 반응 ({mr['diff_str']})",
+                    "tone": "bull",
+                    "sentence": f"수치 집계 지연 중이나 발표 직후 SPX {mr['diff_str']} 급반등 (시장 호재 소화)",
+                }
+            elif mr["dir"] == "bear":
+                return {
+                    "tag": f"🔴 시장 악재 반응 ({mr['diff_str']})",
+                    "tone": "bear",
+                    "sentence": f"수치 집계 지연 중이나 발표 직후 SPX {mr['diff_str']} 급락 발생 (시장 악재 소화)",
+                }
+            else:
+                return {
+                    "tag": "⚪ 시장 중립 소화",
+                    "tone": "flat",
+                    "sentence": f"발표 직후 지수 변동 미미 ({mr['diff_str']}) · 시장 중립/흡수 소화",
+                }
+
+        if elapsed_sec <= 600:
+            return {"tag": "⏳ 속보 수신 중", "tone": "pending", "sentence": f"시장 예상치: {forecast_str or 'N/A'} (초기 체결 분석 중)"}
+
+        return {"tag": "⚪ 발표 완료", "tone": "flat", "sentence": f"예상치 {forecast_str or 'N/A'} · 발표 완료 (시장 기저 반영)"}
+
+    return {"tag": None, "tone": "pending", "sentence": f"시장 예상치: {forecast_str}" + (f" (이전: {previous_str})" if previous_str else "")}
+
+
+def detect_event_market_reaction(event_ts, spy_5m_candles, ratio):
+    """발표 시점 전후 5분 봉을 대조하여 시장이 실제 급등했는지 급락했는지 15초 내 포착"""
+    if not spy_5m_candles or not ratio:
+        return None
+    # 이벤트 시각과 가장 일치하는 5분 봉 탐색
+    matched_idx = None
+    for idx, cd in enumerate(spy_5m_candles):
+        if abs(cd["t"] - event_ts) < 240:
+            matched_idx = idx
+            break
+
+    if matched_idx is None:
+        # 이벤트 시각 이후 첫 번째 봉
+        for idx, cd in enumerate(spy_5m_candles):
+            if cd["t"] >= event_ts:
+                matched_idx = idx
+                break
+
+    if matched_idx is None or matched_idx >= len(spy_5m_candles):
+        return None
+
+    target_bar = spy_5m_candles[matched_idx]
+    prev_bar = spy_5m_candles[matched_idx - 1] if matched_idx > 0 else target_bar
+
+    # 발표 직전 대비 발표 봉의 실질 SPX 변동폭 계산
+    diff_pt = (target_bar["c"] - prev_bar["c"]) * ratio
+    diff_str = f"{diff_pt:+.1f}pt"
+
+    if diff_pt >= 3.5:
+        return {"detected": True, "dir": "bull", "diff_pt": diff_pt, "diff_str": diff_str}
+    elif diff_pt <= -3.5:
+        return {"detected": True, "dir": "bear", "diff_pt": diff_pt, "diff_str": diff_str}
+    else:
+        return {"detected": True, "dir": "flat", "diff_pt": diff_pt, "diff_str": diff_str}
 
 
 def fetch_global_econ_calendar():
@@ -650,7 +584,6 @@ def fetch_global_econ_calendar():
             except Exception:
                 continue
 
-            # 연준 위원 연설 한국어 이름 친화적 번역
             kr_name = ECON_TITLE_KR.get(title)
             if not kr_name:
                 for spk_k, spk_v in FED_SPEAKERS.items():
@@ -671,7 +604,7 @@ def fetch_global_econ_calendar():
         return None
 
 
-def get_today_econ_events(now_et):
+def get_today_econ_events(now_et, spy_5m_candles, ratio):
     events = cached("econ_events_data", 15, fetch_global_econ_calendar)
     now_ts = now_et.timestamp()
     if not events:
@@ -702,7 +635,11 @@ def get_today_econ_events(now_et):
 
         has_actual = bool(it["actual"])
         prefix = f"[{it['dt'].strftime('%m/%d')}] " if is_tomorrow else ""
-        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed, elapsed_sec)
+
+        # 실시간 시세 반응 포착 엔진 호출
+        market_reaction = detect_event_market_reaction(it["ts"], spy_5m_candles, ratio) if passed else None
+        eval_res = evaluate_econ_result(it["title_en"], it["actual"], it["forecast"], it["previous"], passed, elapsed_sec, market_reaction)
+
         out_items.append({
             "title": f"{prefix}{it['title']}", "title_en": it["title_en"], "time": it["time"],
             "ts": it["ts"], "passed": passed, "has_actual": has_actual, "impact": it.get("impact", "High"),
@@ -710,7 +647,7 @@ def get_today_econ_events(now_et):
             "eval_tag": eval_res["tag"], "eval_tone": eval_res["tone"], "eval_sentence": eval_res["sentence"],
         })
 
-    return {"items": out_items, "source": "공식 경제 캘린더 (ET 전용)", "error": None}
+    return {"items": out_items, "source": "공식 캘린더 + 실시간 시세 반응 엔진", "error": None}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1395,21 +1332,23 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
         f_spy_c = ex.submit(get_candles, token, "spy", c_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
-        f_econ = ex.submit(get_today_econ_events, now_et)
         f_poly = ex.submit(get_polymarket_spx, spx_p)
 
     spy_dir_c = {k: f.result() for k, f in f_spy_dir.items()}
     spx_r = f_spx_r.result()
     spy_c = f_spy_c.result()
     gex = f_gex.result() or {"available": False, "source": "N/A"}
-    econ_events = f_econ.result() or {"items": [], "source": "N/A"}
     polymarket = f_poly.result()
 
     spy_5m = spy_dir_c.get("5m")
     ratio = ratio_q or ((spx_p / spy_5m["candles"][-1]["c"]) if (spx_p and spy_5m and spy_5m.get("candles")) else None)
 
-    vwap_calc = compute_vwap(spy_5m["candles"], ratio, now_et) if spy_5m else None
-    vp = compute_volume_profile(spy_5m["candles"], ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
+    # 경제 일정 분석 시 5분봉 캔들과 배율을 함께 전달하여 실시간 시세 반응 판정
+    spy_5m_bars = spy_5m.get("candles") if spy_5m else []
+    econ_events = get_today_econ_events(now_et, spy_5m_bars, ratio)
+
+    vwap_calc = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m else None
+    vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
     cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
 
     rsi = None
@@ -1432,7 +1371,6 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     c1h = spy_dir_c["1h"]["candles"] if (spy_dir_c.get("1h") and spy_dir_c["1h"].get("candles")) else []
     direction = build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd)
 
-    spy_5m_bars = spy_5m.get("candles") if spy_5m else []
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
     if shock_alert and shock_alert.get("active"):
