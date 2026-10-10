@@ -357,31 +357,51 @@ def get_all_quotes(token):
 
 
 # ─────────────────────────────────────────────────────────────
-# FLASH 실시간 속보 엔진
+# FLASH 실시간 속보 엔진 (노이즈 및 오분류 차단 강화)
 # ─────────────────────────────────────────────────────────────
 def fetch_flash_market_news():
     def _fetch():
         try:
-            url = "https://news.google.com/rss/search?q=(Trump+OR+Fed+OR+Oil+OR+Russia+OR+Tariff)+AND+(market+OR+stocks+OR+deal+OR+energy)+when:2h&hl=en-US&gl=US&ceid=US:en"
+            # 주식 시장 및 거시경제에 직접 관련된 뉴스만 정밀 쿼리
+            url = "https://news.google.com/rss/search?q=(S%26P500+OR+Stock+market+OR+Federal+Reserve+OR+Crude+Oil)+AND+(stocks+OR+economy+OR+rates)+when:2h&hl=en-US&gl=US&ceid=US:en"
             r = requests.get(url, headers=HEADERS, timeout=4.0)
             if r.status_code != 200:
                 return []
             root = ET_xml.fromstring(r.text)
             news_items = []
+            
+            # 금융과 무관한 사회/범죄/재난 배제 단어
+            EXCLUDE_WORDS = [
+                "shooting", "shooter", "gun", "police", "killed", "dead", "murder", 
+                "hurricane", "tornado", "floods", "storm", "crash", "arrested"
+            ]
+
             for it in root.findall(".//item")[:4]:
                 title = it.findtext("title", "")
                 source = title.rsplit(" - ", 1)[1] if " - " in title else "Flash Wire"
                 title = title.rsplit(" - ", 1)[0] if " - " in title else title
                 t_lower = title.lower()
 
-                bull_words = ["deal", "peace", "boost", "surge", "gain", "optimism", "cut", "easing", "cool", "soar", "agreement"]
-                bear_words = ["tariff", "war", "escalat", "sanction", "drop", "plunge", "hike", "threat", "ban", "tensions", "crisis"]
+                # 사회 범죄/재난 뉴스 즉시 제외
+                if any(w in t_lower for w in EXCLUDE_WORDS):
+                    continue
+
+                # 금융 시장 영향도 판정
+                bull_words = ["surge", "rally", "soar", "gain", "rate cut", "easing", "inflation cools"]
+                bear_words = ["plunge", "tumble", "slump", "tariff", "rate hike", "recession", "sanction"]
 
                 is_bull = any(w in t_lower for w in bull_words)
                 is_bear = any(w in t_lower for w in bear_words)
 
-                tag = "🟢 지수 호재 (Bullish)" if (is_bull and not is_bear) else ("🔴 지수 악재 (Bearish)" if is_bear else "⚡ 변동성 촉매 (Catalyst)")
-                tone = "bull" if (is_bull and not is_bear) else ("bear" if is_bear else "pending")
+                if is_bull and not is_bear:
+                    tag = "🟢 지수 호재 (Bullish)"
+                    tone = "bull"
+                elif is_bear:
+                    tag = "🔴 지수 악재 (Bearish)"
+                    tone = "bear"
+                else:
+                    tag = "⚡ 실시간 속보 (Catalyst)"
+                    tone = "pending"
 
                 news_items.append({
                     "title": title.strip(),
