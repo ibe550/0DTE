@@ -1,4 +1,4 @@
-const API_URL = '[https://0-dte-seven.vercel.app/api/market-data](https://0-dte-seven.vercel.app/api/market-data)';
+const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
 const POLL_MS = 5000;
 let inFlight = false;
 let reqSeq = 0;
@@ -47,9 +47,13 @@ function renderDirection(d) {
 async function fetchRealMarketData(force = false) {
     if (inFlight && !force) return;
     inFlight = true;
-    const mySeq = ++reqSeq, ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 15000);
+    const mySeq = ++reqSeq;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000); // 30초 여유 확보
+
     try {
         const res = await fetch(`${API_URL}?cvd_tf=${currentCvdTf}`, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
         const data = await res.json();
         if (mySeq !== reqSeq || data.status !== 'success') return;
 
@@ -76,6 +80,7 @@ async function fetchRealMarketData(force = false) {
             () => renderDirection(data.direction),
         ].forEach(fn => { try { fn(); } catch (e) { console.error('렌더링 에러:', e); } });
     } catch (err) {
+        console.error('API Fetch 오류 상세:', err);
         if (mySeq === reqSeq) setText('global-source-badge', 'API 연결 실패 · 재시도 중');
     } finally {
         clearTimeout(timer);
