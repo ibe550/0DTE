@@ -1,26 +1,26 @@
 {
   "builds": [
     {
-      "src": "main.py",
+      "src": "api/main.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/api/callback",
-      "dest": "main.py"
+      "dest": "api/main.py"
     },
     {
       "src": "/api/market-data",
-      "dest": "main.py"
+      "dest": "api/main.py"
     },
     {
       "src": "/api/refresh-token",
-      "dest": "main.py"
+      "dest": "api/main.py"
     },
     {
       "src": "/(.*)",
-      "dest": "main.py"
+      "dest": "api/main.py"
     }
   ],
   "crons": [
