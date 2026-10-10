@@ -21,7 +21,7 @@ function toggleGexStrikes() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 0DTE GEX 대칭 막대 그래프 렌더링 엔진
+// 0DTE GEX 대칭 막대 그래프 렌더링 엔진 (PC/모바일 고해상도 최적화)
 // ─────────────────────────────────────────────────────────────
 let chartBars = [];
 
@@ -40,15 +40,15 @@ function drawGexBarChart() {
 
     const w = rect.width;
     const h = rect.height;
-    const padTop = 32;
-    const padBottom = 28;
-    const padX = 24;
+    const padTop = 36;
+    const padBottom = 38; // 하단 행사가 텍스트 여백 넉넉히 확보
+    const padX = 40;      // 좌측 Y축 눈금 여백 확보
     const drawH = h - padTop - padBottom;
-    const midY = padTop + drawH / 2; // Y = 0 중심선
+    const midY = padTop + drawH / 2;
 
     const strikes = [...currentGexData.by_strike].sort((a, b) => a.strike - b.strike);
     
-    // 최대 Y 스케일 산출
+    // Y축 최대 스케일 계산
     let maxVal = 10;
     strikes.forEach(s => {
         const cGex = s.call_gex_m ?? Math.max(0, (s.net_gex_m || 0));
@@ -56,30 +56,40 @@ function drawGexBarChart() {
         if (cGex > maxVal) maxVal = cGex;
         if (pGex > maxVal) maxVal = pGex;
     });
-    maxVal = maxVal * 1.15; // 상하 여백 버퍼
+    maxVal = Math.ceil((maxVal * 1.15) / 100) * 100; // 100 단위로 깔끔하게 올림
 
     ctx.clearRect(0, 0, w, h);
 
-    // 1. 기준선 (Zero Line & Grid)
-    ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
-    ctx.lineWidth = 1;
+    // 1. 배경 가로 그리드 점선 및 Y축 라벨 (+max, +half, 0, -half, -max)
+    const gridLevels = [
+        { val: maxVal, y: padTop },
+        { val: maxVal / 2, y: padTop + drawH * 0.25 },
+        { val: 0, y: midY },
+        { val: -maxVal / 2, y: padTop + drawH * 0.75 },
+        { val: -maxVal, y: h - padBottom }
+    ];
+
+    gridLevels.forEach(gl => {
+        ctx.strokeStyle = gl.val === 0 ? 'rgba(100, 116, 139, 0.8)' : 'rgba(51, 65, 85, 0.35)';
+        ctx.lineWidth = gl.val === 0 ? 1.5 : 1;
+        ctx.setLineDash(gl.val === 0 ? [] : [3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padX - 8, gl.y);
+        ctx.lineTo(w - 16, gl.y);
+        ctx.stroke();
+
+        // Y축 텍스트
+        ctx.fillStyle = gl.val === 0 ? '#94a3b8' : '#64748b';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'right';
+        const txt = gl.val > 0 ? `+${gl.val}M` : (gl.val < 0 ? `${gl.val}M` : '0');
+        ctx.fillText(txt, padX - 12, gl.y + 3);
+    });
     ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.moveTo(padX, midY);
-    ctx.lineTo(w - padX, midY);
-    ctx.stroke();
 
-    // Y축 가이드 텍스트
-    ctx.fillStyle = '#64748b';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`+${maxVal.toFixed(0)}M`, 4, padTop + 10);
-    ctx.fillText(`-${maxVal.toFixed(0)}M`, 4, h - padBottom - 4);
-    ctx.fillText(`0`, 8, midY + 3);
-
-    // 2. 행사가별 대칭 바 렌더링
-    const barWidth = Math.max(4, Math.min(18, (w - padX * 2) / strikes.length - 3));
-    const stepX = (w - padX * 2) / strikes.length;
+    // 2. 동적 막대 너비 산출 (PC 화면에서도 꽉 차도록 확장)
+    const stepX = (w - padX - 16) / strikes.length;
+    const barWidth = Math.max(14, Math.min(46, stepX * 0.65)); // 18px 제한 해제 -> 최대 46px까지 확장
     chartBars = [];
 
     strikes.forEach((s, idx) => {
@@ -90,61 +100,86 @@ function drawGexBarChart() {
         const callBarH = (cGex / maxVal) * (drawH / 2);
         const putBarH = (pGex / maxVal) * (drawH / 2);
 
-        // Call GEX 상방 막대 (초록)
-        if (callBarH > 0) {
+        // Call GEX 상방 막대 (끝 모서리 둥글게)
+        if (callBarH > 1) {
             ctx.fillStyle = '#10b981';
-            ctx.fillRect(x - barWidth / 2, midY - callBarH, barWidth, callBarH);
+            ctx.beginPath();
+            ctx.roundRect(x - barWidth / 2, midY - callBarH, barWidth, callBarH, [3, 3, 0, 0]);
+            ctx.fill();
         }
 
-        // Put GEX 하방 막대 (붉은색)
-        if (putBarH > 0) {
+        // Put GEX 하방 막대 (끝 모서리 둥글게)
+        if (putBarH > 1) {
             ctx.fillStyle = '#f43f5e';
-            ctx.fillRect(x - barWidth / 2, midY, barWidth, putBarH);
+            ctx.beginPath();
+            ctx.roundRect(x - barWidth / 2, midY, barWidth, putBarH, [0, 0, 3, 3]);
+            ctx.fill();
         }
 
-        // X축 행사가 라벨 (일정 간격으로만 표시)
-        if (strikes.length <= 15 || idx % Math.ceil(strikes.length / 12) === 0) {
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = '9px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(s.strike.toString(), x, h - 8);
+        // X축 행사가 라벨 (11~12px 고대비 볼드 폰트)
+        const isPin = currentGexData.abs_pin_strike && Math.abs(currentGexData.abs_pin_strike - s.strike) < 2;
+        ctx.font = isPin ? 'bold 12px monospace' : '11px monospace';
+        ctx.textAlign = 'center';
+
+        if (isPin) {
+            // Abs Pin 자석 행사가 라벨 강조 배지
+            ctx.fillStyle = '#312e81';
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(x - 20, h - padBottom + 6, 40, 18, 4);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#c7d2fe';
+            ctx.fillText(s.strike.toString(), x, h - padBottom + 19);
+        } else {
+            ctx.fillStyle = '#cbd5e1'; // 뚜렷한 밝은 회색
+            ctx.fillText(s.strike.toString(), x, h - padBottom + 18);
         }
+
+        // 작은 눈금 틱 마크
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, h - padBottom);
+        ctx.lineTo(x, h - padBottom + 4);
+        ctx.stroke();
 
         chartBars.push({ x, barWidth, strikeData: s, cGex, pGex });
     });
 
-    // 3. 현재 지수(SPX Current Spot) 수직선 오버레이
+    // 3. 현재 지수(SPX Spot) 수직선 및 상단 배지
     if (currentSpotPrice && strikes.length >= 2) {
         const minK = strikes[0].strike;
         const maxK = strikes[strikes.length - 1].strike;
         if (currentSpotPrice >= minK && currentSpotPrice <= maxK) {
             const spotPct = (currentSpotPrice - minK) / (maxK - minK);
-            const spotX = padX + spotPct * (w - padX * 2);
+            const spotX = padX + spotPct * (w - padX - 16);
 
             // 세로 점선
             ctx.strokeStyle = '#818cf8';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 3]);
             ctx.beginPath();
-            ctx.moveTo(spotX, 4);
+            ctx.moveTo(spotX, 6);
             ctx.lineTo(spotX, h - padBottom);
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // 현재가 배지 (상단 헤더)
+            // 현재가 배지
             const badgeTxt = currentSpotPrice.toFixed(2);
-            ctx.font = 'bold 10px monospace';
-            const txtW = ctx.measureText(badgeTxt).width + 8;
+            ctx.font = 'bold 11px monospace';
+            const txtW = ctx.measureText(badgeTxt).width + 10;
             ctx.fillStyle = '#312e81';
-            ctx.strokeStyle = '#6366f1';
+            ctx.strokeStyle = '#818cf8';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.roundRect(spotX - txtW / 2, 4, txtW, 16, 3);
+            ctx.roundRect(spotX - txtW / 2, 6, txtW, 18, 4);
             ctx.fill();
             ctx.stroke();
             ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'center';
-            ctx.fillText(badgeTxt, spotX, 16);
+            ctx.fillText(badgeTxt, spotX, 19);
         }
     }
 }
@@ -163,7 +198,6 @@ function initChartInteraction() {
         const mouseX = clientX - rect.left;
         const mouseY = clientY - rect.top;
 
-        // 가장 가까운 행사가 탐색
         let closest = null;
         let minDiff = Infinity;
         chartBars.forEach(b => {
@@ -174,7 +208,7 @@ function initChartInteraction() {
             }
         });
 
-        if (closest && minDiff < 28) {
+        if (closest && minDiff < 32) {
             const s = closest.strikeData;
             setText('tt-strike', `${s.strike} Strike`);
             const netVal = s.net_gex_m || (closest.cGex - closest.pGex);
@@ -191,12 +225,11 @@ function initChartInteraction() {
             setText('tt-call-vol', (s.call_vol || 0).toLocaleString());
             setText('tt-put-vol', (s.put_vol || 0).toLocaleString());
 
-            // 툴팁 위치 배치 (화면 우측 잘림 방지)
             tt.classList.remove('hidden');
-            let ttLeft = closest.x + 12;
-            if (ttLeft + 180 > rect.width) ttLeft = closest.x - 190;
-            let ttTop = Math.max(10, mouseY - 60);
-            if (ttTop + 180 > rect.height) ttTop = rect.height - 185;
+            let ttLeft = closest.x + 14;
+            if (ttLeft + 185 > rect.width) ttLeft = closest.x - 195;
+            let ttTop = Math.max(10, mouseY - 70);
+            if (ttTop + 185 > rect.height) ttTop = rect.height - 190;
 
             tt.style.left = `${ttLeft}px`;
             tt.style.top = `${ttTop}px`;
@@ -217,7 +250,7 @@ function initChartInteraction() {
 document.addEventListener('DOMContentLoaded', initChartInteraction);
 
 // ─────────────────────────────────────────────────────────────
-// 기존 GEX 데이터 수신 및 렌더링 파이프라인
+// GEX 데이터 수신 및 옵티마이저 바인딩
 // ─────────────────────────────────────────────────────────────
 function renderSpreadOptimizer(opt) {
     const card = $('spread-optimizer-card');
@@ -275,7 +308,6 @@ function renderGex(g) {
     setText('gex-flip', isNum(g.gamma_flip) ? fmt(g.gamma_flip, 1) : NA);
     setText('gex-call-wall', isNum(g.call_wall) ? fmt(g.call_wall, 1) : NA);
 
-    // Absolute Gamma Pin Strike
     const pinText = isNum(g.abs_pin_strike) ? `${fmt(g.abs_pin_strike, 0)} (${g.abs_pin_val}M$)` : NA;
     setText('gex-abs-pin', pinText);
 
@@ -309,7 +341,6 @@ function renderGex(g) {
         if (cLine && isNum(g.call_wall)) { cLine.style.display = 'block'; cLine.style.left = `${pct(g.call_wall)}%`; }
     }
 
-    // 차트 토글 버튼 활성화 및 차트 그리기
     const toggle = $('gex-strike-toggle');
     if (g.by_strike && g.by_strike.length) {
         if (toggle) toggle.classList.remove('hidden');
