@@ -56,6 +56,7 @@ function renderGex(g) {
     if (!g || !g.available) {
         setText('gex-source', NA); setText('gex-meta', NA); setText('gex-em', NA);
         setText('gex-put-wall', NA); setText('gex-flip', NA); setText('gex-call-wall', NA);
+        setText('gex-abs-pin', NA);
         if (note) { note.classList.remove('hidden'); note.innerText = (g && g.reason) || 'GEX 데이터를 불러올 수 없습니다.'; }
         renderSpreadOptimizer(null);
         return;
@@ -68,6 +69,10 @@ function renderGex(g) {
     setText('gex-put-wall', isNum(g.put_wall) ? fmt(g.put_wall, 1) : NA);
     setText('gex-flip', isNum(g.gamma_flip) ? fmt(g.gamma_flip, 1) : NA);
     setText('gex-call-wall', isNum(g.call_wall) ? fmt(g.call_wall, 1) : NA);
+
+    // [신규] Absolute Gamma Pin Strike 렌더링
+    const pinText = isNum(g.abs_pin_strike) ? `${fmt(g.abs_pin_strike, 0)} (${g.abs_pin_val}M$)` : NA;
+    setText('gex-abs-pin', pinText);
 
     const regime = $('gex-regime');
     if (regime && g.regime_text) {
@@ -99,7 +104,7 @@ function renderGex(g) {
         if (cLine && isNum(g.call_wall)) { cLine.style.display = 'block'; cLine.style.left = `${pct(g.call_wall)}%`; }
     }
 
-    // Strike Rows
+    // Strike Rows (Abs GEX 컬럼 포함)
     const tbody = $('gex-strike-rows');
     const toggle = $('gex-strike-toggle');
     if (g.by_strike && g.by_strike.length) {
@@ -113,11 +118,11 @@ function renderGex(g) {
                     <td class="py-1 pr-2 text-right text-emerald-300 font-bold">${s.call_vol.toLocaleString()}</td>
                     <td class="py-1 pr-2 text-right text-rose-300 font-bold">${s.put_vol.toLocaleString()}</td>
                     <td class="py-1 pr-2 text-right font-bold ${s.net_gex_m >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${s.net_gex_m > 0 ? '+' : ''}${s.net_gex_m}</td>
+                    <td class="py-1 pr-2 text-right font-bold text-indigo-300 font-mono">${s.abs_gex_m || 0}</td>
                 </tr>
             `).join('');
         }
     }
 
-    // 0DTE Credit Spread Optimizer 렌더링 호출
     renderSpreadOptimizer(g.spread_optimizer);
 }
