@@ -4,37 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SPX 0DTE DEFENDER</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
     <style>
-        body { 
-            background-color: #080d1a !important; 
-            color: #f3f4f6 !important; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            margin: 0; 
-        }
-        .card { 
-            background-color: #0f172a !important; 
-            border: 1px solid #1e293b !important; 
-            border-radius: 6px !important; 
-        }
-        @media (min-width: 1024px) {
-            .card {
-                border-radius: 8px !important;
-            }
-        }
-        .icon-sm { 
-            width: 14px !important; 
-            height: 14px !important; 
-            min-width: 14px !important; 
-            display: inline-block; 
-        }
-        @media (min-width: 1024px) {
-            .icon-sm {
-                width: 18px !important;
-                height: 18px !important;
-                min-width: 18px !important;
-            }
-        }
+        body { background-color: #080d1a !important; color: #f3f4f6 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; }
+        .card { background-color: #0f172a !important; border: 1px solid #1e293b !important; border-radius: 6px !important; }
+        @media (min-width: 1024px) { .card { border-radius: 8px !important; } }
+        .icon-sm { width: 14px !important; height: 14px !important; min-width: 14px !important; display: inline-block; }
+        @media (min-width: 1024px) { .icon-sm { width: 18px !important; height: 18px !important; min-width: 18px !important; } }
     </style>
 </head>
 <body class="p-2 md:p-4 lg:p-6 max-w-6xl mx-auto text-slate-100">
@@ -56,14 +32,14 @@
         <div class="text-[10px] sm:text-xs lg:text-sm pl-3 border-l-2 my-1 space-y-0.5 lg:space-y-1" id="shock-alert-reasons"></div>
     </div>
 
-    <!-- 1. 헤더 (우측 상단 실시간 컴팩트 RSI 배지) -->
+    <!-- 1. 헤더 -->
     <div class="flex justify-between items-center px-1 mb-1.5 lg:mb-2.5">
         <div class="flex items-center space-x-1.5 sm:space-x-2 lg:space-x-3">
             <span class="text-blue-500 font-bold text-sm sm:text-base lg:text-xl flex items-center">
                 <svg class="icon-sm mr-1 lg:mr-1.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.7</span>
+            <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v17.0 Modular</span>
             <span id="global-source-badge" class="text-[9px] lg:text-xs bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] lg:text-xs text-slate-400">
@@ -80,8 +56,6 @@
             <span class="text-[10px] sm:text-xs lg:text-sm text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 & FLASH 속보 (ET)</span>
             <span class="text-[9px] lg:text-xs text-slate-500" id="econ-source">--</span>
         </div>
-
-        <!-- FLASH 실시간 뉴스 속보 컨테이너 -->
         <div id="flash-news-box" class="hidden mb-2 pb-2 border-b border-amber-900/60 space-y-1">
             <div class="text-[9px] sm:text-xs font-bold text-amber-400 flex items-center">
                 <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block mr-1.5"></span>
@@ -89,8 +63,6 @@
             </div>
             <div id="flash-news-list" class="space-y-1"></div>
         </div>
-
-        <!-- 정규 경제 발표 일정 컨테이너 -->
         <div id="econ-list" class="space-y-1.5">
             <div class="text-[11px] sm:text-xs lg:text-sm text-slate-500 py-0.5">일정을 불러오는 중입니다...</div>
         </div>
@@ -106,7 +78,6 @@
             <div id="spx-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
             <div id="spx-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
         </div>
-
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-center">
                 <span class="text-[9px] sm:text-[11px] lg:text-xs text-purple-400 font-bold">VIX 1D (0DTE)</span>
@@ -121,7 +92,6 @@
             <div id="vix-change" class="text-[8px] sm:text-[10px] lg:text-xs text-slate-500 text-right">--</div>
             <div id="vix-source" class="text-[7px] lg:text-[9px] text-slate-500 text-right truncate">--</div>
         </div>
-
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">ES FUTURES</span>
@@ -130,7 +100,6 @@
             <div id="es-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
             <div id="es-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
         </div>
-
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">MAG7 (MAGS)</span>
@@ -188,7 +157,7 @@
         </div>
     </div>
 
-    <!-- 4-2. Polymarket SPX 1줄 컴팩트 배지 -->
+    <!-- 4-2. Polymarket SPX -->
     <div class="card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-slate-900/80 border-indigo-900/50">
         <div class="flex items-center space-x-1.5 lg:space-x-2 truncate">
             <span class="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-indigo-400"></span>
@@ -322,14 +291,12 @@
                 <div class="text-[9px] sm:text-[10px] lg:text-xs text-slate-500 font-mono mt-0.5" id="cvd-data-time">Data as of --</div>
             </div>
         </div>
-
         <div class="flex justify-between items-center mb-2">
             <span id="cvd-prior-badge" class="hidden text-[9px] sm:text-xs px-1.5 py-0.5 rounded font-mono font-bold">--</span>
             <span id="cvd-status-pill" class="text-[10px] sm:text-xs lg:text-sm bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1">
                 <span>--</span>
             </span>
         </div>
-
         <div class="flex justify-between items-center mb-2">
             <div class="flex space-x-1 sm:space-x-1.5" id="cvd-tf-group">
                 <button onclick="changeCvdTimeframe('1m')" class="cvd-tf-btn px-2.5 py-1 rounded text-xs lg:text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition" data-tf="1m">1m</button>
@@ -341,12 +308,10 @@
             </div>
             <span class="text-[10px] sm:text-xs text-yellow-500 bg-slate-800/60 px-2 py-1 rounded font-mono font-bold">— CVD</span>
         </div>
-
         <div class="text-[9px] sm:text-xs text-slate-400 space-y-0.5 mb-2 font-mono">
             <div><span class="text-slate-500">집계 구간</span> <span id="cvd-agg-range" class="text-slate-300">--</span></div>
             <div><span class="text-slate-500">데이터</span> <span id="cvd-data-desc" class="text-slate-300">--</span></div>
         </div>
-
         <div class="bg-[#0b101e] rounded-lg border border-slate-800/80 p-2 md:p-3 relative select-none mb-2">
             <svg id="cvd-bars-svg" class="w-full h-38 sm:h-44 md:h-52 lg:h-64" viewBox="0 0 500 134" preserveAspectRatio="none">
                 <line x1="35" y1="20" x2="480" y2="20" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8"/>
@@ -361,7 +326,6 @@
             </svg>
             <div class="text-center text-[8px] sm:text-[9px] lg:text-xs text-slate-500 mt-1 font-mono">Time (Eastern Time, ET) · 30m Intervals</div>
         </div>
-
         <div class="flex justify-between items-center text-[10px] sm:text-xs lg:text-sm text-slate-400 font-mono mb-1.5 px-1 bg-slate-900/60 p-1.5 rounded border border-slate-800/60">
             <div class="truncate">
                 <span id="cvd-inspect-label" class="text-slate-400">마지막 봉</span>
@@ -371,17 +335,14 @@
                 <span id="cvd-inspect-sub">최근 봉 <span id="cvd-recent-vol" class="text-slate-200">--</span> · 합계 <span id="cvd-total-vol" class="text-slate-200">--</span></span>
             </div>
         </div>
-
         <div class="flex justify-between text-xs sm:text-sm font-bold mb-1 font-mono px-0.5">
             <span class="text-emerald-400" id="cvd-buy-pct">▲ Buy --</span>
             <span class="text-rose-400" id="cvd-sell-pct">▼ Sell --</span>
         </div>
-
         <div class="w-full bg-slate-900 h-2 md:h-2.5 rounded-full overflow-hidden flex mb-2.5 border border-slate-800">
             <div id="cvd-bar-fill" class="bg-emerald-500 h-full transition-all duration-300" style="width: 0%;"></div>
             <div id="cvd-sell-fill" class="bg-rose-500 h-full flex-1" style="width: 0%;"></div>
         </div>
-
         <div class="bg-slate-950 p-2 lg:p-2.5 rounded border border-slate-800/80 text-[10px] sm:text-xs lg:text-sm text-slate-300 font-sans" id="cvd-summary-text">--</div>
     </div>
 
@@ -394,7 +355,6 @@
             <div class="text-xs sm:text-sm lg:text-base font-bold text-slate-300" id="dir-top-score">종합 점수 --</div>
         </div>
         <div class="text-[10px] sm:text-xs lg:text-sm text-slate-300 mb-2" id="dir-summary">--</div>
-
         <div class="w-full bg-slate-900 h-2 md:h-2.5 rounded-md relative overflow-hidden border border-slate-800 mb-1">
             <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-rose-600 via-slate-700 to-emerald-500 w-full opacity-70"></div>
             <div id="dir-gauge-pin" class="absolute top-0 bottom-0 w-2 md:w-2.5 bg-slate-400 rounded shadow" style="left:50%; transform:translateX(-50%);"></div>
@@ -404,7 +364,6 @@
             <span>NEUTRAL</span>
             <span>BULLISH</span>
         </div>
-
         <div class="grid grid-cols-2 gap-1.5 sm:gap-2 text-xs mb-2">
             <div class="bg-slate-900 border border-slate-800 p-2 sm:p-2.5 rounded">
                 <div class="flex justify-between items-center text-[10px] sm:text-xs">
@@ -455,7 +414,6 @@
             <span id="dir-source" class="truncate">Source --</span>
             <span class="whitespace-nowrap">시간봉 일치도 <span id="tf-match-pct">--</span>%</span>
         </div>
-
         <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] sm:text-xs lg:text-sm text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
             <span class="flex items-center space-x-1 font-semibold text-slate-300">
                 <svg id="evidence-arrow" class="icon-sm transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
@@ -463,333 +421,18 @@
             </span>
             <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
         </div>
-
         <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] sm:text-xs lg:text-sm space-y-1.5">
             <div class="text-[9px] sm:text-xs font-bold text-slate-400 tracking-wider">0DTE 종합 판정 근거</div>
             <div id="evidence-list" class="space-y-1.5"></div>
         </div>
     </div>
 
-    <script>
-        const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
-        const POLL_MS = 5000;
-        const NA = 'N/A';
-        let currentCvdTf = '10m';
-        let inFlight = false;
-        let reqSeq = 0;
-
-        let cachedBars = [];
-        let defaultCvdLastTime = '--';
-        let defaultCvdSub = '--';
-
-        const $ = (id) => document.getElementById(id);
-        const TONES = ['text-emerald-400', 'text-rose-400', 'text-slate-300', 'text-slate-200', 'text-slate-500', 'text-amber-400'];
-        const isNum = (v) => typeof v === 'number' && isFinite(v);
-
-        function setText(id, v, fallback = NA) {
-            const el = $(id);
-            if (el) el.innerText = (v === null || v === undefined || v === '') ? fallback : v;
-        }
-        function setTone(id, cls) {
-            const el = $(id);
-            if (!el) return;
-            el.classList.remove(...TONES);
-            el.classList.add(cls);
-        }
-        const toneOf = (v) => (!isNum(v) ? 'text-slate-500' : (v > 0 ? 'text-emerald-400' : (v < 0 ? 'text-rose-400' : 'text-slate-300')));
-        const toneByName = (t) => (t === 'bull' ? 'text-emerald-400' : (t === 'bear' ? 'text-rose-400' : 'text-slate-300'));
-        const fmt = (v, d = 2) => (isNum(v) ? v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : NA);
-        const sgn = (v, d = 2) => (isNum(v) ? `${v > 0 ? '+' : ''}${v.toFixed(d)}` : NA);
-        const srcShort = (s) => (!s ? NA : s.replace('Charles Schwab', 'Schwab').replace('Yahoo Finance', 'Yahoo'));
-
-        function updateClock() {
-            const now = new Date();
-            $('current-clock').innerText = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }) + ' ET';
-        }
-        setInterval(updateClock, 1000);
-        updateClock();
-
-        function toggleDetailEvidence() {
-            const panel = $('detail-evidence-panel');
-            const arrow = $('evidence-arrow');
-            const toggleText = $('evidence-toggle-text');
-            if (panel.classList.contains('hidden')) {
-                panel.classList.remove('hidden');
-                arrow.style.transform = 'rotate(180deg)';
-                toggleText.innerText = '클릭하여 접기';
-            } else {
-                panel.classList.add('hidden');
-                arrow.style.transform = 'rotate(0deg)';
-                toggleText.innerText = '클릭하여 펼치기';
-            }
-        }
-
-        function toggleGexStrikes() {
-            const panel = $('gex-strike-panel');
-            const arrow = $('gex-strike-arrow');
-            const toggleText = $('gex-strike-toggle-text');
-            if (panel.classList.contains('hidden')) {
-                panel.classList.remove('hidden');
-                arrow.style.transform = 'rotate(180deg)';
-                toggleText.innerText = '클릭하여 접기';
-            } else {
-                panel.classList.add('hidden');
-                arrow.style.transform = 'rotate(0deg)';
-                toggleText.innerText = '클릭하여 펼치기';
-            }
-        }
-
-        function markActive(groupSel, btnClass, tf, activeCls) {
-            document.querySelectorAll(groupSel + ' .' + btnClass).forEach((btn) => {
-                btn.className = btnClass + ' px-2.5 py-1 rounded text-xs lg:text-sm ' + (btn.getAttribute('data-tf') === tf
-                    ? activeCls + ' text-white font-bold shadow'
-                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition');
-            });
-        }
-        function changeCvdTimeframe(tf) { 
-            currentCvdTf = tf; 
-            markActive('#cvd-tf-group', 'cvd-tf-btn', tf, 'bg-teal-600'); 
-            setText('cvd-title-tf', tf.toUpperCase()); 
-            fetchRealMarketData(true); 
-        }
-
-        function renderQuote(pfx, q, opts = {}) {
-            if (!q) {
-                setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
-                setTone(pfx + '-price', 'text-slate-500'); setTone(pfx + '-change', 'text-slate-500');
-                return;
-            }
-            setText(pfx + '-price', fmt(q.price, 2));
-            const dir = opts.invert ? -q.change : q.change;
-            const chg = isNum(q.change) ? `${sgn(q.change)}${opts.pct && isNum(q.change_pct) ? ` (${sgn(q.change_pct)}%)` : ''}` : NA;
-            setText(pfx + '-change', chg);
-            setTone(pfx + '-price', toneOf(dir));
-            setTone(pfx + '-change', toneOf(dir));
-            const s = $(pfx + '-source');
-            if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
-        }
-
-        function renderShockAlert(alert) {
-            const banner = $('shock-alert-banner');
-            if (!banner) return;
-            if (!alert || !alert.active) {
-                banner.classList.add('hidden');
-                return;
-            }
-            banner.classList.remove('hidden');
-            setText('shock-alert-title', alert.title || '⚡ [변동성 쇼크] 급변동 감지');
-            setText('shock-alert-time', alert.timestamp || '');
-
-            const isSurge = alert.type === 'SURGE';
-            const isDrop = alert.type === 'DROP';
-
-            if (isSurge) {
-                banner.className = 'card mb-2 lg:mb-3 p-2.5 lg:p-3.5 border-2 border-emerald-500 bg-emerald-950/90 shadow-lg shadow-emerald-950/60 transition-all duration-300';
-                $('shock-alert-dot').className = 'w-2.5 h-2.5 lg:w-3 lg:h-3 rounded-full bg-emerald-400 animate-ping inline-block mr-1';
-                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-black tracking-tight text-emerald-200';
-                $('shock-alert-reasons').className = 'text-[10px] sm:text-xs lg:text-sm pl-3 border-l-2 border-emerald-500/80 my-1 space-y-0.5 text-emerald-200';
-            } else if (isDrop) {
-                banner.className = 'card mb-2 lg:mb-3 p-2.5 lg:p-3.5 border-2 border-rose-500 bg-rose-950/90 shadow-lg shadow-rose-950/60 transition-all duration-300';
-                $('shock-alert-dot').className = 'w-2.5 h-2.5 lg:w-3 lg:h-3 rounded-full bg-rose-500 animate-ping inline-block mr-1';
-                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-black tracking-tight text-rose-200';
-                $('shock-alert-reasons').className = 'text-[10px] sm:text-xs lg:text-sm pl-3 border-l-2 border-rose-500/80 my-1 space-y-0.5 text-rose-200';
-            } else {
-                banner.className = 'card mb-2 lg:mb-3 p-2.5 lg:p-3.5 border-2 border-purple-500 bg-purple-950/90 shadow-lg shadow-purple-950/60 transition-all duration-300';
-                $('shock-alert-dot').className = 'w-2.5 h-2.5 lg:w-3 lg:h-3 rounded-full bg-purple-400 animate-ping inline-block mr-1';
-                $('shock-alert-head').className = 'flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-black tracking-tight text-purple-200';
-                $('shock-alert-reasons').className = 'text-[10px] sm:text-xs lg:text-sm pl-3 border-l-2 border-purple-500/80 my-1 space-y-0.5 text-purple-200';
-            }
-
-            if (alert.elapsed_text) {
-                const badgeCls = isSurge ? 'bg-emerald-900/80 text-emerald-200' : (isDrop ? 'bg-rose-900/80 text-rose-200' : 'bg-purple-900/80 text-purple-200');
-                $('shock-alert-elapsed').className = `text-[9px] sm:text-xs lg:text-sm font-mono font-bold px-1.5 lg:px-2 py-0.5 rounded ${badgeCls}`;
-                setText('shock-alert-elapsed', alert.elapsed_text);
-            }
-
-            const list = $('shock-alert-reasons');
-            if (list) {
-                const details = alert.details || [];
-                const dotColor = isSurge ? 'bg-emerald-400' : (isDrop ? 'bg-rose-400' : 'bg-purple-400');
-                list.innerHTML = details.map((d) => `<div class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full ${dotColor} inline-block"></span><span class="font-bold">${d}</span></div>`).join('');
-            }
-        }
-
-        function renderGex(g, spx) {
-            const ok = g && g.available;
-            const note = $('gex-note');
-            const regime = $('gex-regime');
-            setText('gex-source', g ? g.source : NA);
-            ['marker-put-line', 'marker-flip-line', 'marker-call-line'].forEach((id) => { $(id).style.display = 'none'; });
-            $('em-range-bar').style.width = '0%';
-
-            if (!ok) {
-                note.classList.remove('hidden');
-                note.innerText = (g && g.reason) ? g.reason : 'GEX 데이터 없음';
-                regime.classList.add('hidden');
-                setText('gex-meta', '');
-                ['gex-em', 'gex-put-wall', 'gex-flip', 'gex-call-wall', 'em-low-val', 'em-high-val', 'scale-min', 'scale-max'].forEach((id) => setText(id, NA));
-                setText('marker-current-val', isNum(spx) ? spx.toFixed(1) : NA);
-                $('gex-strike-toggle').classList.add('hidden');
-                $('gex-strike-panel').classList.add('hidden');
-                return;
-            }
-
-            const notes = [];
-            if (!g.is_0dte) notes.push(`0DTE 만기가 아니라 ${g.expiration} 만기 기준입니다`);
-            if (notes.length) { note.classList.remove('hidden'); note.innerText = notes.join(' · '); } else { note.classList.add('hidden'); }
-
-            setText('gex-meta', `만기 ${g.expiration}${g.is_0dte ? ' (0DTE)' : ''} · 순 GEX ${g.net_gex} ·${g.strike_count}개 행사가`);
-            setText('gex-em', g.expected_move);
-            setText('gex-put-wall', isNum(g.put_wall) ? g.put_wall : NA);
-            setText('gex-flip', isNum(g.gamma_flip) ? g.gamma_flip : NA);
-            setText('gex-call-wall', isNum(g.call_wall) ? g.call_wall : NA);
-            regime.classList.remove('hidden');
-            regime.innerText = g.regime_text || '';
-
-            const strikeToggle = $('gex-strike-toggle');
-            if (g.by_strike && g.by_strike.length) {
-                strikeToggle.classList.remove('hidden');
-                $('gex-strike-rows').innerHTML = g.by_strike.map((r) => {
-                    const netCls = r.net_gex_m > 0 ? 'text-emerald-400' : (r.net_gex_m < 0 ? 'text-rose-400' : 'text-slate-400');
-                    return `<tr class="border-t border-slate-800/60 hover:bg-slate-900/50 transition-colors">
-                        <td class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-slate-200 font-bold">${r.strike}</td>
-                        <td class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right text-slate-300">${r.call_oi.toLocaleString()}</td>
-                        <td class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right text-slate-300">${r.put_oi.toLocaleString()}</td>
-                        <td class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right text-slate-400">${r.call_vol.toLocaleString()}</td>
-                        <td class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right text-slate-400">${r.put_vol.toLocaleString()}</td>
-                        <td class="py-0.5 md:py-1.5 lg:py-2 pr-2 text-right font-bold ${netCls}">${r.net_gex_m}</td>
-                    </tr>`;
-                }).join('');
-                if (g.oi_skew) {
-                    setText('gex-oi-skew', `현재가 기준 · 위: Call OI ${g.oi_skew.call_oi_at_or_above_spot.toLocaleString()} / Put OI${g.oi_skew.put_oi_at_or_above_spot.toLocaleString()} · 아래: Call OI ${g.oi_skew.call_oi_below_spot.toLocaleString()} / Put OI${g.oi_skew.put_oi_below_spot.toLocaleString()}`);
-                }
-                setText('gex-gamma-note', g.gamma_source_note || '');
-            } else {
-                strikeToggle.classList.add('hidden');
-                $('gex-strike-panel').classList.add('hidden');
-            }
-
-            if (!isNum(spx)) return;
-            const emLow = isNum(g.em_pt) ? spx - g.em_pt : null;
-            const emHigh = isNum(g.em_pt) ? spx + g.em_pt : null;
-            const pts = [spx, emLow, emHigh, g.put_wall, g.call_wall, g.gamma_flip].filter(isNum);
-            const minScale = Math.floor((Math.min(...pts) - 10) / 10) * 10;
-            const maxScale = Math.ceil((Math.max(...pts) + 10) / 10) * 10;
-            const range = maxScale - minScale;
-            const getPct = (v) => Math.max(2, Math.min(98, ((v - minScale) / range) * 100));
-
-            setText('scale-min', minScale);
-            setText('scale-max', maxScale);
-            setText('em-low-val', isNum(emLow) ? emLow.toFixed(1) : NA);
-            setText('em-high-val', isNum(emHigh) ? emHigh.toFixed(1) : NA);
-            setText('marker-current-val', spx.toFixed(1));
-            $('marker-current').style.left = `${getPct(spx)}%`;
-            if (isNum(emLow)) {
-                $('em-range-bar').style.left = `${getPct(emLow)}%`;
-                $('em-range-bar').style.width = `${getPct(emHigh) - getPct(emLow)}%`;
-            }
-            [['marker-put-line', g.put_wall], ['marker-flip-line', g.gamma_flip], ['marker-call-line', g.call_wall]].forEach(([id, v]) => {
-                if (isNum(v)) { $(id).style.left = `${getPct(v)}%`; $(id).style.display = 'block'; }
-            });
-        }
-
-        function renderRsi(r) {
-            const badge = $('header-rsi-badge');
-            if (!badge) return;
-            if (!r || !isNum(r.val)) {
-                badge.classList.add('hidden');
-                return;
-            }
-            badge.classList.remove('hidden');
-            const val = r.val.toFixed(1);
-            let statusText = '중립';
-            let colorCls = 'bg-slate-800 text-slate-300 border-slate-700';
-
-            if (r.val >= 70) {
-                statusText = '과매수';
-                colorCls = 'bg-rose-950/90 text-rose-300 border-rose-800/80 animate-pulse';
-            } else if (r.val <= 30) {
-                statusText = '과매도';
-                colorCls = 'bg-emerald-950/90 text-emerald-300 border-emerald-800/80 animate-pulse';
-            } else if (r.val >= 55) {
-                statusText = '상승';
-                colorCls = 'bg-amber-950/70 text-amber-300 border-amber-800/60';
-            } else if (r.val <= 45) {
-                statusText = '하락';
-                colorCls = 'bg-indigo-950/70 text-indigo-300 border-indigo-800/60';
-            }
-
-            badge.className = `font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls} text-[9px] lg:text-xs`;
-            badge.innerText = `RSI ${val} (${statusText})`;
-            badge.title = `RSI(14): ${r.val} · ${r.status \vert{}\vert{} ''} ·${r.source || ''}`;
-        }
-
-        function inspectCvdBar(idx) {
-            if (idx === null || !cachedBars[idx]) {
-                $('cvd-inspect-label').innerText = '마지막 봉';
-                $('cvd-last-time').innerText = defaultCvdLastTime;
-                $('cvd-inspect-sub').innerHTML = defaultCvdSub;
-                return;
-            }
-            const b = cachedBars[idx];
-            const d = new Date(b.t * 1000);
-            const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-            const isLast = (idx === cachedBars.length - 1);
-            const rangeHint = isLast && currentCvdTf === '10m' ? ' (15:50~16:00 마감봉)' : (isLast ? ' (마감봉)' : '');
-            $('cvd-inspect-label').innerText = '선택 봉';
-            $('cvd-last-time').innerText = `${timeStr}${rangeHint}`;
-            const flowTag = b.is_bull ? '<span class="text-emerald-400 font-bold">Buy 우세</span>' : '<span class="text-rose-400 font-bold">Sell 우세</span>';
-            $('cvd-inspect-sub').innerHTML = `볼륨 <span class="text-slate-100 font-bold">${b.vol}K</span> · CVD <span class="${b.cvd_line >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${b.cvd_line > 0 ? '+' : ''}${b.cvd_line}K</span> ·${flowTag}`;
-        }
-
-        function renderCvd(c) {
-            const pill = $('cvd-status-pill');
-            const priorBadge = $('cvd-prior-badge');
-            if (!c) {
-                cachedBars = [];
-                setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
-                ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach((id) => setText(id, NA));
-                setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-                $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0%';
-                $('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');
-                $('cvd-vertical-grids').innerHTML = '';
-                if (priorBadge) priorBadge.classList.add('hidden');
-                pill.className = 'text-[10px] sm:text-xs bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
-                pill.innerHTML = '<span>N/A</span>';
-                return;
-            }
-            cachedBars = c.bars || [];
-            
-            if (priorBadge) {
-                priorBadge.classList.remove('hidden');
-                if (c.is_prior) {
-                    priorBadge.className = 'text-[9px] sm:text-xs bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
-                    priorBadge.innerText = `🌙 전일(${c.session_date || '마감'}) 세션 · 09:30 ET 리셋`;
-                } else {
-                    priorBadge.className = 'text-[9px] sm:text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
-                    priorBadge.innerText = '🟢 당일 정규장 실시간';
-                }
-            }
-
-            const is10mLast = currentCvdTf === '10m' && (c.last_bar_time || '').startsWith('15:50');
-            defaultCvdLastTime = is10mLast ? `${c.data_time} (15:50~16:00 마감)` : c.data_time;
-            defaultCvdSub = `최근 봉 <span class="text-slate-200">${c.recent_vol}</span> · 합계 <span class="text-slate-200">${c.total_vol}</span>`;
-            inspectCvdBar(null);
-
-            setText('cvd-source', c.source);
-            setText('cvd-data-time', `Data as of ${c.data_time}`);
-            setText('cvd-agg-range', c.aggregate_range);
-            setText('cvd-data-desc', c.data_desc);
-            setText('cvd-buy-pct', `▲ Buy ${c.buy_pct}\% (${c.buy_vol})`);
-            setText('cvd-sell-pct', `▼ Sell ${c.sell_pct}\% (${c.sell_vol})`);
-            $('cvd-bar-fill').style.width = `${c.buy_pct}%`;
-            $('cvd-sell-fill').style.width = `${c.sell_pct}%`;
-            setText('cvd-summary-text', c.summary_text);
-
-            const styles = {
-                bull: ['bg-emerald-950/80 text-emerald-300 border-emerald-800/60', '↑'],
-                bear: ['bg-rose-950/80 text-rose-300 border-rose-800/60', '↓'],
-                flat: ['bg-slate-800 text-slate-300 border-slate-700', '↔'],
-            };
-            const st = styles[c.tone] || styles.flat;
-            pill.className = `text-[10px] sm:text-xs lg:
+    <!-- 모듈 스크립트 순차 로드 -->
+    <script src="js/utils.js"></script>
+    <script src="js/quotes.js"></script>
+    <script src="js/gex.js"></script>
+    <script src="js/cvd.js"></script>
+    <script src="js/events.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
