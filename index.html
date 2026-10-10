@@ -63,7 +63,7 @@
                 <svg class="icon-sm mr-1 lg:mr-1.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.6</span>
+            <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v16.7</span>
             <span id="global-source-badge" class="text-[9px] lg:text-xs bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] lg:text-xs text-slate-400">
@@ -74,18 +74,29 @@
     </div>
     <div id="schwab-status-line" class="hidden px-1 mb-2 text-[9px] lg:text-xs text-amber-400 font-mono"></div>
 
-    <!-- 2. 오늘의 중요 발표 & 연준 위원 발언 -->
+    <!-- 2. 오늘의 중요 발표 & FLASH 속보 -->
     <div id="econ-card" class="card p-2 sm:p-2.5 lg:p-3.5 mb-2 lg:mb-3 bg-slate-900/90 border-amber-900/50">
         <div class="flex justify-between items-center mb-1.5">
-            <span class="text-[10px] sm:text-xs lg:text-sm text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 & 연준 위원 발언 (ET)</span>
+            <span class="text-[10px] sm:text-xs lg:text-sm text-amber-400 font-bold tracking-wider">📅 오늘의 중요 발표 & FLASH 속보 (ET)</span>
             <span class="text-[9px] lg:text-xs text-slate-500" id="econ-source">--</span>
         </div>
+
+        <!-- FLASH 실시간 뉴스 속보 컨테이너 -->
+        <div id="flash-news-box" class="hidden mb-2 pb-2 border-b border-amber-900/60 space-y-1">
+            <div class="text-[9px] sm:text-xs font-bold text-amber-400 flex items-center">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block mr-1.5"></span>
+                ⚡ FLASH 실시간 시장 속보 (Market Catalysts)
+            </div>
+            <div id="flash-news-list" class="space-y-1"></div>
+        </div>
+
+        <!-- 정규 경제 발표 일정 컨테이너 -->
         <div id="econ-list" class="space-y-1.5">
             <div class="text-[11px] sm:text-xs lg:text-sm text-slate-500 py-0.5">일정을 불러오는 중입니다...</div>
         </div>
     </div>
 
-    <!-- 3. 메인 시세 4열 (모바일은 무조건 4열 한눈 뷰, PC는 크기 확대) -->
+    <!-- 3. 메인 시세 4열 -->
     <div class="grid grid-cols-4 gap-1.5 sm:gap-2 lg:gap-3 mb-2 lg:mb-3">
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
@@ -130,7 +141,7 @@
         </div>
     </div>
 
-    <!-- 4. 국채 금리 4열 (모바일 4열 컴팩트 유지) -->
+    <!-- 4. 국채 금리 4열 -->
     <div class="grid grid-cols-4 gap-1.5 sm:gap-2 lg:gap-3 mb-2 lg:mb-3">
         <div class="card p-1.5 sm:p-2.5 lg:p-3">
             <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 font-medium">3M T-BILL (IRX)</div>
@@ -215,7 +226,7 @@
         </div>
     </div>
 
-    <!-- 6. GEX & EM Range (모바일은 초밀도 표, PC 모니터는 넓고 선명하게) -->
+    <!-- 6. GEX & EM Range -->
     <div class="card p-2 sm:p-3 lg:p-4 mb-2 lg:mb-3">
         <div class="flex justify-between items-start mb-2 gap-2">
             <h2 class="text-[11px] sm:text-xs lg:text-base font-bold text-slate-200">⚡ GEX · 옵션 체인 감마 레벨</h2>
@@ -283,7 +294,6 @@
             <div id="gex-oi-skew" class="text-[9px] sm:text-xs text-slate-400 font-mono mb-1.5"></div>
             <div id="gex-gamma-note" class="text-[9px] sm:text-xs text-slate-500 font-mono mb-1.5"></div>
             <div class="overflow-x-auto">
-            <!-- 모바일은 9px 초컴팩트 뷰 유지, PC(lg)에서는 14px~15px 시원하게 확장 -->
             <table class="w-full text-[9px] md:text-xs lg:text-sm font-mono border-collapse">
                 <thead>
                     <tr class="text-slate-500 border-b border-slate-800/80 text-left">
@@ -301,7 +311,7 @@
         </div>
     </div>
 
-    <!-- 7. SPY VOLUME + CVD (30분 단위 정밀 눈금) -->
+    <!-- 7. SPY VOLUME + CVD -->
     <div class="card p-2 sm:p-2.5 lg:p-4 mb-2 lg:mb-3">
         <div class="flex justify-between items-start mb-2 gap-2">
             <div>
@@ -375,7 +385,7 @@
         <div class="bg-slate-950 p-2 lg:p-2.5 rounded border border-slate-800/80 text-[10px] sm:text-xs lg:text-sm text-slate-300 font-sans" id="cvd-summary-text">--</div>
     </div>
 
-    <!-- 8. SPX 방향분석 (모바일 2x2 유지) -->
+    <!-- 8. SPX 방향분석 -->
     <div class="card p-2 sm:p-2.5 lg:p-4 mb-3">
         <div class="flex justify-between items-center mb-1">
             <div class="flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-bold text-slate-300" id="dir-head">
@@ -628,7 +638,7 @@
             if (!g.is_0dte) notes.push(`0DTE 만기가 아니라 ${g.expiration} 만기 기준입니다`);
             if (notes.length) { note.classList.remove('hidden'); note.innerText = notes.join(' · '); } else { note.classList.add('hidden'); }
 
-            setText('gex-meta', `만기 ${g.expiration}${g.is_0dte ? ' (0DTE)' : ''} · 순 GEX ${g.net_gex} · ${g.strike_count}개 행사가`);
+            setText('gex-meta', `만기 ${g.expiration}${g.is_0dte ? ' (0DTE)' : ''} · 순 GEX ${g.net_gex} ·${g.strike_count}개 행사가`);
             setText('gex-em', g.expected_move);
             setText('gex-put-wall', isNum(g.put_wall) ? g.put_wall : NA);
             setText('gex-flip', isNum(g.gamma_flip) ? g.gamma_flip : NA);
@@ -651,7 +661,7 @@
                     </tr>`;
                 }).join('');
                 if (g.oi_skew) {
-                    setText('gex-oi-skew', `현재가 기준 · 위: Call OI ${g.oi_skew.call_oi_at_or_above_spot.toLocaleString()} / Put OI ${g.oi_skew.put_oi_at_or_above_spot.toLocaleString()} · 아래: Call OI ${g.oi_skew.call_oi_below_spot.toLocaleString()} / Put OI ${g.oi_skew.put_oi_below_spot.toLocaleString()}`);
+                    setText('gex-oi-skew', `현재가 기준 · 위: Call OI ${g.oi_skew.call_oi_at_or_above_spot.toLocaleString()} / Put OI${g.oi_skew.put_oi_at_or_above_spot.toLocaleString()} · 아래: Call OI ${g.oi_skew.call_oi_below_spot.toLocaleString()} / Put OI${g.oi_skew.put_oi_below_spot.toLocaleString()}`);
                 }
                 setText('gex-gamma-note', g.gamma_source_note || '');
             } else {
@@ -711,7 +721,7 @@
 
             badge.className = `font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls} text-[9px] lg:text-xs`;
             badge.innerText = `RSI ${val} (${statusText})`;
-            badge.title = `RSI(14): ${r.val} · ${r.status || ''} · ${r.source || ''}`;
+            badge.title = `RSI(14): ${r.val} · ${r.status \vert{}\vert{} ''} ·${r.source || ''}`;
         }
 
         function inspectCvdBar(idx) {
@@ -729,7 +739,7 @@
             $('cvd-inspect-label').innerText = '선택 봉';
             $('cvd-last-time').innerText = `${timeStr}${rangeHint}`;
             const flowTag = b.is_bull ? '<span class="text-emerald-400 font-bold">Buy 우세</span>' : '<span class="text-rose-400 font-bold">Sell 우세</span>';
-            $('cvd-inspect-sub').innerHTML = `볼륨 <span class="text-slate-100 font-bold">${b.vol}K</span> · CVD <span class="${b.cvd_line >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${b.cvd_line > 0 ? '+' : ''}${b.cvd_line}K</span> · ${flowTag}`;
+            $('cvd-inspect-sub').innerHTML = `볼륨 <span class="text-slate-100 font-bold">${b.vol}K</span> · CVD <span class="${b.cvd_line >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${b.cvd_line > 0 ? '+' : ''}${b.cvd_line}K</span> ·${flowTag}`;
         }
 
         function renderCvd(c) {
@@ -770,8 +780,8 @@
             setText('cvd-data-time', `Data as of ${c.data_time}`);
             setText('cvd-agg-range', c.aggregate_range);
             setText('cvd-data-desc', c.data_desc);
-            setText('cvd-buy-pct', `▲ Buy ${c.buy_pct}% (${c.buy_vol})`);
-            setText('cvd-sell-pct', `▼ Sell ${c.sell_pct}% (${c.sell_vol})`);
+            setText('cvd-buy-pct', `▲ Buy ${c.buy_pct}\% (${c.buy_vol})`);
+            setText('cvd-sell-pct', `▼ Sell ${c.sell_pct}\% (${c.sell_vol})`);
             $('cvd-bar-fill').style.width = `${c.buy_pct}%`;
             $('cvd-sell-fill').style.width = `${c.sell_pct}%`;
             setText('cvd-summary-text', c.summary_text);
@@ -782,291 +792,4 @@
                 flat: ['bg-slate-800 text-slate-300 border-slate-700', '↔'],
             };
             const st = styles[c.tone] || styles.flat;
-            pill.className = `text-[10px] sm:text-xs lg:text-sm ${st[0]} border px-2 py-0.5 rounded font-semibold flex items-center space-x-1`;
-            pill.innerHTML = `<span>${st[1]} ${c.status}</span>`;
-
-            const bars = cachedBars;
-            const maxVol = Math.max(...bars.map((b) => b.vol), 0.1);
-            const maxCvd = Math.max(...bars.map((b) => Math.abs(b.cvd_line)), 1.0);
-            const fmtK = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}M` : `${v.toFixed(1)}K`);
-            setText('cvd-y-max', fmtK(maxVol));
-            setText('cvd-y-mid', fmtK(maxVol / 2));
-
-            const AREA_X0 = 40, AREA_W = 440;
-            const n = Math.max(bars.length, 1);
-            const slot = AREA_W / n;
-            const barW = Math.max(0.8, Math.min(24, slot * 0.7));
-            const cx = (i) => AREA_X0 + i * slot + slot / 2;
-            const strokeW = slot < 2.5 ? '0' : '0.7';
-
-            $('cvd-real-bars').innerHTML = bars.map((b, i) => {
-                const h = Math.max(1.5, (b.vol / maxVol) * 85);
-                const x = cx(i) - barW / 2, y = 110 - h;
-                const fill = b.is_bull ? '#065f46' : '#881337';
-                const stroke = b.is_bull ? '#10b981' : '#f43f5e';
-                const d = new Date(b.t * 1000);
-                const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-                const isLast = (i === bars.length - 1);
-                const tipRange = isLast && currentCvdTf === '10m' ? ' [15:50~16:00 마감봉]' : '';
-                return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}" class="cursor-pointer transition-opacity hover:opacity-75" onmouseover="inspectCvdBar(${i})" onmouseout="inspectCvdBar(null)" ontouchstart="inspectCvdBar(${i})">
-                    <title>[${timeStr}${tipRange}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K</title>
-                </rect>`;
-            }).join('');
-
-            $('cvd-line-path').setAttribute('d', bars.map((b, i) => {
-                const y = 65 - (b.cvd_line / maxCvd) * 40;
-                return `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${y.toFixed(1)}`;
-            }).join(' '));
-
-            const gridGroup = $('cvd-vertical-grids');
-            if (!bars.length) { 
-                gridGroup.innerHTML = '';
-            } else {
-                let gridHtml = '';
-                const seenTicks = new Set();
-                bars.forEach((b, i) => {
-                    const d = new Date(b.t * 1000);
-                    const etHour = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
-                    const etMin = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
-                    const totalMinutes = etHour * 60 + etMin;
-
-                    if (totalMinutes % 30 === 0 && !seenTicks.has(totalMinutes)) {
-                        seenTicks.add(totalMinutes);
-                        const gx = cx(i).toFixed(1);
-                        const timeLabel = `${String(etHour).padStart(2, '0')}:${String(etMin).padStart(2, '0')}`;
-                        gridHtml += `<line x1="${gx}" y1="18" x2="${gx}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/>`;
-                        gridHtml += `<text x="${gx}" y="125" fill="#94a3b8" font-size="9" font-weight="bold" text-anchor="middle" font-family="monospace">${timeLabel}</text>`;
-                    }
-                });
-
-                const lastBar = bars[bars.length - 1];
-                const lastD = new Date(lastBar.t * 1000);
-                const lastHour = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
-                const lastMin = parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
-
-                if (lastHour === 15 && lastMin >= 40) {
-                    gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/>`;
-                    gridHtml += `<text x="478" y="125" fill="#94a3b8" font-size="6.8" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
-                }
-                gridGroup.innerHTML = gridHtml;
-            }
-        }
-
-        function renderDirection(d) {
-            const tfKeys = ['5m', '1m', '15m', '1h'];
-            const list = $('evidence-list');
-            if (!d || !d.available) {
-                setText('dir-main-status', NA); setText('dir-top-score', '종합 점수 N/A');
-                setText('dir-summary', (d && d.reason) ? d.reason : '실시간 봉 데이터를 가져오지 못해 방향을 판단할 수 없습니다.');
-                setText('dir-source', 'Source N/A'); setText('tf-match-pct', NA);
-                setTone('dir-top-score', 'text-slate-500');
-                $('dir-head').className = 'flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-bold text-slate-300';
-                $('dir-gauge-pin').style.left = '50\%';$('dir-gauge-pin').className = 'absolute top-0 bottom-0 w-2 bg-slate-400 rounded shadow';
-                tfKeys.forEach((k) => { setText(`tf-${k}-status`, NA); setText(`tf-${k}-score`, NA); setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300'); });
-                list.innerHTML = '';
-                return;
-            }
-            const tc = toneByName(d.tone);
-            setText('dir-main-status', d.status);
-            setText('dir-top-score', `종합 점수 ${d.score_text}`);
-            setTone('dir-top-score', tc);
-            $('dir-head').className = `flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-bold ${tc}`;
-            setText('dir-summary', d.summary);
-            setText('dir-source', `Source ${d.source}`);
-            $('dir-source').title = d.source;
-            setText('tf-match-pct', d.match_pct);
-            const pct = Math.max(2, Math.min(98, ((d.score + 6) / 12) * 100));
-            $('dir-gauge-pin').style.left = `${pct}%`;
-            $('dir-gauge-pin').className = `absolute top-0 bottom-0 w-2 rounded shadow ${d.tone === 'bull' ? 'bg-emerald-400' : (d.tone === 'bear' ? 'bg-rose-400' : 'bg-slate-400')}`;
-
-            tfKeys.forEach((k) => {
-                const t = d.tfs ? d.tfs[k] : null;
-                if (!t) {
-                    setText(`tf-${k}-status`, '데이터 부족'); setText(`tf-${k}-score`, NA);
-                    setTone(`tf-${k}-status`, 'text-slate-500'); setTone(`tf-${k}-label`, 'text-slate-300');
-                    return;
-                }
-                const c = toneByName(t.tone);
-                setText(`tf-${k}-status`, t.status);
-                setText(`tf-${k}-score`, sgn(t.score, 1));
-                setTone(`tf-${k}-status`, c); setTone(`tf-${k}-label`, c);
-            });
-
-            const dot = { bull: 'bg-emerald-400', bear: 'bg-rose-400', flat: 'bg-slate-400', na: 'bg-slate-600' };
-            const txt = { bull: 'text-emerald-400', bear: 'text-rose-400', flat: 'text-slate-300', na: 'text-slate-500' };
-            list.innerHTML = (d.evidence || []).map((e) => `
-                <div class="bg-slate-950 p-2 sm:p-2.5 rounded border border-slate-800 space-y-0.5">
-                    <div class="flex items-center space-x-1 font-bold ${txt[e.signal] || txt.na}">
-                        <span class="w-1.5 h-1.5 rounded-full ${dot[e.signal] || dot.na} inline-block"></span>
-                        <span>${e.title}</span>
-                    </div>
-                    <div class="text-slate-300 pl-3">${e.text}</div>
-                </div>`).join('');
-        }
-
-        function renderYields(y) {
-            const pairs = [
-                ['yield-3m', 'y3m', 'yield-3m-src', 'yield-3m-chg', 'y3m_change_text', 'y3m_change_bp'],
-                ['yield-10y', 'y10', 'yield-10y-src', 'yield-10y-chg', 'y10_change_text', 'y10_change_bp'],
-                ['yield-30y', 'y30', 'yield-30y-src', 'yield-30y-chg', 'y30_change_text', 'y30_change_bp'],
-            ];
-            pairs.forEach(([id, key, srcId, chgId, chgTextKey, chgBpKey]) => {
-                setText(id, y ? y[key] : null);
-                setTone(id, y && y[key] ? 'text-slate-200' : 'text-slate-500');
-                const s = y && y.sources ? y.sources[key] : null;
-                setText(srcId, srcShort(s));
-                const bp = y ? y[chgBpKey] : null;
-                setText(chgId, y ? y[chgTextKey] : null);
-                setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-emerald-400' : (bp < 0 ? 'text-rose-400' : 'text-slate-400')));
-            });
-            setText('yield-spread', y ? y.spread : null);
-            const bp = y && y.spread ? parseInt(y.spread, 10) : NaN;
-            setTone('yield-spread', isNaN(bp) ? 'text-slate-500' : (bp < 0 ? 'text-rose-400' : 'text-emerald-400'));
-        }
-
-        function escapeHtml(s) {
-            return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        }
-
-        function renderPolymarket(p) {
-            if (!p || !p.available) {
-                setText('poly-title', 'SPX 마켓 집계 대기 중...');
-                setText('poly-summary', '--');
-                return;
-            }
-            setText('poly-title', p.title);
-            setText('poly-summary', p.summary);
-            const srcEl = $('poly-source');
-            if (srcEl && p.source) srcEl.innerText = p.source;
-        }
-
-        function renderEconEvents(e) {
-            const card = $('econ-card');
-            card.classList.remove('hidden');
-            setText('econ-source', (e && e.source) ? e.source : '공식 경제 캘린더 (ET 전용)');
-
-            const items = (e && e.items) ? e.items : [];
-            if (!items.length) {
-                $('econ-list').innerHTML = '<div class="text-[11px] sm:text-xs lg:text-sm text-slate-500 py-0.5">현재 예정되거나 진행 중인 발표가 없습니다.</div>';
-                return;
-            }
-
-            $('econ-list').innerHTML = items.map((it) => {
-                const isPassed = it.passed;
-                const hasActual = it.has_actual;
-                const tone = it.eval_tone;
-                const tag = it.eval_tag;
-
-                let statusBadge = '';
-                let dot = 'bg-slate-500';
-                let sentenceColor = 'text-slate-400';
-
-                if (tone === 'bull') {
-                    dot = 'bg-emerald-400';
-                    statusBadge = `<span class="text-[9px] sm:text-[10px] lg:text-xs bg-emerald-950 text-emerald-300 border border-emerald-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(tag)}</span>`;
-                    sentenceColor = 'text-emerald-300 font-bold';
-                } else if (tone === 'bear') {
-                    dot = 'bg-rose-400';
-                    statusBadge = `<span class="text-[9px] sm:text-[10px] lg:text-xs bg-rose-950 text-rose-300 border border-rose-600 px-1.5 py-0.5 rounded font-black tracking-tight">${escapeHtml(tag)}</span>`;
-                    sentenceColor = 'text-rose-300 font-bold';
-                } else if (tone === 'flat') {
-                    dot = 'bg-slate-400';
-                    statusBadge = `<span class="text-[9px] sm:text-[10px] lg:text-xs bg-slate-800 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(tag || '발표 완료')}</span>`;
-                    sentenceColor = 'text-slate-300 font-medium';
-                } else {
-                    if (isPassed) {
-                        dot = 'bg-amber-400 animate-pulse';
-                        statusBadge = `<span class="text-[9px] sm:text-[10px] lg:text-xs bg-amber-950 text-amber-300 border border-amber-600 px-1.5 py-0.5 rounded font-bold">${escapeHtml(tag || '⏳ 속보 수신 중')}</span>`;
-                        sentenceColor = 'text-amber-300/80 font-mono';
-                    } else {
-                        dot = 'bg-slate-500';
-                        if (it.forecast) {
-                            statusBadge = `<span class="text-[9px] sm:text-[10px] lg:text-xs bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono">예상 ${escapeHtml(it.forecast)}</span>`;
-                        }
-                    }
-                }
-
-                const titleCls = (tone === 'bull') ? 'text-emerald-300 font-bold' : ((tone === 'bear') ? 'text-rose-300 font-bold' : (hasActual ? 'text-slate-200 font-bold' : 'text-slate-300'));
-                const timeStatus = hasActual ? '발표완료' : (isPassed ? (tone === 'pending' ? '진행/속보' : '완료') : '예정');
-
-                return `<div class="py-1.5 border-b border-slate-800/60 last:border-0">
-                    <div class="flex items-center justify-between text-[11px] sm:text-xs lg:text-sm gap-2">
-                        <span class="flex items-center space-x-1.5 flex-wrap gap-y-1 truncate">
-                            <span class="w-1.5 h-1.5 rounded-full ${dot} inline-block shrink-0"></span>
-                            <span class="${titleCls} truncate">${escapeHtml(it.title)}</span>
-                            ${statusBadge}
-                        </span>
-                        <span class="font-mono text-[10px] sm:text-xs text-slate-400 shrink-0">${escapeHtml(it.time)} · ${timeStatus}</span>
-                    </div>
-                    ${it.eval_sentence ? `<div class="text-[10px] sm:text-[11px] lg:text-xs pl-3 mt-0.5 leading-snug break-words ${sentenceColor}">${escapeHtml(it.eval_sentence)}</div>` : ''}
-                </div>`;
-            }).join('');
-        }
-
-        function renderStatus(data) {
-            const badge = $('global-source-badge');
-            badge.innerText = `Source: ${data.source_summary}`;
-            const line = $('schwab-status-line');
-            const okSchwab = (data.schwab_status || '').startsWith('연결됨') && !(data.schwab_status || '').includes('Yahoo 로 대체');
-            if (okSchwab) {
-                line.classList.add('hidden');
-            } else {
-                line.classList.remove('hidden');
-                const yahooUsed = /Yahoo [1-9]/.test(data.source_summary || '');
-                line.innerText = `⚠ ${data.schwab_status}${yahooUsed ? ' → Yahoo 로 자동 대체 중' : ''}`;
-            }
-        }
-
-        async function fetchRealMarketData(force = false) {
-            if (inFlight && !force) return;
-            inFlight = true;
-            const mySeq = ++reqSeq;
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 15000);
-            try {
-                const url = `${API_URL}?cvd_tf=${currentCvdTf}`;
-                const res = await fetch(url, { signal: ctrl.signal });
-                const data = await res.json();
-                if (mySeq !== reqSeq) return;
-                if (data.status !== 'success') throw new Error('API status ' + data.status);
-
-                const blocks = [
-                    () => renderShockAlert(data.shock_alert),
-                    () => renderStatus(data),
-                    () => renderEconEvents(data.econ_events),
-                    () => renderRsi(data.rsi),
-                    () => renderQuote('spx', data.spx, { pct: true }),
-                    () => renderQuote('es', data.es, { pct: true }),
-                    () => {
-                        renderQuote('vix1d', data.vix1d, { invert: true });
-                        renderQuote('vix', data.vix, { invert: true });
-                    },
-                    () => renderQuote('mag7', data.mag7, { pct: true }),
-                    () => renderQuote('wti', data.wti, { pct: true }),
-                    () => renderQuote('brent', data.brent, { pct: true }),
-                    () => renderYields(data.yields),
-                    () => renderPolymarket(data.polymarket),
-                    () => {
-                        const vp = data.volume_profile;
-                        setText('val-price', vp ? vp.val : null); setText('poc-price', vp ? vp.poc : null); setText('vah-price', vp ? vp.vah : null);
-                        setText('vp-source', vp ? vp.source : NA); setText('vp-timestamp', data.timestamp);
-                    },
-                    () => renderGex(data.gex, data.spx ? data.spx.price : null),
-                    () => renderCvd(data.cvd),
-                    () => renderDirection(data.direction),
-                ];
-                blocks.forEach((fn) => { try { fn(); } catch (e) { console.error('렌더링 오류:', e); } });
-            } catch (err) {
-                console.error('데이터 동기화 에러:', err);
-                if (mySeq === reqSeq) setText('global-source-badge', 'API 연결 실패 · 재시도 중');
-            } finally {
-                clearTimeout(timer);
-                if (mySeq === reqSeq) inFlight = false;
-            }
-        }
-
-        fetchRealMarketData(true);
-        setInterval(() => fetchRealMarketData(false), POLL_MS);
-    </script>
-</body>
-</html>
+            pill.className = `text-[10px] sm:text-xs lg:
