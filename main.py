@@ -1340,12 +1340,29 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
 
     by_strike = []
     for K, e in sorted(sorted(per.items(), key=lambda kv: abs(kv[0] - S))[:14], key=lambda kv: kv[0]):
+        c_gex_val = round(e["call_gex"] / 1e6, 2)
+        p_gex_val = round(abs(e["put_gex"]) / 1e6, 2)
+        net_gex_m = round((e["call_gex"] + e["put_gex"]) / 1e6, 2)
+        abs_gex_m = round(abs(c_gex_val) + p_gex_val, 1)
+
         by_strike.append({
-            "strike": round(K * scale, 1), "call_oi": int(e["call_oi"]), "put_oi": int(e["put_oi"]),
-            "call_vol": int(e["call_vol"]), "put_vol": int(e["put_vol"]),
-            "net_gex_m": round((e["call_gex"] + e["put_gex"]) / 1e6, 1),
+            "strike": round(K * scale, 1),
+            "call_oi": int(e["call_oi"]),
+            "put_oi": int(e["put_oi"]),
+            "call_vol": int(e["call_vol"]),
+            "put_vol": int(e["put_vol"]),
+            "call_gex_m": c_gex_val,
+            "put_gex_m": p_gex_val,
+            "net_gex_m": net_gex_m,
+            "abs_gex_m": abs_gex_m,
         })
 
+    abs_pin_strike = None
+    abs_pin_val = 0.0
+    if by_strike:
+        top_pin = max(by_strike, key=lambda s: s.get("abs_gex_m", 0))
+        abs_pin_strike = top_pin["strike"]
+        abs_pin_val = top_pin["abs_gex_m"]
     is_0dte_session = bool((now_et.hour < 16 and exp_date == now_et.date().isoformat()) or (now_et.hour >= 16 and exp_date >= now_et.date().isoformat()))
 
     return {
@@ -1356,6 +1373,8 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         "net_gex": fmt_dollars(net_total), "regime": "positive" if net_total >= 0 else "negative",
         "regime_text": "양(+) 감마 우세 - 딜러 헤지가 변동성 억제" if net_total >= 0 else "음(−) 감마 우세 - 변동성 증폭 구간",
         "strike_count": len(per), "by_strike": by_strike,
+        "abs_pin_strike": abs_pin_strike,
+        "abs_pin_val": abs_pin_val,
         "gamma_source_note": f"감마 {gamma_schwab}개 Schwab 제공값, {gamma_calc}개 BS 실시간 계산값",
         "oi_skew": {
             "call_oi_at_or_above_spot": int(sum(e["call_oi"] for k, e in per.items() if k >= S)),
