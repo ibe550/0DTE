@@ -27,7 +27,9 @@ function renderYields(y) {
         setText(srcId, srcShort(s));
         const bp = y ? y[chgBpKey] : null;
         setText(chgId, y ? y[chgTextKey] : null);
-        setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-emerald-400' : (bp < 0 ? 'text-rose-400' : 'text-slate-400')));
+        
+        // 금리 상승(bp > 0)시 빨간색, 하락(bp < 0)시 녹색 적용
+        setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-rose-400' : (bp < 0 ? 'text-emerald-400' : 'text-slate-400')));
     });
     setText('yield-spread', y ? y.spread : null);
     const bp = y && y.spread ? parseInt(y.spread, 10) : NaN;
