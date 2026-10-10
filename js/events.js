@@ -3,26 +3,10 @@ function renderEconEvents(e) {
     card.classList.remove('hidden');
     setText('econ-source', (e && e.source) ? e.source : '공식 경제 캘린더 (ET 전용)');
 
-    // 1. FLASH 실시간 속보 렌더링
-    const flashBox = $('flash-news-box'), flashList =$('flash-news-list');
-    const flashItems = (e && e.flash_news) ? e.flash_news : [];
-    if (flashItems.length > 0) {
-        flashBox.classList.remove('hidden');
-        flashList.innerHTML = flashItems.map(item => {
-            const badgeCls = item.tone === 'bull' ? 'bg-emerald-950 text-emerald-300 border-emerald-600' : (item.tone === 'bear' ? 'bg-rose-950 text-rose-300 border-rose-600' : 'bg-amber-950 text-amber-300 border-amber-600');
-            return `<div class="py-1 flex items-center justify-between text-[11px] sm:text-xs bg-slate-950/60 p-1.5 rounded border border-slate-800/80 gap-2">
-                <span class="flex items-center space-x-1.5 truncate">
-                    <span class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded font-black border ${badgeCls} shrink-0">${escapeHtml(item.tag)}</span>
-                    <span class="text-slate-200 font-semibold truncate" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
-                </span>
-                <span class="text-[9px] text-slate-500 font-mono shrink-0">${escapeHtml(item.source)}</span>
-            </div>`;
-        }).join('');
-    } else {
-        flashBox.classList.add('hidden');
-    }
+    // 실시간 속보 박스 숨김 처리
+    const flashBox = $('flash-news-box');
+    if (flashBox) flashBox.classList.add('hidden');
 
-    // 2. 정규 경제 발표 일정 렌더링
     const items = (e && e.items) ? e.items : [];
     if (!items.length) {
         $('econ-list').innerHTML = '<div class="text-[11px] sm:text-xs lg:text-sm text-slate-500 py-0.5">현재 예정되거나 진행 중인 발표가 없습니다.</div>';
