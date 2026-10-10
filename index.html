@@ -31,13 +31,6 @@
         }
     </style>
 </head>
-     <!-- 스크립트 로드 (auth.js를 맨 첫 번째로 배치) -->
-    <script src="js/auth.js"></script>
-    <script src="js/quotes.js"></script>
-    <script src="js/gex.js"></script>
-    <script src="js/cvd.js"></script>
-    <script src="js/events.js"></script>
-    <script src="js/app.js"></script>
 <body class="p-2 md:p-4 lg:p-6 max-w-6xl mx-auto text-slate-100">
     
     <!-- 0. 보안 잠금 화면 (인증 전 전체 차단) -->
@@ -554,7 +547,8 @@
         </div>
     </div>
 
-    <!-- 모듈 스크립트 순차 로드 -->
+<!-- 모듈 스크립트 순차 로드 -->
+    <script src="js/auth.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/quotes.js"></script>
     <script src="js/gex.js"></script>
