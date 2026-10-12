@@ -313,25 +313,28 @@
                 </div>
                 <span id="scale-max">--</span>
             </div>
-        </div>
-        <div id="gex-regime" class="text-[10px] sm:text-xs lg:text-sm text-slate-300 bg-slate-950 border border-slate-800/80 rounded px-2 py-1 hidden mb-2"></div>
-<!-- 상시 노출 타이틀 (토글 제거) -->
-        <div class="border-t border-slate-800 pt-2 mb-2 flex items-center">
-            <span class="text-xs sm:text-sm font-bold text-slate-200">📊 행사가별 GEX 분포</span>
-        </div>
-        
-<!-- 차트 범례 및 고대비 안내 배지 -->
-            <div class="flex flex-wrap justify-between items-center mb-2.5 px-1 gap-2">
-                <div class="flex items-center space-x-4 text-xs sm:text-sm font-bold text-slate-100">
-                    <span class="flex items-center"><span class="w-3.5 h-3.5 bg-emerald-400 rounded-sm mr-1.5 shadow-sm shadow-emerald-500/50"></span>Call GEX (+)</span>
-                    <span class="flex items-center"><span class="w-3.5 h-3.5 bg-rose-500 rounded-sm mr-1.5 shadow-sm shadow-rose-500/50"></span>Put GEX (-)</span>
-                    <span class="flex items-center"><span class="w-3.5 h-0.5 border-t-2 border-indigo-400 border-dashed mr-1.5"></span>현재 지수</span>
-                </div>
-                <span class="text-xs sm:text-sm text-indigo-200 font-bold bg-indigo-950/90 border border-indigo-500/70 px-3 py-1 rounded-md shadow-md flex items-center">
-                    💡 막대에 마우스 호버 / 터치 시 상세 수치 팝업
-                </span>
-            </div>
+</div>
+<!-- 1. Net GEX 배너 -->
+    <div id="gex-regime" class="text-[10px] sm:text-xs lg:text-sm text-slate-300 bg-slate-950 border border-slate-800/80 rounded px-2 py-1 hidden mb-2"></div>
 
+    <!-- 2. 고정 타이틀 -->
+    <!-- 상시 노출 타이틀 (토글 제거) -->
+    <div class="border-t border-slate-800 pt-2 mb-2 flex items-center">
+        <span class="text-xs sm:text-sm font-bold text-slate-200">📊 행사가별 GEX 분포</span>
+    </div>
+
+    <!-- 3. 범례 및 고대비 안내 배지 -->
+    <!-- 차트 범례 및 고대비 안내 배지 -->
+    <div class="flex flex-wrap justify-between items-center mb-2.5 px-1 gap-2">
+        <div class="flex items-center space-x-4 text-xs sm:text-sm font-bold text-slate-100">
+            <span class="flex items-center"><span class="w-3.5 h-3.5 bg-emerald-400 rounded-sm mr-1.5 shadow-sm shadow-emerald-500/50"></span>Call GEX (+)</span>
+            <span class="flex items-center"><span class="w-3.5 h-3.5 bg-rose-500 rounded-sm mr-1.5 shadow-sm shadow-rose-500/50"></span>Put GEX (-)</span>
+            <span class="flex items-center"><span class="w-3.5 h-0.5 border-t-2 border-indigo-400 border-dashed mr-1.5"></span>현재 지수</span>
+        </div>
+        <span class="text-xs sm:text-sm text-indigo-200 font-bold bg-indigo-950/90 border border-indigo-500/70 px-3 py-1 rounded-md shadow-md flex items-center">
+            💡 막대에 마우스 호버 / 터치 시 상세 수치 팝업
+        </span>
+    </div>
             <!-- 차트 캔버스 래퍼 -->
             <div class="relative w-full h-72 sm:h-80 bg-slate-950/90 rounded border border-slate-800/80 overflow-hidden">
                 <canvas id="gex-chart-canvas" class="w-full h-full block cursor-crosshair"></canvas>
