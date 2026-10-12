@@ -575,14 +575,13 @@
             <span id="dir-source" class="truncate">Source --</span>
             <span class="whitespace-nowrap">시간봉 일치도 <span id="tf-match-pct">--</span>%</span>
         </div>
-        <div class="border-t border-slate-800 pt-1.5 flex justify-between items-center text-[10px] sm:text-xs lg:text-sm text-slate-400 cursor-pointer hover:text-slate-200 select-none" onclick="toggleDetailEvidence()">
-            <span class="flex items-center space-x-1 font-semibold text-slate-300">
-                <svg id="evidence-arrow" class="icon-sm transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                <span>방향성 근거 상세 보기 (VWAP · CVD · 모멘텀)</span>
-            </span>
-            <span id="evidence-toggle-text" class="text-blue-400 font-medium">클릭하여 펼치기</span>
+<!-- 방향성 근거 상시 노출 헤더 -->
+        <div class="border-t border-slate-800 pt-2 flex items-center text-[10px] sm:text-xs lg:text-sm font-semibold text-slate-300">
+            <span>📌 방향성 근거 상세 보기 (VWAP · CVD · 모멘텀)</span>
         </div>
-        <div id="detail-evidence-panel" class="hidden mt-2 pt-2 border-t border-slate-800/60 text-[10px] sm:text-xs lg:text-sm space-y-1.5">
+
+        <!-- 상시 노출 패널 (hidden 제거) -->
+        <div id="detail-evidence-panel" class="mt-2 pt-2 border-t border-slate-800/60 text-[10px] sm:text-xs lg:text-sm space-y-1.5">
             <div class="text-[9px] sm:text-xs font-bold text-slate-400 tracking-wider">0DTE 종합 판정 근거</div>
             <div id="evidence-list" class="space-y-1.5"></div>
         </div>
