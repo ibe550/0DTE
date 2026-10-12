@@ -343,11 +343,13 @@ function renderGex(g) {
         if (cLine && isNum(g.call_wall)) { cLine.style.display = 'block'; cLine.style.left = `${pct(g.call_wall)}%`; }
     }
 
-    const toggle = $('gex-strike-toggle');
+// (renderGex 함수 내부 하단)
+    // 차트 토글 여부와 상관없이 데이터 수신 즉시 항상 렌더링
     if (g.by_strike && g.by_strike.length) {
-        if (toggle) toggle.classList.remove('hidden');
-        if (gexStrikesExpanded) drawGexBarChart();
+        drawGexBarChart();
     }
 
+    renderSpreadOptimizer(g.spread_optimizer);
+}
     renderSpreadOptimizer(g.spread_optimizer);
 }
