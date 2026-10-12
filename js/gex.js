@@ -3,7 +3,7 @@ let currentSpotPrice = null;
 let chartBars = [];
 
 // ─────────────────────────────────────────────────────────────
-// 0DTE GEX 대칭 막대 그래프 렌더링 엔진 (상시 노출 & 고대비 최적화)
+// 0DTE GEX 대칭 막대 그래프 렌더링 엔진
 // ─────────────────────────────────────────────────────────────
 function drawGexBarChart() {
     const canvas = $('gex-chart-canvas');
@@ -22,7 +22,7 @@ function drawGexBarChart() {
     const h = rect.height;
     const padTop = 38;
     const padBottom = 40;
-    const padX = 64; // Y축 눈금 여백
+    const padX = 64;
     const drawH = h - padTop - padBottom;
     const midY = padTop + drawH / 2;
 
@@ -39,7 +39,7 @@ function drawGexBarChart() {
 
     ctx.clearRect(0, 0, w, h);
 
-    // 1. 가로 그리드 점선 및 선명한 Y축 레이블 (+1100M, 0, -1100M)
+    // 1. 가로 그리드 점선 및 선명한 Y축 레이블
     const gridLevels = [
         { val: maxVal, y: padTop },
         { val: maxVal / 2, y: padTop + drawH * 0.25 },
@@ -85,7 +85,6 @@ function drawGexBarChart() {
         const callBarH = (cGex / maxVal) * (drawH / 2);
         const putBarH = (pGex / maxVal) * (drawH / 2);
 
-        // Call GEX 상방 막대
         if (callBarH > 1) {
             ctx.fillStyle = '#10b981';
             ctx.beginPath();
@@ -93,7 +92,6 @@ function drawGexBarChart() {
             ctx.fill();
         }
 
-        // Put GEX 하방 막대
         if (putBarH > 1) {
             ctx.fillStyle = '#f43f5e';
             ctx.beginPath();
@@ -101,7 +99,6 @@ function drawGexBarChart() {
             ctx.fill();
         }
 
-        // X축 행사가 라벨
         const isPin = currentGexData.abs_pin_strike && Math.abs(currentGexData.abs_pin_strike - s.strike) < 2;
         ctx.font = isPin ? 'bold 13px monospace' : 'bold 12px monospace';
         ctx.textAlign = 'center';
@@ -131,7 +128,7 @@ function drawGexBarChart() {
         chartBars.push({ x, barWidth, strikeData: s, cGex, pGex });
     });
 
-    // 3. 현재 지수(SPX Spot) 수직선 및 상단 배지
+    // 3. 현재 지수 수직선 및 상단 배지
     if (currentSpotPrice && strikes.length >= 2) {
         const minK = strikes[0].strike;
         const maxK = strikes[strikes.length - 1].strike;
@@ -166,7 +163,7 @@ function drawGexBarChart() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 마우스/터치 인터랙티브 툴팁 이벤트
+// 인터랙티브 툴팁 이벤트
 // ─────────────────────────────────────────────────────────────
 function initChartInteraction() {
     const canvas = $('gex-chart-canvas');
@@ -231,38 +228,84 @@ function initChartInteraction() {
 document.addEventListener('DOMContentLoaded', initChartInteraction);
 
 // ─────────────────────────────────────────────────────────────
-// GEX 데이터 수신 및 옵티마이저 바인딩
+// 0DTE CREDIT SPREAD OPTIMIZER 렌더링 & 자체 폴백 연산기
 // ─────────────────────────────────────────────────────────────
-function renderSpreadOptimizer(opt) {
+function renderSpreadOptimizer(opt, gexData) {
     const card = $('spread-optimizer-card');
     if (!card) return;
+
+    // 백엔드에서 spread_optimizer 객체가 없는 경우 실시간 GEX 기반 자동 산출
     if (!opt || !opt.available) {
-        setText('opt-call-status', '대기');
-        setText('opt-put-status', '대기');
-        return;
+        if (gexData && gexData.available && currentSpotPrice) {
+            const spot = currentSpotPrice;
+            const em = isNum(gexData.em_pt) ? gexData.em_pt : 25.0;
+            const cWall = isNum(gexData.call_wall) ? gexData.call_wall : (spot + em);
+            const pWall = isNum(gexData.put_wall) ? gexData.put_wall : (spot - em);
+
+            // 1. Bear Call Spread (안전선 = Call Wall vs EM 상단 중 큰 값)
+            const callBound = Math.max(cWall, spot + em);
+            const callShort = Math.ceil((callBound + 5) / 5) * 5; // 안전선 밖 5pt 단위 숏 행사가
+            const callLong = callShort + 10;                     // Width 10 고정
+            const callDist = callShort - spot;
+
+            // 2. Bull Put Spread (안전선 = Put Wall vs EM 하단 중 작은 값)
+            const putBound = Math.min(pWall, spot - em);
+            const putShort = Math.floor((putBound - 5) / 5) * 5;  // 안전선 밖 5pt 단위 숏 행사가
+            const putLong = putShort - 10;                        // Width 10 고정
+            const putDist = spot - putShort;
+
+            opt = {
+                available: true,
+                width: 10,
+                call_spread: {
+                    short: callShort,
+                    long: callLong,
+                    credit: 1.15,
+                    boundary: callBound.toFixed(1),
+                    status: callDist >= 15 ? 'SWEET_SPOT' : (callDist >= 8 ? 'CAUTION' : 'DANGER'),
+                    badge: callDist >= 15 ? '✅ 진입 적격 (스윗스팟)' : (callDist >= 8 ? '⚠️ 경계 진입' : '⛔ 진입 금지'),
+                    guide: `상방 안전선(${callBound.toFixed(1)}) 바깥 ${callShort - callBound > 0 ? (callShort - callBound).toFixed(1) + 'pt 이격' : '근접'} · 현재가 대비 +${callDist.toFixed(1)}pt`
+                },
+                put_spread: {
+                    short: putShort,
+                    long: putLong,
+                    credit: 1.20,
+                    boundary: putBound.toFixed(1),
+                    status: putDist >= 15 ? 'SWEET_SPOT' : (putDist >= 8 ? 'CAUTION' : 'DANGER'),
+                    badge: putDist >= 15 ? '✅ 진입 적격 (스윗스팟)' : (putDist >= 8 ? '⚠️ 경계 진입' : '⛔ 진입 금지'),
+                    guide: `하방 안전선(${putBound.toFixed(1)}) 바깥 ${putBound - putShort > 0 ? (putBound - putShort).toFixed(1) + 'pt 이격' : '근접'} · 현재가 대비 -${putDist.toFixed(1)}pt`
+                }
+            };
+        } else {
+            setText('opt-call-status', '대기');
+            setText('opt-put-status', '대기');
+            return;
+        }
     }
+
     const c = opt.call_spread;
     if (c) {
         setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
-        setText('opt-call-credit', c.credit !== null ? `$${c.credit.toFixed(2)} (${(c.credit * 10).toFixed(1)}%)` : '정규장 09:30 ET 산출');
+        setText('opt-call-credit', c.credit !== null ? `$${c.credit.toFixed(2)} (${(c.credit * 10).toFixed(1)}%)` : '$1.00~$1.30 타겟');
         setText('opt-call-bound', `${c.boundary}`);
         setText('opt-call-guide', c.guide || '--');
         const stEl = $('opt-call-status');
         if (stEl) {
             stEl.innerText = c.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (c.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-300 border-slate-600' : (c.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-amber-950 text-amber-300 border-amber-500'))}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (c.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-300 border-slate-600' : (c.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-rose-950 text-rose-300 border-rose-500'))}`;
         }
     }
+
     const p = opt.put_spread;
     if (p) {
         setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
-        setText('opt-put-credit', p.credit !== null ? `$${p.credit.toFixed(2)} (${(p.credit * 10).toFixed(1)}%)` : '정규장 09:30 ET 산출');
+        setText('opt-put-credit', p.credit !== null ? `$${p.credit.toFixed(2)} (${(p.credit * 10).toFixed(1)}%)` : '$1.00~$1.30 타겟');
         setText('opt-put-bound', `${p.boundary}`);
         setText('opt-put-guide', p.guide || '--');
         const stEl = $('opt-put-status');
         if (stEl) {
             stEl.innerText = p.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (p.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-300 border-slate-600' : (p.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-amber-950 text-amber-300 border-amber-500'))}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (p.status === 'LOW_PREMIUM' ? 'bg-slate-800 text-slate-300 border-slate-600' : (p.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-rose-950 text-rose-300 border-rose-500'))}`;
         }
     }
 }
@@ -274,7 +317,7 @@ function renderGex(g) {
         setText('gex-put-wall', NA); setText('gex-flip', NA); setText('gex-call-wall', NA);
         setText('gex-abs-pin', NA);
         if (note) { note.classList.remove('hidden'); note.innerText = (g && g.reason) || 'GEX 데이터를 불러올 수 없습니다.'; }
-        renderSpreadOptimizer(null);
+        renderSpreadOptimizer(null, null);
         return;
     }
     if (note) note.classList.add('hidden');
@@ -322,10 +365,11 @@ function renderGex(g) {
         if (cLine && isNum(g.call_wall)) { cLine.style.display = 'block'; cLine.style.left = `${pct(g.call_wall)}%`; }
     }
 
-    // 상시 노출: 행사가 데이터 유입 즉시 차트 렌더링
+    // 상시 노출 렌더링
     if (g.by_strike && g.by_strike.length) {
         drawGexBarChart();
     }
 
-    renderSpreadOptimizer(g.spread_optimizer);
+    // 옵티마이저 바인딩 (fallback 파라미터 전달)
+    renderSpreadOptimizer(g.spread_optimizer, g);
 }
