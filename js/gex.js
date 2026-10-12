@@ -1,30 +1,10 @@
-let gexStrikesExpanded = false;
 let currentGexData = null;
 let currentSpotPrice = null;
-
-function toggleGexStrikes() {
-    gexStrikesExpanded = !gexStrikesExpanded;
-    const panel = $('gex-strike-panel');
-    const arrow = $('gex-strike-arrow');
-    const txt = $('gex-strike-toggle-text');
-    if (!panel) return;
-    if (gexStrikesExpanded) {
-        panel.classList.remove('hidden');
-        if (arrow) arrow.classList.add('rotate-180');
-        if (txt) txt.innerText = '클릭하여 차트 접기';
-        drawGexBarChart();
-    } else {
-        panel.classList.add('hidden');
-        if (arrow) arrow.classList.remove('rotate-180');
-        if (txt) txt.innerText = '클릭하여 차트 펼치기';
-    }
-}
-
-// ─────────────────────────────────────────────────────────────
-// 0DTE GEX 대칭 막대 그래프 렌더링 엔진 (초고해상도 & 가독성 강화)
-// ─────────────────────────────────────────────────────────────
 let chartBars = [];
 
+// ─────────────────────────────────────────────────────────────
+// 0DTE GEX 대칭 막대 그래프 렌더링 엔진 (상시 노출 & 고대비 최적화)
+// ─────────────────────────────────────────────────────────────
 function drawGexBarChart() {
     const canvas = $('gex-chart-canvas');
     if (!canvas || !currentGexData || !currentGexData.by_strike || !currentGexData.by_strike.length) return;
@@ -42,7 +22,7 @@ function drawGexBarChart() {
     const h = rect.height;
     const padTop = 38;
     const padBottom = 40;
-    const padX = 64; // Y축 수치가 여유 있게 들어가도록 좌측 여백 확장
+    const padX = 64; // Y축 눈금 여백
     const drawH = h - padTop - padBottom;
     const midY = padTop + drawH / 2;
 
@@ -77,17 +57,16 @@ function drawGexBarChart() {
         ctx.lineTo(w - 16, gl.y);
         ctx.stroke();
 
-        // 좌측 Y축 텍스트 (bold 12px 고대비 폰트)
         ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'right';
         if (gl.val > 0) {
-            ctx.fillStyle = '#34d399'; // 밝은 에메랄드
+            ctx.fillStyle = '#34d399';
             ctx.fillText(`+${gl.val}M`, padX - 14, gl.y + 4);
         } else if (gl.val < 0) {
-            ctx.fillStyle = '#fb7185'; // 밝은 로즈
+            ctx.fillStyle = '#fb7185';
             ctx.fillText(`${gl.val}M`, padX - 14, gl.y + 4);
         } else {
-            ctx.fillStyle = '#f8fafc'; // 깨끗한 화이트
+            ctx.fillStyle = '#f8fafc';
             ctx.fillText('0', padX - 14, gl.y + 4);
         }
     });
@@ -122,7 +101,7 @@ function drawGexBarChart() {
             ctx.fill();
         }
 
-        // X축 행사가 라벨 (12px 볼드)
+        // X축 행사가 라벨
         const isPin = currentGexData.abs_pin_strike && Math.abs(currentGexData.abs_pin_strike - s.strike) < 2;
         ctx.font = isPin ? 'bold 13px monospace' : 'bold 12px monospace';
         ctx.textAlign = 'center';
@@ -265,7 +244,7 @@ function renderSpreadOptimizer(opt) {
     const c = opt.call_spread;
     if (c) {
         setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
-        setText('opt-call-credit', c.credit !== null ? `$${c.credit.toFixed(2)} (${(c.credit * 10).toFixed(1)}%)` : '화요일 09:30 ET 산출');
+        setText('opt-call-credit', c.credit !== null ? `$${c.credit.toFixed(2)} (${(c.credit * 10).toFixed(1)}%)` : '정규장 09:30 ET 산출');
         setText('opt-call-bound', `${c.boundary}`);
         setText('opt-call-guide', c.guide || '--');
         const stEl = $('opt-call-status');
@@ -277,7 +256,7 @@ function renderSpreadOptimizer(opt) {
     const p = opt.put_spread;
     if (p) {
         setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
-        setText('opt-put-credit', p.credit !== null ? `$${p.credit.toFixed(2)} (${(p.credit * 10).toFixed(1)}%)` : '화요일 09:30 ET 산출');
+        setText('opt-put-credit', p.credit !== null ? `$${p.credit.toFixed(2)} (${(p.credit * 10).toFixed(1)}%)` : '정규장 09:30 ET 산출');
         setText('opt-put-bound', `${p.boundary}`);
         setText('opt-put-guide', p.guide || '--');
         const stEl = $('opt-put-status');
@@ -343,13 +322,10 @@ function renderGex(g) {
         if (cLine && isNum(g.call_wall)) { cLine.style.display = 'block'; cLine.style.left = `${pct(g.call_wall)}%`; }
     }
 
-// (renderGex 함수 내부 하단)
-    // 차트 토글 여부와 상관없이 데이터 수신 즉시 항상 렌더링
+    // 상시 노출: 행사가 데이터 유입 즉시 차트 렌더링
     if (g.by_strike && g.by_strike.length) {
         drawGexBarChart();
     }
 
-    renderSpreadOptimizer(g.spread_optimizer);
-}
     renderSpreadOptimizer(g.spread_optimizer);
 }
