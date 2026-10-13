@@ -228,13 +228,12 @@ function initChartInteraction() {
 document.addEventListener('DOMContentLoaded', initChartInteraction);
 
 // ─────────────────────────────────────────────────────────────
-// 0DTE CREDIT SPREAD OPTIMIZER 렌더링 & 자체 폴백 연산기
+// 0DTE CREDIT SPREAD OPTIMIZER (실시간 잔여시간/이격도 기반 동적 추정기)
 // ─────────────────────────────────────────────────────────────
 function renderSpreadOptimizer(opt, gexData) {
     const card = $('spread-optimizer-card');
     if (!card) return;
 
-    // 백엔드에서 spread_optimizer 객체가 없는 경우 실시간 GEX 기반 자동 산출
     if (!opt || !opt.available) {
         if (gexData && gexData.available && currentSpotPrice) {
             const spot = currentSpotPrice;
@@ -242,17 +241,69 @@ function renderSpreadOptimizer(opt, gexData) {
             const cWall = isNum(gexData.call_wall) ? gexData.call_wall : (spot + em);
             const pWall = isNum(gexData.put_wall) ? gexData.put_wall : (spot - em);
 
-            // 1. Bear Call Spread (안전선 = Call Wall vs EM 상단 중 큰 값)
-            const callBound = Math.max(cWall, spot + em);
-            const callShort = Math.ceil((callBound + 5) / 5) * 5; // 안전선 밖 5pt 단위 숏 행사가
-            const callLong = callShort + 10;                     // Width 10 고정
-            const callDist = callShort - spot;
+            // 1. 미국 동부시간(EDT) 기준 장마감(16:00)까지 잔여 시간(분) 산출
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const nowET = new Date(utc - (4 * 3600000)); // EDT (UTC-4)
+            const currentMins = nowET.getHours() * 60 + nowET.getMinutes();
+            const closeMins = 16 * 60; // 16:00 ET 장마감
+            const remainMins = Math.max(10, Math.min(390, closeMins - currentMins));
+            const timeDecayFactor = Math.sqrt(remainMins / 390); // 잔여 시간에 비례한 세타 감쇄율
 
-            // 2. Bull Put Spread (안전선 = Put Wall vs EM 하단 중 작은 값)
+            // 2. Bear Call Spread (상방) 행사가 및 동적 프리미엄 계산
+            const callBound = Math.max(cWall, spot + em);
+            const callShort = Math.ceil((callBound + 5) / 5) * 5;
+            const callLong = callShort + 10;
+            const callDist = callShort - spot;
+            
+            // 이격 거리 및 잔여 시간 기반 현실적 크레딧 추정치 (Width 10 기준)
+            let rawCallCredit = Math.max(0.05, (3.2 / (1 + (callDist / 12) * 1.8)) * timeDecayFactor);
+            rawCallCredit = Math.round(rawCallCredit * 20) / 20; // 0.05 단위 호가 보정
+
+            let callStatus = 'WAITING';
+            let callBadge = '⏳ 대기';
+            let callGuide = `상방 안전선(${callBound.toFixed(1)}) 바깥 +${(callShort - callBound).toFixed(1)}pt`;
+
+            if (callDist < 10) {
+                callStatus = 'DANGER';
+                callBadge = '⛔ 진입 금지 (근접 위험)';
+                callGuide = `현재가 근접(이격 ${callDist.toFixed(1)}pt) · 감마 스퀴즈 위험`;
+            } else if (rawCallCredit >= 1.00 && rawCallCredit <= 1.40) {
+                callStatus = 'SWEET_SPOT';
+                callBadge = '✅ 진입 적격 (스윗스팟)';
+                callGuide = `안전선 바깥 +${(callShort - callBound).toFixed(1)}pt · 목표 크레딧 충족`;
+            } else if (rawCallCredit < 1.00) {
+                callStatus = 'LOW_PREMIUM';
+                callBadge = '⚠️ 프리미엄 부족';
+                callGuide = `세타 감쇄로 수취액 미달($${rawCallCredit.toFixed(2)}) · 진입 실익 낮음`;
+            }
+
+            // 3. Bull Put Spread (하방) 행사가 및 동적 프리미엄 계산
             const putBound = Math.min(pWall, spot - em);
-            const putShort = Math.floor((putBound - 5) / 5) * 5;  // 안전선 밖 5pt 단위 숏 행사가
-            const putLong = putShort - 10;                        // Width 10 고정
+            const putShort = Math.floor((putBound - 5) / 5) * 5;
+            const putLong = putShort - 10;
             const putDist = spot - putShort;
+
+            let rawPutCredit = Math.max(0.05, (3.4 / (1 + (putDist / 12) * 1.8)) * timeDecayFactor);
+            rawPutCredit = Math.round(rawPutCredit * 20) / 20;
+
+            let putStatus = 'WAITING';
+            let putBadge = '⏳ 대기';
+            let putGuide = `하방 안전선(${putBound.toFixed(1)}) 바깥 -${(putBound - putShort).toFixed(1)}pt`;
+
+            if (putDist < 10) {
+                putStatus = 'DANGER';
+                putBadge = '⛔ 진입 금지 (근접 위험)';
+                putGuide = `현재가 근접(이격 ${putDist.toFixed(1)}pt) · 감마 스퀴즈 위험`;
+            } else if (rawPutCredit >= 1.00 && rawPutCredit <= 1.40) {
+                putStatus = 'SWEET_SPOT';
+                putBadge = '✅ 진입 적격 (스윗스팟)';
+                putGuide = `안전선 바깥 -${(putBound - putShort).toFixed(1)}pt · 목표 크레딧 충족`;
+            } else if (rawPutCredit < 1.00) {
+                putStatus = 'LOW_PREMIUM';
+                putBadge = '⚠️ 프리미엄 부족';
+                putGuide = `세타 감쇄로 수취액 미달($${rawPutCredit.toFixed(2)}) · 진입 실익 낮음`;
+            }
 
             opt = {
                 available: true,
@@ -260,20 +311,20 @@ function renderSpreadOptimizer(opt, gexData) {
                 call_spread: {
                     short: callShort,
                     long: callLong,
-                    credit: 1.15,
+                    credit: rawCallCredit,
                     boundary: callBound.toFixed(1),
-                    status: callDist >= 15 ? 'SWEET_SPOT' : (callDist >= 8 ? 'CAUTION' : 'DANGER'),
-                    badge: callDist >= 15 ? '✅ 진입 적격 (스윗스팟)' : (callDist >= 8 ? '⚠️ 경계 진입' : '⛔ 진입 금지'),
-                    guide: `상방 안전선(${callBound.toFixed(1)}) 바깥 ${callShort - callBound > 0 ? (callShort - callBound).toFixed(1) + 'pt 이격' : '근접'} · 현재가 대비 +${callDist.toFixed(1)}pt`
+                    status: callStatus,
+                    badge: callBadge,
+                    guide: callGuide
                 },
                 put_spread: {
                     short: putShort,
                     long: putLong,
-                    credit: 1.20,
+                    credit: rawPutCredit,
                     boundary: putBound.toFixed(1),
-                    status: putDist >= 15 ? 'SWEET_SPOT' : (putDist >= 8 ? 'CAUTION' : 'DANGER'),
-                    badge: putDist >= 15 ? '✅ 진입 적격 (스윗스팟)' : (putDist >= 8 ? '⚠️ 경계 진입' : '⛔ 진입 금지'),
-                    guide: `하방 안전선(${putBound.toFixed(1)}) 바깥 ${putBound - putShort > 0 ? (putBound - putShort).toFixed(1) + 'pt 이격' : '근접'} · 현재가 대비 -${putDist.toFixed(1)}pt`
+                    status: putStatus,
+                    badge: putBadge,
+                    guide: putGuide
                 }
             };
         } else {
@@ -286,7 +337,7 @@ function renderSpreadOptimizer(opt, gexData) {
     const c = opt.call_spread;
     if (c) {
         setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
-        setText('opt-call-credit', c.credit !== null ? `$${c.credit.toFixed(2)} (${(c.credit * 10).toFixed(1)}%)` : '$1.00~$1.30 타겟');
+        setText('opt-call-credit', c.credit !== null ? `$${c.credit.toFixed(2)} (${(c.credit * 10).toFixed(1)}%)` : '--');
         setText('opt-call-bound', `${c.boundary}`);
         setText('opt-call-guide', c.guide || '--');
         const stEl = $('opt-call-status');
@@ -299,7 +350,7 @@ function renderSpreadOptimizer(opt, gexData) {
     const p = opt.put_spread;
     if (p) {
         setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
-        setText('opt-put-credit', p.credit !== null ? `$${p.credit.toFixed(2)} (${(p.credit * 10).toFixed(1)}%)` : '$1.00~$1.30 타겟');
+        setText('opt-put-credit', p.credit !== null ? `$${p.credit.toFixed(2)} (${(p.credit * 10).toFixed(1)}%)` : '--');
         setText('opt-put-bound', `${p.boundary}`);
         setText('opt-put-guide', p.guide || '--');
         const stEl = $('opt-put-status');
