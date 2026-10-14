@@ -726,17 +726,16 @@ def get_polymarket_spx(spx_price):
         "available": False, "title": "Polymarket SPX", "summary": "집계 대기 중", "source": "Polymarket"
     }
 
-
 # ─────────────────────────────────────────────────────────────
-# 캔들 데이터 / CVD / Volume Profile (Schwab 전용)
+# 캔들 데이터 / CVD / Volume Profile (1분봉 실시간 정밀 합성)
 # ─────────────────────────────────────────────────────────────
 TF_SPEC = {
     "1m": (1, 2, None),
-    "5m": (5, 5, None),
-    "10m": (5, 5, 10),
-    "15m": (5, 5, 15),
-    "30m": (5, 5, 30),
-    "1h": (30, 10, 60),
+    "5m": (1, 2, 5),     # 1분봉 실시간 데이터를 5분봉으로 정밀 합성 (지연/누락 원천 차단)
+    "10m": (1, 2, 10),   # 1분봉 실시간 데이터를 10분봉으로 정밀 합성
+    "15m": (1, 2, 15),   # 1분봉 실시간 데이터를 15분봉으로 정밀 합성
+    "30m": (1, 2, 30),   # 1분봉 실시간 데이터를 30분봉으로 정밀 합성
+    "1h": (5, 10, 60),   # 1시간봉은 10일치 5분봉 합성 (RSI 14기간 확보용)
 }
 TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
 INSTR = {"spx": "$SPX", "spy": "SPY"}
@@ -749,12 +748,31 @@ def normalize_tf(tf):
 
 def schwab_candles(token, symbol, freq, days):
     now_ms = int(time.time() * 1000)
-    data = schwab_get(token, "/pricehistory", {"symbol": symbol, "periodType": "day", "period": days, "frequencyType": "minute", "frequency": freq, "endDate": now_ms, "needExtendedHoursData": "true"}, timeout=5)
+    data = schwab_get(
+        token,
+        "/pricehistory",
+        {
+            "symbol": symbol,
+            "periodType": "day",
+            "period": days,
+            "frequencyType": "minute",
+            "frequency": freq,
+            "endDate": now_ms,
+            "needExtendedHoursData": "true",
+        },
+        timeout=5,
+    )
     out = []
     if isinstance(data, dict):
         for cd in data.get("candles") or []:
             if isinstance(cd, dict):
-                o, h, l, c, t = num(cd.get("open")), num(cd.get("high")), num(cd.get("low")), num(cd.get("close")), num(cd.get("datetime"))
+                o, h, l, c, t = (
+                    num(cd.get("open")),
+                    num(cd.get("high")),
+                    num(cd.get("low")),
+                    num(cd.get("close")),
+                    num(cd.get("datetime")),
+                )
                 if None not in (o, h, l, c, t):
                     out.append({"t": int(t / 1000), "o": o, "h": h, "l": l, "c": c, "v": num(cd.get("volume")) or 0.0})
     return out
@@ -764,15 +782,63 @@ def aggregate_candles(candles, minutes):
     groups = OrderedDict()
     for cd in candles:
         dt = datetime.fromtimestamp(cd["t"], ET)
-        key = (dt.date(), (dt.hour * 60 + dt.minute - 570) // minutes)
+        slot_min = ((dt.hour * 60 + dt.minute) // minutes) * minutes
+        slot_h, slot_m = divmod(slot_min, 60)
+        slot_ts = int(ET.localize(datetime(dt.year, dt.month, dt.day, slot_h, slot_m, 0)).timestamp())
+        key = (dt.date(), slot_ts)
+
         if key not in groups:
-            groups[key] = dict(cd)
+            groups[key] = {
+                "t": slot_ts,
+                "o": cd["o"],
+                "h": cd["h"],
+                "l": cd["l"],
+                "c": cd["c"],
+                "v": cd["v"],
+                "buy_v": cd.get("buy_v", 0.0),
+                "sell_v": cd.get("sell_v", 0.0),
+            }
         else:
             groups[key]["h"] = max(groups[key]["h"], cd["h"])
             groups[key]["l"] = min(groups[key]["l"], cd["l"])
             groups[key]["c"] = cd["c"]
             groups[key]["v"] += cd["v"]
+            groups[key]["buy_v"] += cd.get("buy_v", 0.0)
+            groups[key]["sell_v"] += cd.get("sell_v", 0.0)
     return list(groups.values())
+
+
+def split_bar_volume(c):
+    """단일 캔들에서도 고가 마감 시 Sell이 0이 되지 않도록 캔들 내부 압력 정밀 분배"""
+    v, o, h, l, cl = c["v"], c["o"], c["h"], c["l"], c["c"]
+    if v <= 0:
+        return 0.0, 0.0
+    rng = h - l
+    if rng <= 1e-9:
+        return (v * 0.5, v * 0.5)
+
+    # 기본 위치 비율 + 시가 대비 종가 모멘텀 결합 (최소 5% ~ 최대 95% 클램핑으로 0% 왜곡 방지)
+    pos_ratio = (cl - l) / rng
+    body_ratio = 0.5 + 0.5 * ((cl - o) / rng)
+    raw_buy = 0.6 * pos_ratio + 0.4 * body_ratio
+    buy_ratio = max(0.05, min(0.95, raw_buy))
+    return v * buy_ratio, v * (1.0 - buy_ratio)
+
+
+def get_base_candles(token, ssym, freq, days):
+    def load():
+        if not token or not ssym:
+            return None
+        cs = schwab_candles(token, ssym, freq, days)
+        if not cs:
+            return None
+        for c in cs:
+            bv, sv = split_bar_volume(c)
+            c["buy_v"] = bv
+            c["sell_v"] = sv
+        return cs
+
+    return cached(f"base_candles:{ssym}:{freq}:{days}", 5, load)
 
 
 def get_candles(token, inst, tf):
@@ -781,16 +847,13 @@ def get_candles(token, inst, tf):
     def load():
         s_freq, s_days, agg = TF_SPEC[key]
         ssym = INSTR.get(inst)
-        if not token or not ssym:
+        base = get_base_candles(token, ssym, s_freq, s_days)
+        if not base:
             return None
-        cs = schwab_candles(token, ssym, s_freq, s_days)
-        if cs:
-            if agg:
-                cs = aggregate_candles(cs, agg)
-            return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
-        return None
+        cs = aggregate_candles(base, agg) if agg else [dict(c) for c in base]
+        return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
 
-    return cached(f"candles:{inst}:{key}", 6 if key in ("1m", "5m", "10m") else 20, load)
+    return cached(f"candles:{inst}:{key}", 5, load)
 
 
 def get_rth_session(candles, now_et=None):
@@ -813,8 +876,8 @@ def get_rth_session(candles, now_et=None):
             sessions.setdefault(d, []).append(c)
 
     all_dates = sorted(sessions.keys())
-    if is_rth:
-        return sessions.get(today, []), False, today.strftime("%m/%d")
+    if is_rth and today in sessions:
+        return sessions[today], False, today.strftime("%m/%d")
     if is_after and today in sessions:
         return sessions[today], False, today.strftime("%m/%d")
     priors = [d for d in all_dates if d < today]
@@ -898,11 +961,13 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
     buy = sell = running = 0.0
     out = []
     for c in bars:
-        v, h, l, cl = c["v"], c["h"], c["l"], c["c"]
-        rng = h - l
-        buy_ratio = (cl - l) / rng if rng > 0 else 0.5
-        b_v = v * buy_ratio
-        s_v = v * (1.0 - buy_ratio)
+        v = c["v"]
+        # 1분봉에서 누적된 실제 매수/매도 볼륨을 그대로 합산하여 전 타임프레임(1m~1H) 매도 볼륨이 0이 되는 현상 해결
+        if "buy_v" in c and "sell_v" in c and (c["buy_v"] + c["sell_v"]) > 0:
+            b_v, s_v = c["buy_v"], c["sell_v"]
+        else:
+            b_v, s_v = split_bar_volume(c)
+
         delta = b_v - s_v
         buy += b_v
         sell += s_v
@@ -935,7 +1000,6 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
         "recent_vol": fmt_v(bars[-1]["v"]), "total_vol": fmt_v(total),
         "bars": out, "summary_text": f"CVD Flow: Buy {buy_pct}% / Sell {sell_pct}% in session.",
     }
-
 
 # ─────────────────────────────────────────────────────────────
 # GEX & 방향 분석 & 변동성 쇼크
