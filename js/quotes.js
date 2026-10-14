@@ -47,8 +47,8 @@ function updateVixRatio() {
 }
 
 function renderQuote(pfx, q, opts = {}) {
-    // ES, MAG7, WTI, BRENT, USO는 백엔드 시세를 무시하고 CNBC 초고속 직결 시세만 단독 사용
-    if (pfx === 'es' || pfx === 'mag7' || pfx === 'mags' || pfx === 'wti' || pfx === 'brent' || pfx === 'uso') return;
+    // MAG7, USO만 CNBC(장외 실시간 포함)를 쓰고, ES·WTI·BRENT 선물은 백엔드 실시간 시세 사용
+    if (pfx === 'mag7' || pfx === 'mags' || pfx === 'uso') return;
 
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
@@ -191,8 +191,8 @@ function handleEtfWithExtended(prefix, baseLabel, q, regPrice, regChg, regPct) {
 }
 
 function fetchCnbcMacroQuotes() {
-    // 1회 호출로 ES선물(@SP.1) + MAG7(MAGS) + 오일 3종(@CL.1, @LCO.1, USO) + 국채 3종(US3M, US10Y, US30Y) 동시 수신
-    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@SP.1%7CMAGS%7C@CL.1%7C@LCO.1%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+    // 100% 실시간인 MAG7(MAGS) + USO + 국채 3종(US3M, US10Y, US30Y)만 CNBC에서 즉시 수신
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=MAGS%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
 
     fetch(url)
         .then(function(r) { return r.json(); })
