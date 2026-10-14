@@ -194,7 +194,7 @@ function fetchUsoQuoteFallback() {
             }
             // 2순위: 백엔드에 USO가 없을 경우 Yahoo Finance 실시간 차트 API 호출
             var yUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/USO?interval=1d&range=2d');
-            return fetch('https://corsproxy.io/?' + yUrl)
+            return fetch('https://api.allorigins.win/raw?url=' + yUrl)
                 .then(function(res) { return res.json(); })
                 .then(function(yData) {
                     var meta = yData && yData.chart && yData.chart.result && yData.chart.result[0] && yData.chart.result[0].meta;
