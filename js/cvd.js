@@ -9,7 +9,6 @@ function safeSet(id, val) {
     }
 }
 
-// 백엔드 vol(천 주 단위)을 실제 주 단위로 환산하여 M(밀리언) / K 표기
 function fmtVolM(shares) {
     if (shares === null || shares === undefined || isNaN(shares)) return '--';
     var abs = Math.abs(shares);
@@ -18,7 +17,6 @@ function fmtVolM(shares) {
     return Math.round(shares).toString();
 }
 
-// 좌측 Y축 눈금용 간결한 M / K 표기
 function fmtYAxisVol(shares) {
     if (shares === null || shares === undefined || isNaN(shares)) return '--';
     var abs = Math.abs(shares);
@@ -31,30 +29,40 @@ function formatEtTime(unixSec) {
     if (!unixSec) return '--';
     var d = new Date(unixSec * 1000);
     var utc = d.getTime() + (d.getTimezoneOffset() * 60000);
-    var et = new Date(utc - (4 * 3600000)); // EDT (UTC-4)
+    var et = new Date(utc - (4 * 3600000));
     var hh = String(et.getHours()).padStart(2, '0');
     var mm = String(et.getMinutes()).padStart(2, '0');
     return hh + ':' + mm;
 }
 
-// 타임프레임 버튼 클릭 연동 (1m / 5m / 10m / 15m / 30m / 1H)
+// Qabduun 1m / 5m / 10m / 15m / 30m / 1H yeroo cuqaasamu kallattiin tf sirrii waama
 function changeCvdTimeframe(tf) {
     if (!tf) return;
-    currentCvdTf = tf;
+    currentCvdTf = tf.toLowerCase();
+    window.currentCvdTf = currentCvdTf;
+    window.cvdTf = currentCvdTf;
 
     var btns = document.querySelectorAll('#cvd-tf-group button, [data-cvd-tf]');
     btns.forEach(function(btn) {
         var bText = (btn.getAttribute('data-cvd-tf') || btn.innerText || '').trim().toLowerCase();
-        if (bText === tf.toLowerCase()) {
+        if (bText === currentCvdTf) {
             btn.className = 'px-2.5 py-1 text-xs font-mono font-bold bg-emerald-600 text-white rounded shadow-sm';
         } else {
             btn.className = 'px-2.5 py-1 text-xs font-mono font-semibold bg-slate-800 text-slate-300 hover:text-white rounded';
         }
     });
 
-    if (typeof fetchRealMarketData === 'function') {
-        fetchRealMarketData();
-    }
+    // 5m cuqaasamee 1m akka hin agarsiisneef kallattiin API cvd_tf waliin waama
+    fetch('https://0-dte-seven.vercel.app/api/market-data?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d && d.cvd) {
+                renderCvd(d.cvd);
+            }
+        })
+        .catch(function() {
+            if (typeof fetchRealMarketData === 'function') fetchRealMarketData();
+        });
 }
 window.changeCvdTimeframe = changeCvdTimeframe;
 window.setCvdTimeframe = changeCvdTimeframe;
@@ -62,15 +70,32 @@ window.setCvdTimeframe = changeCvdTimeframe;
 function renderCvd(cvd) {
     if (!cvd) return;
     if (cvd.cvd && !cvd.bars) cvd = cvd.cvd;
-    currentCvdData = cvd;
 
     var bars = cvd.bars || cvd.series || cvd.data || cvd.candles || [];
     if (!Array.isArray(bars) || bars.length === 0) return;
 
-    var tfLabel = (cvd.timeframe || currentCvdTf || '10m');
+    // Auto-refresh yeroo dhufu tf filatamee jiru (fakkeenyaaf 5m) chaartii 1mtiin akka hin balleessine eega
+    var incomingSource = String(cvd.source || '');
+    var expectedTag = 'SPY ' + (currentCvdTf === '1h' ? '1H' : currentCvdTf);
+    if (incomingSource.indexOf('SPY ') !== -1 && incomingSource.indexOf(expectedTag) === -1) {
+        fetch('https://0-dte-seven.vercel.app/api/market-data?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d && d.cvd) renderCvdDirect(d.cvd); })
+            .catch(function() {});
+        return;
+    }
+
+    renderCvdDirect(cvd);
+}
+
+function renderCvdDirect(cvd) {
+    currentCvdData = cvd;
+    var bars = cvd.bars || [];
+    if (!bars.length) return;
+
+    var tfLabel = (currentCvdTf === '1h' ? '1H' : currentCvdTf);
     var srcLabel = cvd.source || ('Charles Schwab (SPY ' + tfLabel + ')');
 
-    // 1. 상단 헤더 및 뱃지 복원
     safeSet('cvd-title-tf', tfLabel.toUpperCase());
     safeSet('cvd-source', srcLabel);
     safeSet('cvd-data-time', 'Data as of ' + (cvd.data_time || '--'));
@@ -78,21 +103,16 @@ function renderCvd(cvd) {
     var priorBadge = document.getElementById('cvd-prior-badge');
     if (priorBadge) {
         priorBadge.classList.remove('hidden');
-        if (cvd.is_prior) {
-            priorBadge.innerHTML = '🟡 전일 정규장 마감';
-        } else {
-            priorBadge.innerHTML = '🟢 당일 정규장 실시간';
-        }
+        priorBadge.innerHTML = cvd.is_prior ? '🟡 전일 정규장 마감' : '🟢 당일 정규장 실시간';
     }
 
-    // 2. 거래량 합산 및 백엔드 정밀 Buy/Sell 데이터 우선 적용
     var rawSum = 0;
     bars.forEach(function(b) { rawSum += Number(b.vol || b.volume || 0); });
     var unitMult = rawSum < 500000 ? 1000 : 1;
 
     var maxVolShares = 1000;
     var totalVolShares = 0;
-    var cvdVals = [];
+    var cvdVals = [0]; // 0 irraa jalqabuun sararri CVD akka faallaa hin deemne taasisa
 
     bars.forEach(function(b) {
         var vShares = Number(b.vol !== undefined ? b.vol : (b.volume || 0)) * unitMult;
@@ -101,7 +121,6 @@ function renderCvd(cvd) {
         cvdVals.push(Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0)));
     });
 
-    // 백엔드가 정밀 계산한 buy_pct / sell_pct / buy_vol / sell_vol을 최우선 사용 (막대 색상 100% 쏠림 버그 해결)
     var buyPctRound = (cvd.buy_pct !== undefined && cvd.buy_pct !== null) ? Number(cvd.buy_pct) : 50;
     var sellPctRound = (cvd.sell_pct !== undefined && cvd.sell_pct !== null) ? Number(cvd.sell_pct) : (100 - buyPctRound);
 
@@ -119,11 +138,9 @@ function renderCvd(cvd) {
     var tEndFull = cvd.last_bar_time || (formatEtTime(lastBar.t) + ':00 ET');
     var sDate = cvd.session_date || (cvd.data_time ? cvd.data_time.split(' ')[0] : '');
 
-    // 집계 구간 및 데이터 설명 복원
     safeSet('cvd-agg-range', cvd.aggregate_range || (sDate + ' 정규장 (' + tStart + ' ~ ' + tEndFull + ') · ' + bars.length + '개 ' + tfLabel + ' 봉'));
     safeSet('cvd-data-desc', cvd.data_desc || ('SPY 정규장 · ' + srcLabel + ' · 체결 압력 CVD'));
 
-    // 우측 상단 Buying / Selling Pressure 뱃지 복원
     var pill = document.getElementById('cvd-status-pill');
     if (pill) {
         if (buyPctRound >= 53) {
@@ -138,7 +155,6 @@ function renderCvd(cvd) {
         }
     }
 
-    // 3. 좌측 Y축 눈금 (선명한 M / K 단위 표시)
     function setYLabel(id, text, color) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -153,7 +169,6 @@ function renderCvd(cvd) {
     setYLabel('cvd-y-max', fmtYAxisVol(maxVolShares), '#38bdf8');
     setYLabel('cvd-y-mid', fmtYAxisVol(maxVolShares / 2), '#e2e8f0');
 
-    // 4. 하단 밀리언(M) 거래량 및 Buy/Sell 상세 수치 복원
     safeSet('cvd-inspect-label', '마지막 봉');
     safeSet('cvd-last-time', cvd.data_time || (sDate + ' ' + tEndFull));
     safeSet('cvd-inspect-sub', '최근 봉');
@@ -170,7 +185,6 @@ function renderCvd(cvd) {
 
     safeSet('cvd-summary-text', cvd.summary_text || cvd.summary || ('CVD Flow: Buy ' + buyPctRound + '% / Sell ' + sellPctRound + '% in session.'));
 
-    // 5. SVG 차트 렌더링
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
 
@@ -207,7 +221,6 @@ function renderCvd(cvd) {
     var stepX = chartW / bars.length;
     var barW = Math.max(2, Math.min(18, stepX * 0.72));
 
-    // (A) 30분 간격 세로 점선 및 하단 시간(09:30 ~ 16:00) 텍스트 렌더링
     if (vGridGroup) {
         var gridHtml = '';
         bars.forEach(function(b, i) {
@@ -228,7 +241,6 @@ function renderCvd(cvd) {
         vGridGroup.innerHTML = gridHtml;
     }
 
-    // (B) 거래량 막대 렌더링 (<g id="cvd-real-bars">)
     var realBarsGroup = document.getElementById('cvd-real-bars');
     if (realBarsGroup) {
         var barsHtml = '';
@@ -244,7 +256,7 @@ function renderCvd(cvd) {
         realBarsGroup.innerHTML = barsHtml;
     }
 
-    // (C) 노란색 CVD 곡선 렌더링 (<path id="cvd-line-path">)
+    // (C) Sarara keelloo CVD (0 기준선 포함하여 1H에서도 방향 왜곡 방지)
     var linePath = document.getElementById('cvd-line-path');
     if (linePath && cvdVals.length) {
         var minCvd = Math.min.apply(null, cvdVals);
@@ -267,7 +279,6 @@ function renderCvd(cvd) {
     cvdBarsCache = { bars: bars, unitMult: unitMult, xStart: xStart, xEnd: xEnd, sDate: sDate, tEndFull: tEndFull, lastBarShares: lastBarShares };
 }
 
-// 마우스/터치 이동 시 개별 봉 거래량 확인
 function initCvdInteraction() {
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
