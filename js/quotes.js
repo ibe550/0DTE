@@ -47,8 +47,8 @@ function updateVixRatio() {
 }
 
 function renderQuote(pfx, q, opts = {}) {
-    // WTI, BRENT, USO는 야후(백엔드) 시세를 무시하고 CNBC 단독 사용
-    if (pfx === 'wti' || pfx === 'brent' || pfx === 'uso') return;
+    // ES, MAG7, WTI, BRENT, USO는 백엔드 시세를 무시하고 CNBC 초고속 직결 시세만 단독 사용
+    if (pfx === 'es' || pfx === 'mag7' || pfx === 'mags' || pfx === 'wti' || pfx === 'brent' || pfx === 'uso') return;
 
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
@@ -72,7 +72,7 @@ function renderQuote(pfx, q, opts = {}) {
 }
 
 function renderYields(y) {
-    // 국채 금리(3M, 10Y, 30Y)는 백엔드 대신 CNBC 실시간 시세로 단독 처리
+    // 국채 금리(3M, 10Y, 30Y) 역시 CNBC 실시간 시세로 단독 처리
     return;
 }
 
@@ -136,9 +136,9 @@ function renderStatus(data) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 오일 3종 (WTI·BRENT·USO) + 미 국채 금리 3종 (3M·10Y·30Y) CNBC 실시간 통합 연동
+// ES(@SP.1) · MAG7(MAGS) · 오일 3종(@CL.1·@LCO.1·USO) · 국채 3종(US3M·US10Y·US30Y) CNBC 통합 연동
 // ─────────────────────────────────────────────────────────────
-function applyOilCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText) {
+function applyMacroCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText, useComma) {
     var priceEl = document.getElementById(prefix + '-price');
     var changeEl = document.getElementById(prefix + '-change');
     var srcEl = document.getElementById(prefix + '-source');
@@ -149,16 +149,16 @@ function applyOilCardStyle(prefix, price, change, changePct, sourceLabel, extraS
     var pctNum = Number(changePct || 0);
     var sign = cNum > 0 ? '+' : '';
 
-    priceEl.textContent = pNum.toFixed(2);
-    if (extraSubText) {
-        changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%) · ' + extraSubText;
-    } else {
-        changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
-    }
+    priceEl.textContent = useComma
+        ? pNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : pNum.toFixed(2);
 
-    var colorCls = cNum > 0 ? 'text-emerald-400' : (cNum < 0 ? 'text-rose-400' : 'text-slate-200');
-    priceEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + colorCls + ' tracking-tight my-0.5 truncate';
-    changeEl.className = 'text-[8px] sm:text-xs lg:text-sm font-semibold ' + colorCls + ' truncate';
+    var chgStr = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
+    changeEl.textContent = extraSubText ? (chgStr + ' · ' + extraSubText) : chgStr;
+
+    var tone = cNum > 0 ? 'text-emerald-400' : (cNum < 0 ? 'text-rose-400' : 'text-slate-200');
+    setTone(prefix + '-price', tone);
+    setTone(prefix + '-change', tone);
 
     if (srcEl && sourceLabel) srcEl.textContent = sourceLabel;
 }
@@ -175,9 +175,24 @@ function applyYieldCardStyle(idPrefix, yieldVal, changeVal, sourceLabel) {
     setTone(idPrefix + '-chg', bp > 0 ? 'text-rose-400' : (bp < 0 ? 'text-emerald-400' : 'text-slate-400'));
 }
 
+function handleEtfWithExtended(prefix, baseLabel, q, regPrice, regChg, regPct) {
+    var ext = q.ExtendedMktQuote;
+    if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
+        var extPrice = parseFloat(String(ext.last).replace(/[^0-9.-]/g, ''));
+        var extChg = parseFloat(String(ext.change || '0').replace(/[^0-9.-]/g, ''));
+        var extPct = parseFloat(String(ext.change_pct || '0').replace(/[^0-9.-]/g, ''));
+        if (!isNaN(extPrice) && extPrice > 0) {
+            var tag = ext.type === 'PRE' ? 'PRE' : 'AH';
+            applyMacroCardStyle(prefix, extPrice, extChg, extPct, 'CNBC (' + tag + ')', '종가 ' + regPrice.toFixed(2), false);
+            return;
+        }
+    }
+    applyMacroCardStyle(prefix, regPrice, regChg, regPct, 'CNBC (' + baseLabel + ')', null, false);
+}
+
 function fetchCnbcMacroQuotes() {
-    // 1회 호출로 오일 3종(@CL.1, @LCO.1, USO) + 국채 3종(US3M, US10Y, US30Y) 동시 수신
-    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@CL.1%7C@LCO.1%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+    // 1회 호출로 ES선물(@SP.1) + MAG7(MAGS) + 오일 3종(@CL.1, @LCO.1, USO) + 국채 3종(US3M, US10Y, US30Y) 동시 수신
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@SP.1%7CMAGS%7C@CL.1%7C@LCO.1%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
 
     fetch(url)
         .then(function(r) { return r.json(); })
@@ -187,6 +202,7 @@ function fetchCnbcMacroQuotes() {
 
             var y3mVal = null;
             var y10Val = null;
+            var magPrefix = document.getElementById('mag7-price') ? 'mag7' : 'mags';
 
             list.forEach(function(q) {
                 if (!q || !q.symbol || !q.last) return;
@@ -195,23 +211,16 @@ function fetchCnbcMacroQuotes() {
                 var regChg = parseFloat(String(q.change || '0').replace(/[^0-9.-]/g, ''));
                 var regPct = parseFloat(String(q.change_pct || '0').replace(/[^0-9.-]/g, ''));
 
-                if (sym === '@CL.1') {
-                    applyOilCardStyle('wti', regPrice, regChg, regPct, 'CNBC (CL)', null);
+                if (sym === '@SP.1') {
+                    applyMacroCardStyle('es', regPrice, regChg, regPct, 'CNBC (ES)', null, true);
+                } else if (sym === 'MAGS') {
+                    handleEtfWithExtended(magPrefix, 'MAGS', q, regPrice, regChg, regPct);
+                } else if (sym === '@CL.1') {
+                    applyMacroCardStyle('wti', regPrice, regChg, regPct, 'CNBC (CL)', null, false);
                 } else if (sym === '@LCO.1') {
-                    applyOilCardStyle('brent', regPrice, regChg, regPct, 'CNBC (BZ)', null);
+                    applyMacroCardStyle('brent', regPrice, regChg, regPct, 'CNBC (BZ)', null, false);
                 } else if (sym === 'USO') {
-                    var ext = q.ExtendedMktQuote;
-                    if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
-                        var extPrice = parseFloat(String(ext.last).replace(/[^0-9.-]/g, ''));
-                        var extChg = parseFloat(String(ext.change || '0').replace(/[^0-9.-]/g, ''));
-                        var extPct = parseFloat(String(ext.change_pct || '0').replace(/[^0-9.-]/g, ''));
-                        if (!isNaN(extPrice) && extPrice > 0) {
-                            var tag = ext.type === 'PRE' ? 'PRE' : 'AH';
-                            applyOilCardStyle('uso', extPrice, extChg, extPct, 'CNBC (' + tag + ')', '종가 ' + regPrice.toFixed(2));
-                            return;
-                        }
-                    }
-                    applyOilCardStyle('uso', regPrice, regChg, regPct, 'CNBC (USO)', null);
+                    handleEtfWithExtended('uso', 'USO', q, regPrice, regChg, regPct);
                 } else if (sym === 'US3M') {
                     y3mVal = regPrice;
                     applyYieldCardStyle('yield-3m', regPrice, regChg, 'CNBC (US3M)');
