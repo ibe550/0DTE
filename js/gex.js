@@ -341,7 +341,19 @@ function renderSpreadOptimizer(opt, gexData) {
             callCreditEl.parentElement.style.display = 'none';
         }
         setText('opt-call-bound', `${c.boundary}`);
-        setText('opt-call-guide', ''); // '세타 감쇄로 수취액 미달' 안내 문구 완전 제거
+        // renderSpreadOptimizer 함수 내부 하단 수정 예시:
+    const c = opt.call_spread;
+    if (c) {
+        setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
+        setText('opt-call-bound', `${c.boundary}`);
+        
+        // ── N/A가 뜨던 하단 가이드 칸을 아예 비우거나 숨김 ──
+        const callGuideEl = $('opt-call-guide');
+        if (callGuideEl) {
+            callGuideEl.textContent = '';
+            if (callGuideEl.parentElement) callGuideEl.parentElement.style.display = 'none';
+        }
+
         const stEl = $('opt-call-status');
         if (stEl) {
             stEl.innerText = c.badge || '대기';
@@ -352,19 +364,21 @@ function renderSpreadOptimizer(opt, gexData) {
     const p = opt.put_spread;
     if (p) {
         setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
-        const putCreditEl = $('opt-put-credit');
-        if (putCreditEl && putCreditEl.parentElement) {
-            putCreditEl.parentElement.style.display = 'none';
-        }
         setText('opt-put-bound', `${p.boundary}`);
-        setText('opt-put-guide', ''); // '세타 감쇄로 수취액 미달' 안내 문구 완전 제거
+        
+        // ── N/A가 뜨던 하단 가이드 칸을 아예 비우거나 숨김 ──
+        const putGuideEl = $('opt-put-guide');
+        if (putGuideEl) {
+            putGuideEl.textContent = '';
+            if (putGuideEl.parentElement) putGuideEl.parentElement.style.display = 'none';
+        }
+
         const stEl = $('opt-put-status');
         if (stEl) {
             stEl.innerText = p.badge || '대기';
             stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (p.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-rose-950 text-rose-300 border-rose-500')}`;
         }
     }
-}
 
 function renderGex(g) {
     const note = $('gex-note');
