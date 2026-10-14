@@ -147,9 +147,9 @@ function renderStatus(data) {
     }
 }
 // ─────────────────────────────────────────────────────────────
-// USO (United States Oil Fund ETF) 실시간 시세 연동 (CNBC 직접 호출)
+// USO (United States Oil Fund ETF) 실시간 시세 연동 (정규장 + 애프터/프리마켓 자동 전환)
 // ─────────────────────────────────────────────────────────────
-function updateUsoCard(price, change, changePct, sourceLabel) {
+function updateUsoCard(price, change, changePct, sourceLabel, extraSubText) {
     var priceEl = document.getElementById('uso-price');
     var changeEl = document.getElementById('uso-change');
     var srcEl = document.getElementById('uso-source');
@@ -161,7 +161,11 @@ function updateUsoCard(price, change, changePct, sourceLabel) {
     var sign = cNum > 0 ? '+' : '';
 
     priceEl.textContent = pNum.toFixed(2);
-    changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
+    if (extraSubText) {
+        changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%) · ' + extraSubText;
+    } else {
+        changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
+    }
 
     var colorCls = cNum > 0 ? 'text-emerald-400' : (cNum < 0 ? 'text-rose-400' : 'text-slate-200');
     priceEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + colorCls + ' tracking-tight my-0.5 truncate';
@@ -177,15 +181,32 @@ function fetchUsoQuoteFallback() {
         .then(function(d) {
             var q = d && d.FormattedQuoteResult && d.FormattedQuoteResult.FormattedQuote && d.FormattedQuoteResult.FormattedQuote[0];
             if (!q || !q.last) return;
-            var cur = parseFloat(String(q.last).replace(/,/g, ''));
-            var chg = parseFloat(String(q.change || '0').replace(/,/g, '').replace('+', ''));
-            var pct = parseFloat(String(q.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
-            updateUsoCard(cur, chg, pct, 'CNBC (USO)');
+
+            var regPrice = parseFloat(String(q.last).replace(/,/g, ''));
+            var regChg = parseFloat(String(q.change || '0').replace(/,/g, '').replace('+', ''));
+            var regPct = parseFloat(String(q.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+
+            // 정규장 외 시간(애프터마켓 POST_MKT / 프리마켓 PRE_MKT)일 때 ExtendedMktQuote 우선 적용
+            var ext = q.ExtendedMktQuote;
+            if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
+                var extPrice = parseFloat(String(ext.last).replace(/,/g, ''));
+                var extChg = parseFloat(String(ext.change || '0').replace(/,/g, '').replace('+', ''));
+                var extPct = parseFloat(String(ext.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+
+                if (!isNaN(extPrice) && extPrice > 0) {
+                    var sessionTag = ext.type === 'PRE' ? 'PRE' : 'AH';
+                    updateUsoCard(extPrice, extChg, extPct, 'CNBC (' + sessionTag + ')', '종가 ' + regPrice.toFixed(2));
+                    return;
+                }
+            }
+
+            // 정규장 시간일 때 정규장 실시간 시세 표시
+            updateUsoCard(regPrice, regChg, regPct, 'CNBC (USO)', null);
         })
         .catch(function() {});
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     fetchUsoQuoteFallback();
-    setInterval(fetchUsoQuoteFallback, 30000);
+    setInterval(fetchUsoQuoteFallback, 15000);
 });
