@@ -727,15 +727,15 @@ def get_polymarket_spx(spx_price):
     }
 
 # ─────────────────────────────────────────────────────────────
-# 캔들 데이터 / CVD / Volume Profile (1분봉 실시간 정밀 합성)
+# 캔들 데이터 / CVD / Volume Profile (전 시간대 1분봉 실시간 정밀 합성)
 # ─────────────────────────────────────────────────────────────
 TF_SPEC = {
     "1m": (1, 2, None),
-    "5m": (1, 2, 5),     # 1분봉 실시간 데이터를 5분봉으로 정밀 합성 (지연/누락 원천 차단)
-    "10m": (1, 2, 10),   # 1분봉 실시간 데이터를 10분봉으로 정밀 합성
-    "15m": (1, 2, 15),   # 1분봉 실시간 데이터를 15분봉으로 정밀 합성
-    "30m": (1, 2, 30),   # 1분봉 실시간 데이터를 30분봉으로 정밀 합성
-    "1h": (5, 10, 60),   # 1시간봉은 10일치 5분봉 합성 (RSI 14기간 확보용)
+    "5m": (1, 2, 5),
+    "10m": (1, 2, 10),
+    "15m": (1, 2, 15),
+    "30m": (1, 2, 30),
+    "1h": (1, 5, 60),    # 1시간봉도 5일치 실시간 1분봉으로 합성 (장 시작 즉시 1H 봉 생성 + RSI 기간 확보)
 }
 TF_LABEL = {"1m": "1m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H"}
 INSTR = {"spx": "$SPX", "spy": "SPY"}
@@ -782,7 +782,15 @@ def aggregate_candles(candles, minutes):
     groups = OrderedDict()
     for cd in candles:
         dt = datetime.fromtimestamp(cd["t"], ET)
-        slot_min = ((dt.hour * 60 + dt.minute) // minutes) * minutes
+        total_min = dt.hour * 60 + dt.minute
+
+        # 정규장(09:30 = 570분) 기준으로 시간 슬롯 정렬 (09:30~10:29 -> 09:30 봉으로 생성되어 누락 원천 방지)
+        if total_min >= 570:
+            idx = (total_min - 570) // minutes
+            slot_min = 570 + idx * minutes
+        else:
+            slot_min = (total_min // minutes) * minutes
+
         slot_h, slot_m = divmod(slot_min, 60)
         slot_ts = int(ET.localize(datetime(dt.year, dt.month, dt.day, slot_h, slot_m, 0)).timestamp())
         key = (dt.date(), slot_ts)
@@ -817,7 +825,6 @@ def split_bar_volume(c):
     if rng <= 1e-9:
         return (v * 0.5, v * 0.5)
 
-    # 기본 위치 비율 + 시가 대비 종가 모멘텀 결합 (최소 5% ~ 최대 95% 클램핑으로 0% 왜곡 방지)
     pos_ratio = (cl - l) / rng
     body_ratio = 0.5 + 0.5 * ((cl - o) / rng)
     raw_buy = 0.6 * pos_ratio + 0.4 * body_ratio
