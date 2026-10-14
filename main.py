@@ -30,6 +30,7 @@ ET = pytz.timezone("US/Eastern")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 SCHWAB_BASE_URL = "https://api.schwabapi.com/marketdata/v1"
 SRC_SCHWAB = "Charles Schwab"
+SRC_YAHOO = "Yahoo Finance"
 SECONDS_PER_YEAR = 365.0 * 24 * 3600
 
 
@@ -91,6 +92,8 @@ def src_kind(s):
         return "na"
     if s.startswith(SRC_SCHWAB):
         return "schwab"
+    if s.startswith("Yahoo"):
+        return "yahoo"
     return "other"
 
 
@@ -262,13 +265,19 @@ def schwab_get(token, path, params=None, timeout=4):
 
 
 # ─────────────────────────────────────────────────────────────
-# 실시간 시세 (Schwab 전용 핵심 4종만 초고속 조회, 나머지는 프론트 CNBC 직결)
+# 실시간 시세 (Schwab 지수 4종 + Yahoo 실시간 선물 3종 동시 병렬 조회)
 # ─────────────────────────────────────────────────────────────
-QUOTES = OrderedDict([
+SCHWAB_QUOTES = OrderedDict([
     ("spx", "$SPX"),
     ("vix1d", "$VIX1D"),
     ("vix", "$VIX"),
     ("spy", "SPY"),
+])
+
+YAHOO_FUTURES = OrderedDict([
+    ("es", "ES=F"),
+    ("wti", "CL=F"),
+    ("brent", "BZ=F"),
 ])
 
 
@@ -292,6 +301,8 @@ def make_quote(price, prev, change, source):
 
 
 def fetch_schwab_quotes(token, symbols):
+    if not token:
+        return {}
     out = {}
     data = schwab_get(token, "/quotes", {"symbols": ",".join(symbols), "fields": "quote"})
     if isinstance(data, dict):
@@ -305,20 +316,42 @@ def fetch_schwab_quotes(token, symbols):
     return out
 
 
+def fetch_yahoo_realtime_future(ysym):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}?interval=1m&range=1d"
+        res = requests.get(url, headers=HEADERS, timeout=3.5)
+        if res.status_code == 200:
+            meta = ((res.json().get("chart", {}).get("result") or [{}])[0] or {}).get("meta") or {}
+            prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+            return make_quote(meta.get("regularMarketPrice"), prev, None, f"Yahoo ({ysym})")
+    except Exception:
+        pass
+    return None
+
+
 def get_all_quotes(token):
     def load():
-        if not token:
-            return None
-        symbols = list(QUOTES.values())
-        schwab = fetch_schwab_quotes(token, symbols)
-        result = {key: schwab.get(ssym) for key, ssym in QUOTES.items()}
+        result = {}
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            f_schwab = ex.submit(fetch_schwab_quotes, token, list(SCHWAB_QUOTES.values()))
+            f_y = {k: ex.submit(fetch_yahoo_realtime_future, ysym) for k, ysym in YAHOO_FUTURES.items()}
+
+        schwab_data = f_schwab.result() or {}
+        for key, ssym in SCHWAB_QUOTES.items():
+            result[key] = schwab_data.get(ssym)
+        for key, fut in f_y.items():
+            try:
+                result[key] = fut.result()
+            except Exception:
+                result[key] = None
+
         return result if any(result.values()) else None
 
     return cached("quotes", 4, load) or {}
 
 
 # ─────────────────────────────────────────────────────────────
-# FLASH 실시간 속보 엔진 (노이즈 및 오분류 차단 강화)
+# FLASH 실시간 속보 엔진
 # ─────────────────────────────────────────────────────────────
 def fetch_flash_market_news():
     def _fetch():
@@ -1466,7 +1499,6 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     r_key, c_key = normalize_tf(rsi_tf), normalize_tf(cvd_tf)
     spy_tf_set = {"1h", "15m", "5m", "1m", c_key}
 
-    # 모든 외부/Schwab 요청을 단일 병렬 풀에서 동시 처리 (속도 극대화)
     with ThreadPoolExecutor(max_workers=10) as ex:
         f_spy_all = {k: ex.submit(get_candles, token, "spy", k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
@@ -1527,17 +1559,17 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     return {
         "status": "success",
         "timestamp": now_str,
-        "source_summary": f"Schwab {schwab_cnt} · CNBC Direct",
+        "source_summary": f"Schwab {schwab_cnt} · Realtime Hybrid",
         "schwab_status": schwab_msg,
         "shock_alert": shock_alert,
         "spx": q_spx,
-        "es": None,
+        "es": quotes.get("es"),
         "vix1d": slim(quotes.get("vix1d")),
         "vix": slim(quotes.get("vix")),
         "mag7": None,
         "econ_events": econ_events,
-        "wti": None,
-        "brent": None,
+        "wti": quotes.get("wti"),
+        "brent": quotes.get("brent"),
         "yields": None,
         "polymarket": polymarket,
         "volume_profile": vp,
