@@ -85,27 +85,31 @@ function renderCvd(cvd) {
         }
     }
 
-    // 2. 거래량 합산 (백엔드 vol이 K단위이므로 1000을 곱해 실제 주수로 환산)
+    // 2. 거래량 합산 및 백엔드 정밀 Buy/Sell 데이터 우선 적용
     var rawSum = 0;
     bars.forEach(function(b) { rawSum += Number(b.vol || b.volume || 0); });
     var unitMult = rawSum < 500000 ? 1000 : 1;
 
     var maxVolShares = 1000;
-    var totalBuyShares = 0;
-    var totalSellShares = 0;
+    var totalVolShares = 0;
     var cvdVals = [];
 
     bars.forEach(function(b) {
         var vShares = Number(b.vol !== undefined ? b.vol : (b.volume || 0)) * unitMult;
         if (vShares > maxVolShares) maxVolShares = vShares;
-        if (b.is_bull) totalBuyShares += vShares;
-        else totalSellShares += vShares;
+        totalVolShares += vShares;
         cvdVals.push(Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0)));
     });
 
-    var totalVolShares = totalBuyShares + totalSellShares;
-    var buyPctRound = totalVolShares > 0 ? Math.round((totalBuyShares / totalVolShares) * 100) : 50;
-    var sellPctRound = 100 - buyPctRound;
+    // 백엔드가 정밀 계산한 buy_pct / sell_pct / buy_vol / sell_vol을 최우선 사용 (막대 색상 100% 쏠림 버그 해결)
+    var buyPctRound = (cvd.buy_pct !== undefined && cvd.buy_pct !== null) ? Number(cvd.buy_pct) : 50;
+    var sellPctRound = (cvd.sell_pct !== undefined && cvd.sell_pct !== null) ? Number(cvd.sell_pct) : (100 - buyPctRound);
+
+    var totalBuyShares = Math.round(totalVolShares * (buyPctRound / 100));
+    var totalSellShares = Math.max(0, totalVolShares - totalBuyShares);
+
+    var buyVolText = cvd.buy_vol || fmtVolM(totalBuyShares);
+    var sellVolText = cvd.sell_vol || fmtVolM(totalSellShares);
 
     var firstBar = bars[0];
     var lastBar = bars[bars.length - 1];
@@ -116,20 +120,25 @@ function renderCvd(cvd) {
     var sDate = cvd.session_date || (cvd.data_time ? cvd.data_time.split(' ')[0] : '');
 
     // 집계 구간 및 데이터 설명 복원
-    safeSet('cvd-agg-range', sDate + ' 정규장 (' + tStart + ' ~ ' + tEndFull + ') · ' + bars.length + '개 ' + tfLabel + ' 봉');
-    safeSet('cvd-data-desc', 'SPY 정규장 · ' + srcLabel + ' · 체결 압력 CVD');
+    safeSet('cvd-agg-range', cvd.aggregate_range || (sDate + ' 정규장 (' + tStart + ' ~ ' + tEndFull + ') · ' + bars.length + '개 ' + tfLabel + ' 봉'));
+    safeSet('cvd-data-desc', cvd.data_desc || ('SPY 정규장 · ' + srcLabel + ' · 체결 압력 CVD'));
 
     // 우측 상단 Buying / Selling Pressure 뱃지 복원
     var pill = document.getElementById('cvd-status-pill');
     if (pill) {
-        var isBull = totalBuyShares >= totalSellShares;
-        pill.textContent = isBull ? '↑ Buying Pressure' : '↓ Selling Pressure';
-        pill.className = isBull
-            ? 'text-xs font-bold px-2.5 py-1 rounded bg-emerald-950/90 text-emerald-400 border border-emerald-700/60'
-            : 'text-xs font-bold px-2.5 py-1 rounded bg-rose-950/90 text-rose-400 border border-rose-700/60';
+        if (buyPctRound >= 53) {
+            pill.textContent = '↑ Buying Pressure';
+            pill.className = 'text-xs font-bold px-2.5 py-1 rounded bg-emerald-950/90 text-emerald-400 border border-emerald-700/60';
+        } else if (buyPctRound <= 47) {
+            pill.textContent = '↓ Selling Pressure';
+            pill.className = 'text-xs font-bold px-2.5 py-1 rounded bg-rose-950/90 text-rose-400 border border-rose-700/60';
+        } else {
+            pill.textContent = '• Balanced';
+            pill.className = 'text-xs font-bold px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700';
+        }
     }
 
-    // 3. 파란 동그라미 영역: 좌측 Y축 눈금 (선명한 M / K 단위 표시)
+    // 3. 좌측 Y축 눈금 (선명한 M / K 단위 표시)
     function setYLabel(id, text, color) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -148,27 +157,26 @@ function renderCvd(cvd) {
     safeSet('cvd-inspect-label', '마지막 봉');
     safeSet('cvd-last-time', cvd.data_time || (sDate + ' ' + tEndFull));
     safeSet('cvd-inspect-sub', '최근 봉');
-    safeSet('cvd-recent-vol', fmtVolM(lastBarShares));
-    safeSet('cvd-total-vol', fmtVolM(totalVolShares));
+    safeSet('cvd-recent-vol', cvd.recent_vol || fmtVolM(lastBarShares));
+    safeSet('cvd-total-vol', cvd.total_vol || fmtVolM(totalVolShares));
 
-    safeSet('cvd-buy-pct', '▲ Buy ' + buyPctRound + '% (' + fmtVolM(totalBuyShares) + ')');
-    safeSet('cvd-sell-pct', '▼ Sell ' + sellPctRound + '% (' + fmtVolM(totalSellShares) + ')');
+    safeSet('cvd-buy-pct', '▲ Buy ' + buyPctRound + '% (' + buyVolText + ')');
+    safeSet('cvd-sell-pct', '▼ Sell ' + sellPctRound + '% (' + sellVolText + ')');
 
     var barFill = document.getElementById('cvd-bar-fill');
     if (barFill) barFill.style.width = buyPctRound + '%';
     var sellFill = document.getElementById('cvd-sell-fill');
     if (sellFill) sellFill.style.width = sellPctRound + '%';
 
-    safeSet('cvd-summary-text', cvd.summary || ('CVD Flow: Buy ' + buyPctRound + '% / Sell ' + sellPctRound + '% in session.'));
+    safeSet('cvd-summary-text', cvd.summary_text || cvd.summary || ('CVD Flow: Buy ' + buyPctRound + '% / Sell ' + sellPctRound + '% in session.'));
 
-    // 5. SVG 차트 렌더링 (원래 HTML 기준선 좌표 자동 감지)
+    // 5. SVG 차트 렌더링
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
 
     var vGridGroup = document.getElementById('cvd-vertical-grids');
     if (vGridGroup) vGridGroup.innerHTML = '';
 
-    // HTML에 정의된 가로 점선/실선의 정확한 좌우(x1, x2) 및 상하(yTop, yZero) 좌표 추출
     var xStart = 36, xEnd = 585, yTop = 24, yZero = 130;
     var staticLines = [];
     var allLines = svg.querySelectorAll('line');
@@ -212,7 +220,6 @@ function renderCvd(cvd) {
                 gridHtml += '<text x="' + gx.toFixed(1) + '" y="' + (yZero + 13).toFixed(1) + '" fill="#94a3b8" font-size="9" font-family="monospace" text-anchor="middle">' + tStr + '</text>';
             }
         });
-        // 우측 끝 16:00 마감 시간 표시
         var lastTimeStr = formatEtTime(lastBar.t);
         if (lastTimeStr !== '16:00') {
             gridHtml += '<line x1="' + xEnd.toFixed(1) + '" y1="' + yTop.toFixed(1) + '" x2="' + xEnd.toFixed(1) + '" y2="' + yZero.toFixed(1) + '" stroke="rgba(71, 85, 105, 0.35)" stroke-width="1" stroke-dasharray="2,3" />';
@@ -276,7 +283,7 @@ function initCvdInteraction() {
         var vShares = Number(bar.vol || 0) * cvdBarsCache.unitMult;
         safeSet('cvd-inspect-label', '선택 봉');
         safeSet('cvd-last-time', (cvdBarsCache.sDate ? cvdBarsCache.sDate + ' ' : '') + formatEtTime(bar.t) + ':00 ET');
-        safeSet('cvd-inspect-sub', bar.is_bull ? '매수 봉' : '매도 봉');
+        safeSet('cvd-inspect-sub', bar.is_bull ? '매수 우세 봉' : '매도 우세 봉');
         safeSet('cvd-recent-vol', fmtVolM(vShares));
     });
 
