@@ -123,10 +123,23 @@ function renderCvd(cvd) {
             : 'text-xs font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-600';
     }
 
-    // Y축 눈금 수치 반영 (상단 점선 및 중간 점선)
-    safeSet('cvd-y-max', fmtCvdVal(maxVol, false));
-    safeSet('cvd-y-mid', fmtCvdVal(maxVol / 2, false));
+// Y축 눈금 수치 반영 (상단 점선 및 중간 점선 - 고대비 네온 스타일)
+    function styleYAxis(id, text, color) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.style.fill = color;
+        el.style.color = color;
+        el.setAttribute('fill', color);
+        el.style.fontWeight = 'bold';
+        el.style.fontSize = '12px';
+        el.style.fontFamily = 'monospace';
+        el.style.opacity = '1';
+        el.style.textShadow = '0 1px 4px rgba(0, 0, 0, 0.9), 0 0 2px #000';
+    }
 
+    styleYAxis('cvd-y-max', fmtCvdVal(maxVol, false), '#38bdf8');     // 상단 최대치 (선명한 스카이블루)
+    styleYAxis('cvd-y-mid', fmtCvdVal(maxVol / 2, false), '#f8fafc'); // 중간 기준치 (선명한 화이트)
     // 하단 상세 수치 반영
     safeSet('cvd-last-time', tEnd + ' ET');
     safeSet('cvd-recent-vol', fmtCvdVal(lastBar.vol, false));
