@@ -47,6 +47,9 @@ function updateVixRatio() {
 }
 
 function renderQuote(pfx, q, opts = {}) {
+    // WTI, BRENT, USO는 야후(백엔드) 시세를 무시하고 CNBC 단독 사용
+    if (pfx === 'wti' || pfx === 'brent' || pfx === 'uso') return;
+
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
         setTone(pfx + '-price', 'text-slate-500'); setTone(pfx + '-change', 'text-slate-500');
@@ -69,23 +72,8 @@ function renderQuote(pfx, q, opts = {}) {
 }
 
 function renderYields(y) {
-    const pairs = [
-        ['yield-3m', 'y3m', 'yield-3m-src', 'yield-3m-chg', 'y3m_change_text', 'y3m_change_bp'],
-        ['yield-10y', 'y10', 'yield-10y-src', 'yield-10y-chg', 'y10_change_text', 'y10_change_bp'],
-        ['yield-30y', 'y30', 'yield-30y-src', 'yield-30y-chg', 'y30_change_text', 'y30_change_bp'],
-    ];
-    pairs.forEach(([id, key, srcId, chgId, chgTextKey, chgBpKey]) => {
-        setText(id, y ? y[key] : null);
-        setTone(id, y && y[key] ? 'text-slate-200' : 'text-slate-500');
-        const s = y && y.sources ? y.sources[key] : null;
-        setText(srcId, srcShort(s));
-        const bp = y ? y[chgBpKey] : null;
-        setText(chgId, y ? y[chgTextKey] : null);
-        setTone(chgId, !isNum(bp) ? 'text-slate-500' : (bp > 0 ? 'text-rose-400' : (bp < 0 ? 'text-emerald-400' : 'text-slate-400')));
-    });
-    setText('yield-spread', y ? y.spread : null);
-    const bp = y && y.spread ? parseInt(y.spread, 10) : NaN;
-    setTone('yield-spread', isNaN(bp) ? 'text-slate-500' : (bp < 0 ? 'text-rose-400' : 'text-emerald-400'));
+    // 국채 금리(3M, 10Y, 30Y)는 백엔드 대신 CNBC 실시간 시세로 단독 처리
+    return;
 }
 
 function renderPolymarket(p) {
@@ -112,7 +100,7 @@ function renderRsi(r) {
     if (r.val >= 70) { statusText = '과매수'; colorCls = 'bg-rose-950/90 text-rose-300 border-rose-800/80 animate-pulse'; }
     else if (r.val <= 30) { statusText = '과매도'; colorCls = 'bg-emerald-950/90 text-emerald-300 border-emerald-800/80 animate-pulse'; }
     else if (r.val >= 55) { statusText = '상승'; colorCls = 'bg-amber-950/70 text-amber-300 border-amber-800/60'; }
-    else if (r.val <= 45) { statusText = '하락'; colorCls = 'bg-indigo-950/70 text-indigo-300 border-indigo-800/60'; }
+    else if (r.val <= 45) { statusText = '하락'; colorCls = 'bg-indigo-950/70 text-indigo-300 border-indigo-800/80'; }
     badge.className = `font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls} text-[9px] lg:text-xs`;
     badge.innerText = `RSI ${val} (${statusText})`;
 }
@@ -146,8 +134,9 @@ function renderStatus(data) {
         line.innerText = `⚠ ${data.schwab_status}${/Yahoo [1-9]/.test(data.source_summary || '') ? ' → Yahoo 로 자동 대체 중' : ''}`;
     }
 }
+
 // ─────────────────────────────────────────────────────────────
-// WTI (@CL.1) · BRENT (@LCO.1) · USO 실시간 시세 일괄 연동 (CNBC)
+// 오일 3종 (WTI·BRENT·USO) + 미 국채 금리 3종 (3M·10Y·30Y) CNBC 실시간 통합 연동
 // ─────────────────────────────────────────────────────────────
 function applyOilCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText) {
     var priceEl = document.getElementById(prefix + '-price');
@@ -174,22 +163,37 @@ function applyOilCardStyle(prefix, price, change, changePct, sourceLabel, extraS
     if (srcEl && sourceLabel) srcEl.textContent = sourceLabel;
 }
 
-function fetchAllOilQuotesCnbc() {
-    // @CL.1 = WTI 선물, @LCO.1 = 브렌트유 선물, USO = 원유 ETF (1회 묶음 요청)
-    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@CL.1%7C@LCO.1%7CUSO&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
-    
+function applyYieldCardStyle(idPrefix, yieldVal, changeVal, sourceLabel) {
+    if (yieldVal === null || yieldVal === undefined || isNaN(yieldVal)) return;
+    var bp = Math.round((changeVal || 0) * 100);
+    var bpSign = bp > 0 ? '+' : '';
+
+    setText(idPrefix, yieldVal.toFixed(3) + '%');
+    setTone(idPrefix, 'text-slate-200');
+    setText(idPrefix + '-src', sourceLabel);
+    setText(idPrefix + '-chg', bpSign + bp + ' bp');
+    setTone(idPrefix + '-chg', bp > 0 ? 'text-rose-400' : (bp < 0 ? 'text-emerald-400' : 'text-slate-400'));
+}
+
+function fetchCnbcMacroQuotes() {
+    // 1회 호출로 오일 3종(@CL.1, @LCO.1, USO) + 국채 3종(US3M, US10Y, US30Y) 동시 수신
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@CL.1%7C@LCO.1%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+
     fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(d) {
             var list = d && d.FormattedQuoteResult && d.FormattedQuoteResult.FormattedQuote;
             if (!Array.isArray(list)) return;
 
+            var y3mVal = null;
+            var y10Val = null;
+
             list.forEach(function(q) {
                 if (!q || !q.symbol || !q.last) return;
                 var sym = q.symbol.toUpperCase();
-                var regPrice = parseFloat(String(q.last).replace(/,/g, ''));
-                var regChg = parseFloat(String(q.change || '0').replace(/,/g, '').replace('+', ''));
-                var regPct = parseFloat(String(q.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+                var regPrice = parseFloat(String(q.last).replace(/[^0-9.-]/g, ''));
+                var regChg = parseFloat(String(q.change || '0').replace(/[^0-9.-]/g, ''));
+                var regPct = parseFloat(String(q.change_pct || '0').replace(/[^0-9.-]/g, ''));
 
                 if (sym === '@CL.1') {
                     applyOilCardStyle('wti', regPrice, regChg, regPct, 'CNBC (CL)', null);
@@ -198,9 +202,9 @@ function fetchAllOilQuotesCnbc() {
                 } else if (sym === 'USO') {
                     var ext = q.ExtendedMktQuote;
                     if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
-                        var extPrice = parseFloat(String(ext.last).replace(/,/g, ''));
-                        var extChg = parseFloat(String(ext.change || '0').replace(/,/g, '').replace('+', ''));
-                        var extPct = parseFloat(String(ext.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+                        var extPrice = parseFloat(String(ext.last).replace(/[^0-9.-]/g, ''));
+                        var extChg = parseFloat(String(ext.change || '0').replace(/[^0-9.-]/g, ''));
+                        var extPct = parseFloat(String(ext.change_pct || '0').replace(/[^0-9.-]/g, ''));
                         if (!isNaN(extPrice) && extPrice > 0) {
                             var tag = ext.type === 'PRE' ? 'PRE' : 'AH';
                             applyOilCardStyle('uso', extPrice, extChg, extPct, 'CNBC (' + tag + ')', '종가 ' + regPrice.toFixed(2));
@@ -208,13 +212,29 @@ function fetchAllOilQuotesCnbc() {
                         }
                     }
                     applyOilCardStyle('uso', regPrice, regChg, regPct, 'CNBC (USO)', null);
+                } else if (sym === 'US3M') {
+                    y3mVal = regPrice;
+                    applyYieldCardStyle('yield-3m', regPrice, regChg, 'CNBC (US3M)');
+                } else if (sym === 'US10Y') {
+                    y10Val = regPrice;
+                    applyYieldCardStyle('yield-10y', regPrice, regChg, 'CNBC (US10Y)');
+                } else if (sym === 'US30Y') {
+                    applyYieldCardStyle('yield-30y', regPrice, regChg, 'CNBC (US30Y)');
                 }
             });
+
+            // 10Y-3M SPREAD 실시간 계산 및 색상 반영
+            if (y10Val !== null && y3mVal !== null && !isNaN(y10Val) && !isNaN(y3mVal)) {
+                var spreadBp = Math.round((y10Val - y3mVal) * 100);
+                var spSign = spreadBp > 0 ? '+' : '';
+                setText('yield-spread', spSign + spreadBp + ' bp');
+                setTone('yield-spread', spreadBp < 0 ? 'text-rose-400' : 'text-emerald-400');
+            }
         })
         .catch(function() {});
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    fetchAllOilQuotesCnbc();
-    setInterval(fetchAllOilQuotesCnbc, 15000);
+    fetchCnbcMacroQuotes();
+    setInterval(fetchCnbcMacroQuotes, 15000);
 });
