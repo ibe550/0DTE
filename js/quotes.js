@@ -147,12 +147,12 @@ function renderStatus(data) {
     }
 }
 // ─────────────────────────────────────────────────────────────
-// USO (United States Oil Fund ETF) 실시간 시세 연동 (정규장 + 애프터/프리마켓 자동 전환)
+// WTI (@CL.1) · BRENT (@LCO.1) · USO 실시간 시세 일괄 연동 (CNBC)
 // ─────────────────────────────────────────────────────────────
-function updateUsoCard(price, change, changePct, sourceLabel, extraSubText) {
-    var priceEl = document.getElementById('uso-price');
-    var changeEl = document.getElementById('uso-change');
-    var srcEl = document.getElementById('uso-source');
+function applyOilCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText) {
+    var priceEl = document.getElementById(prefix + '-price');
+    var changeEl = document.getElementById(prefix + '-change');
+    var srcEl = document.getElementById(prefix + '-source');
     if (!priceEl || !changeEl || price === null || price === undefined || isNaN(price)) return;
 
     var pNum = Number(price);
@@ -174,39 +174,47 @@ function updateUsoCard(price, change, changePct, sourceLabel, extraSubText) {
     if (srcEl && sourceLabel) srcEl.textContent = sourceLabel;
 }
 
-function fetchUsoQuoteFallback() {
-    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=USO&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+function fetchAllOilQuotesCnbc() {
+    // @CL.1 = WTI 선물, @LCO.1 = 브렌트유 선물, USO = 원유 ETF (1회 묶음 요청)
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@CL.1%7C@LCO.1%7CUSO&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+    
     fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            var q = d && d.FormattedQuoteResult && d.FormattedQuoteResult.FormattedQuote && d.FormattedQuoteResult.FormattedQuote[0];
-            if (!q || !q.last) return;
+            var list = d && d.FormattedQuoteResult && d.FormattedQuoteResult.FormattedQuote;
+            if (!Array.isArray(list)) return;
 
-            var regPrice = parseFloat(String(q.last).replace(/,/g, ''));
-            var regChg = parseFloat(String(q.change || '0').replace(/,/g, '').replace('+', ''));
-            var regPct = parseFloat(String(q.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+            list.forEach(function(q) {
+                if (!q || !q.symbol || !q.last) return;
+                var sym = q.symbol.toUpperCase();
+                var regPrice = parseFloat(String(q.last).replace(/,/g, ''));
+                var regChg = parseFloat(String(q.change || '0').replace(/,/g, '').replace('+', ''));
+                var regPct = parseFloat(String(q.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
 
-            // 정규장 외 시간(애프터마켓 POST_MKT / 프리마켓 PRE_MKT)일 때 ExtendedMktQuote 우선 적용
-            var ext = q.ExtendedMktQuote;
-            if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
-                var extPrice = parseFloat(String(ext.last).replace(/,/g, ''));
-                var extChg = parseFloat(String(ext.change || '0').replace(/,/g, '').replace('+', ''));
-                var extPct = parseFloat(String(ext.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
-
-                if (!isNaN(extPrice) && extPrice > 0) {
-                    var sessionTag = ext.type === 'PRE' ? 'PRE' : 'AH';
-                    updateUsoCard(extPrice, extChg, extPct, 'CNBC (' + sessionTag + ')', '종가 ' + regPrice.toFixed(2));
-                    return;
+                if (sym === '@CL.1') {
+                    applyOilCardStyle('wti', regPrice, regChg, regPct, 'CNBC (CL)', null);
+                } else if (sym === '@LCO.1') {
+                    applyOilCardStyle('brent', regPrice, regChg, regPct, 'CNBC (BZ)', null);
+                } else if (sym === 'USO') {
+                    var ext = q.ExtendedMktQuote;
+                    if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
+                        var extPrice = parseFloat(String(ext.last).replace(/,/g, ''));
+                        var extChg = parseFloat(String(ext.change || '0').replace(/,/g, '').replace('+', ''));
+                        var extPct = parseFloat(String(ext.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+                        if (!isNaN(extPrice) && extPrice > 0) {
+                            var tag = ext.type === 'PRE' ? 'PRE' : 'AH';
+                            applyOilCardStyle('uso', extPrice, extChg, extPct, 'CNBC (' + tag + ')', '종가 ' + regPrice.toFixed(2));
+                            return;
+                        }
+                    }
+                    applyOilCardStyle('uso', regPrice, regChg, regPct, 'CNBC (USO)', null);
                 }
-            }
-
-            // 정규장 시간일 때 정규장 실시간 시세 표시
-            updateUsoCard(regPrice, regChg, regPct, 'CNBC (USO)', null);
+            });
         })
         .catch(function() {});
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    fetchUsoQuoteFallback();
-    setInterval(fetchUsoQuoteFallback, 15000);
+    fetchAllOilQuotesCnbc();
+    setInterval(fetchAllOilQuotesCnbc, 15000);
 });
