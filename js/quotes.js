@@ -23,21 +23,18 @@ function updateVixRatio() {
     ratioEl.innerText = `Ratio ${ratio.toFixed(2)}`;
 
     if (ratio <= 0.85) {
-        // 🟢 진입 적격 (안정 콘탱고)
         card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-emerald-950/25 border-emerald-800/70 shadow-sm transition-all';
         dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]';
         badge.className = 'px-2 py-0.5 rounded font-black text-[9px] sm:text-xs bg-emerald-950 text-emerald-300 border border-emerald-500 tracking-tight';
         badge.innerText = '🟢 스프레드 진입 적격';
         desc.innerHTML = '<span class="text-emerald-300 font-bold">정상 콘탱고</span> · 당일 돌발 급변동 위험 낮음 (프리미엄 수취 최적)';
     } else if (ratio < 1.00) {
-        // 🟡 일반 장세 (선별 진입)
         card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-amber-950/20 border-amber-800/60 transition-all';
         dot.className = 'w-2 h-2 rounded-full bg-amber-400';
         badge.className = 'px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-amber-950 text-amber-300 border border-amber-600 tracking-tight';
         badge.innerText = '🟡 일반 장세 (선별 진입)';
         desc.innerHTML = '<span class="text-amber-300 font-semibold">표준 변동성</span> · Wall 및 EM 이격 15pt 이상 확보 권장';
     } else {
-        // 🚨 진입 금지 (백워데이션/역전)
         card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-rose-950/40 border-rose-600/80 shadow-md transition-all';
         dot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
         badge.className = 'px-2 py-0.5 rounded font-black text-[9px] sm:text-xs bg-rose-950 text-rose-300 border border-rose-500 tracking-tight animate-pulse';
@@ -47,8 +44,9 @@ function updateVixRatio() {
 }
 
 function renderQuote(pfx, q, opts = {}) {
-    // MAG7, USO만 CNBC(장외 실시간 포함)를 쓰고, ES·WTI·BRENT 선물은 백엔드 실시간 시세 사용
+    // CNBC에서 직접 받아오는 종목들은 백엔드가 빈 값(null)을 보내도 N/A로 지우지 않도록 보호
     if (pfx === 'mag7' || pfx === 'mags' || pfx === 'uso') return;
+    if ((pfx === 'es' || pfx === 'wti' || pfx === 'brent') && (!q || !isNum(q.price))) return;
 
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
@@ -66,13 +64,11 @@ function renderQuote(pfx, q, opts = {}) {
     const s = $(pfx + '-source');
     if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
 
-    // VIX 가격 업데이트 시 변동성 판정 자동 갱신
     if (pfx === 'vix1d') { _vix1dPrice = q.price; updateVixRatio(); }
     if (pfx === 'vix') { _vixPrice = q.price; updateVixRatio(); }
 }
 
 function renderYields(y) {
-    // 국채 금리(3M, 10Y, 30Y) 역시 CNBC 실시간 시세로 단독 처리
     return;
 }
 
@@ -127,16 +123,16 @@ function renderShockAlert(alert) {
 function renderStatus(data) {
     $('global-source-badge').innerText = `Source: ${data.source_summary}`;
     const line = $('schwab-status-line');
-    const okSchwab = (data.schwab_status || '').startsWith('연결됨') && !(data.schwab_status || '').includes('Yahoo 로 대체');
+    const okSchwab = (data.schwab_status || '').startsWith('연결됨');
     if (okSchwab) line.classList.add('hidden');
     else {
         line.classList.remove('hidden');
-        line.innerText = `⚠ ${data.schwab_status}${/Yahoo [1-9]/.test(data.source_summary || '') ? ' → Yahoo 로 자동 대체 중' : ''}`;
+        line.innerText = `⚠ ${data.schwab_status}`;
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-// ES(@SP.1) · MAG7(MAGS) · 오일 3종(@CL.1·@LCO.1·USO) · 국채 3종(US3M·US10Y·US30Y) CNBC 통합 연동
+// ES · WTI · BRENT · MAG7 · USO · 미 국채 3종(3M·10Y·30Y) CNBC 통합 연동
 // ─────────────────────────────────────────────────────────────
 function applyMacroCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText, useComma) {
     var priceEl = document.getElementById(prefix + '-price');
@@ -191,8 +187,8 @@ function handleEtfWithExtended(prefix, baseLabel, q, regPrice, regChg, regPct) {
 }
 
 function fetchCnbcMacroQuotes() {
-    // 100% 실시간인 MAG7(MAGS) + USO + 국채 3종(US3M, US10Y, US30Y)만 CNBC에서 즉시 수신
-    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=MAGS%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+    // ES(@SP.1), WTI(@CL.1), BRENT(@LCO.1) 포함 8종목 모두 한 번에 호출하여 N/A 원천 방지
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@SP.1%7CMAGS%7C@CL.1%7C@LCO.1%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
 
     fetch(url)
         .then(function(r) { return r.json(); })
@@ -232,7 +228,6 @@ function fetchCnbcMacroQuotes() {
                 }
             });
 
-            // 10Y-3M SPREAD 실시간 계산 및 색상 반영
             if (y10Val !== null && y3mVal !== null && !isNaN(y10Val) && !isNaN(y3mVal)) {
                 var spreadBp = Math.round((y10Val - y3mVal) * 100);
                 var spSign = spreadBp > 0 ? '+' : '';
