@@ -146,3 +146,73 @@ function renderStatus(data) {
         line.innerText = `⚠ ${data.schwab_status}${/Yahoo [1-9]/.test(data.source_summary || '') ? ' → Yahoo 로 자동 대체 중' : ''}`;
     }
 }
+// ─────────────────────────────────────────────────────────────
+// USO (United States Oil Fund ETF) 실시간 시세 바인딩 및 자동 조회
+// ─────────────────────────────────────────────────────────────
+function updateUsoCard(price, change, changePct, sourceLabel) {
+    var priceEl = document.getElementById('uso-price');
+    var changeEl = document.getElementById('uso-change');
+    var srcEl = document.getElementById('uso-source');
+    if (!priceEl || !changeEl) return;
+
+    if (price === null || price === undefined || isNaN(price)) return;
+
+    var pNum = Number(price);
+    var cNum = Number(change || 0);
+    var pctNum = Number(changePct || 0);
+    var sign = cNum > 0 ? '+' : '';
+
+    priceEl.textContent = '$' + pNum.toFixed(2);
+    changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
+
+    if (cNum > 0) {
+        changeEl.className = 'text-[10px] sm:text-xs font-mono font-bold text-emerald-400 mt-0.5';
+    } else if (cNum < 0) {
+        changeEl.className = 'text-[10px] sm:text-xs font-mono font-bold text-rose-400 mt-0.5';
+    } else {
+        changeEl.className = 'text-[10px] sm:text-xs font-mono text-slate-400 mt-0.5';
+    }
+
+    if (srcEl && sourceLabel) {
+        srcEl.textContent = sourceLabel;
+    }
+}
+
+function fetchUsoQuoteFallback() {
+    var priceEl = document.getElementById('uso-price');
+    if (!priceEl) return;
+
+    // 1순위: 백엔드 API 응답 내 uso 데이터 확인
+    fetch('https://0-dte-seven.vercel.app/api/market-data')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var q = (d && (d.quotes || d.market_data || d)) || {};
+            var u = q.uso || q.USO || d.uso;
+            if (u && (u.price || u.last)) {
+                updateUsoCard(u.price || u.last, u.change || u.chg, u.change_pct || u.pct, u.source || 'Schwab');
+                return;
+            }
+            // 2순위: 백엔드에 USO가 없을 경우 Yahoo Finance 실시간 차트 API 호출
+            var yUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/USO?interval=1d&range=2d');
+            return fetch('https://corsproxy.io/?' + yUrl)
+                .then(function(res) { return res.json(); })
+                .then(function(yData) {
+                    var meta = yData && yData.chart && yData.chart.result && yData.chart.result[0] && yData.chart.result[0].meta;
+                    if (meta && meta.regularMarketPrice) {
+                        var cur = meta.regularMarketPrice;
+                        var prev = meta.chartPreviousClose || meta.previousClose || cur;
+                        var chg = cur - prev;
+                        var pct = prev ? (chg / prev) * 100 : 0;
+                        updateUsoCard(cur, chg, pct, 'Yahoo');
+                    }
+                });
+        })
+        .catch(function(e) {
+            console.warn('USO 시세 조회 대기:', e);
+        });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    fetchUsoQuoteFallback();
+    setInterval(fetchUsoQuoteFallback, 30000);
+});
