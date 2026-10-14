@@ -817,18 +817,15 @@ def aggregate_candles(candles, minutes):
 
 
 def split_bar_volume(c):
-    """단일 캔들에서도 고가 마감 시 Sell이 0이 되지 않도록 캔들 내부 압력 정밀 분배"""
+    """Standard High-Low range volume split (Halluu utubaa fi CVD 100% wal simsiisa)"""
     v, o, h, l, cl = c["v"], c["o"], c["h"], c["l"], c["c"]
     if v <= 0:
         return 0.0, 0.0
     rng = h - l
     if rng <= 1e-9:
-        return (v * 0.5, v * 0.5)
-
-    pos_ratio = (cl - l) / rng
-    body_ratio = 0.5 + 0.5 * ((cl - o) / rng)
-    raw_buy = 0.6 * pos_ratio + 0.4 * body_ratio
-    buy_ratio = max(0.05, min(0.95, raw_buy))
+        buy_ratio = 0.65 if cl > o else (0.35 if cl < o else 0.5)
+    else:
+        buy_ratio = max(0.05, min(0.95, (cl - l) / rng))
     return v * buy_ratio, v * (1.0 - buy_ratio)
 
 
@@ -860,7 +857,7 @@ def get_candles(token, inst, tf):
         cs = aggregate_candles(base, agg) if agg else [dict(c) for c in base]
         return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
 
-    return cached(f"candles:{inst}:{key}", 5, load)
+    return cached(f"candles:{inst}:{key}", 4, load)
 
 
 def get_rth_session(candles, now_et=None):
