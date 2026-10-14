@@ -1,107 +1,276 @@
 let currentCvdTf = '10m';
-let cachedBars = [];
-let defaultCvdLastTime = '--', defaultCvdSub = '--';
+let currentCvdData = null;
+let cvdBarsCache = [];
 
-function markActive(groupSel, btnClass, tf, activeCls) {
-    document.querySelectorAll(groupSel + ' .' + btnClass).forEach((btn) => {
-        btn.className = btnClass + ' px-2.5 py-1 rounded text-xs lg:text-sm ' + (btn.getAttribute('data-tf') === tf ? activeCls + ' text-white font-bold shadow' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 transition');
-    });
-}
-
-function changeCvdTimeframe(tf) {
+// ─────────────────────────────────────────────────────────────
+// CVD 타임프레임 전환 (1m / 5m / 10m / 30m)
+// ─────────────────────────────────────────────────────────────
+function setCvdTimeframe(tf) {
+    if (currentCvdTf === tf) return;
     currentCvdTf = tf;
-    markActive('#cvd-tf-group', 'cvd-tf-btn', tf, 'bg-teal-600');
-    setText('cvd-title-tf', tf.toUpperCase());
-    fetchRealMarketData(true);
+    
+    // 타임프레임 버튼 활성화 UI 스타일 동기화
+    const buttons = document.querySelectorAll('[data-cvd-tf]');
+    buttons.forEach(btn => {
+        if (btn.getAttribute('data-cvd-tf') === tf) {
+            btn.className = 'px-2 py-0.5 text-xs font-mono font-bold bg-indigo-600 text-white rounded shadow-sm';
+        } else {
+            btn.className = 'px-2 py-0.5 text-xs font-mono font-semibold bg-slate-800 text-slate-400 hover:text-slate-200 rounded';
+        }
+    });
+
+    // 실시간 API 재호출
+    if (typeof fetchRealMarketData === 'function') {
+        fetchRealMarketData();
+    }
 }
 
-function inspectCvdBar(idx) {
-    if (idx === null || !cachedBars[idx]) {
-        $('cvd-inspect-label').innerText = '마지막 봉';
-        $('cvd-last-time').innerText = defaultCvdLastTime;
-        $('cvd-inspect-sub').innerHTML = defaultCvdSub;
-        return;
-    }
-    const b = cachedBars[idx], d = new Date(b.t * 1000);
-    const timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-    const isLast = (idx === cachedBars.length - 1);
-    const rangeHint = isLast && currentCvdTf === '10m' ? ' (15:50~16:00 마감봉)' : (isLast ? ' (마감봉)' : '');
-    $('cvd-inspect-label').innerText = '선택 봉';
-    $('cvd-last-time').innerText = `${timeStr}${rangeHint}`;
-    const flowTag = b.is_bull ? '<span class="text-emerald-400 font-bold">Buy 우세</span>' : '<span class="text-rose-400 font-bold">Sell 우세</span>';
-    $('cvd-inspect-sub').innerHTML = `볼륨 <span class="text-slate-100 font-bold">${b.vol}K</span> · CVD <span class="${b.cvd_line >= 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">${b.cvd_line > 0 ? '+' : ''}${b.cvd_line}K</span> · ${flowTag}`;
+// ─────────────────────────────────────────────────────────────
+// 수치 포맷팅 헬퍼 (K / M 단위 표기)
+// ─────────────────────────────────────────────────────────────
+function fmtCvdVal(v, withSign = false) {
+    if (v === null || v === undefined || isNaN(v)) return '--';
+    const sign = v > 0 && withSign ? '+' : '';
+    const abs = Math.abs(v);
+    if (abs >= 1000000) return `${sign}${(v / 1000000).toFixed(1)}M`;
+    if (abs >= 1000) return `${sign}${(v / 1000).toFixed(0)}K`;
+    return `${sign}${Math.round(v)}`;
 }
 
-function renderCvd(c) {
-    const pill = $('cvd-status-pill'), priorBadge =$('cvd-prior-badge');
-    if (!c) {
-        cachedBars = []; setText('cvd-source', NA); setText('cvd-data-time', 'Data as of N/A');
-        ['cvd-agg-range', 'cvd-data-desc', 'cvd-last-time', 'cvd-recent-vol', 'cvd-total-vol', 'cvd-summary-text', 'cvd-y-max', 'cvd-y-mid'].forEach(id => setText(id, NA));
-        setText('cvd-buy-pct', '▲ Buy N/A'); setText('cvd-sell-pct', '▼ Sell N/A');
-        $('cvd-bar-fill').style.width = '0%'; $('cvd-sell-fill').style.width = '0\%';$('cvd-real-bars').innerHTML = ''; $('cvd-line-path').setAttribute('d', '');$('cvd-vertical-grids').innerHTML = '';
-        if (priorBadge) priorBadge.classList.add('hidden');
-        pill.className = 'text-[10px] sm:text-xs bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-semibold flex items-center space-x-1';
-        pill.innerHTML = '<span>N/A</span>';
-        return;
+// ─────────────────────────────────────────────────────────────
+// SPY VOLUME + CVD 캔버스 차트 렌더링 엔진 (듀얼 Y축 탑재)
+// ─────────────────────────────────────────────────────────────
+function drawCvdChart() {
+    const canvas = $('cvd-chart-canvas') \vert{}\vert{}$('cvd-canvas');
+    if (!canvas || !currentCvdData) return;
+
+    const bars = currentCvdData.bars || currentCvdData.series || currentCvdData.data || [];
+    if (!Array.isArray(bars) || bars.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+
+    // 듀얼 Y축 수치를 표시하기 위한 좌우/상하 패딩 확보
+    const padLeft = 58;   // 좌측 CVD Y축 여백 (+25K, 0, -25K)
+    const padRight = 52;  // 우측 Volume Y축 여백 (150K, 75K, 0)
+    const padTop = 26;
+    const padBottom = 26; // 하단 시간(X축) 라벨 여백
+
+    const chartW = w - padLeft - padRight;
+    const chartH = h - padTop - padBottom;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // 1. 볼륨 & CVD 최대/최소값 스케일 연산
+    let maxVol = 100;
+    let minCvd = Infinity;
+    let maxCvd = -Infinity;
+
+    bars.forEach(b => {
+        const vol = Number(b.volume || b.vol || 0);
+        if (vol > maxVol) maxVol = vol;
+
+        const cvdVal = Number(b.cvd !== undefined ? b.cvd : (b.cum_delta || 0));
+        if (cvdVal > maxCvd) maxCvd = cvdVal;
+        if (cvdVal < minCvd) minCvd = cvdVal;
+    });
+
+    // 0선 중심 대칭 스케일 확보
+    const absMaxCvd = Math.max(Math.abs(maxCvd), Math.abs(minCvd), 1000);
+    const cvdScaleMax = Math.ceil((absMaxCvd * 1.15) / 1000) * 1000;
+    const volScaleMax = Math.ceil((maxVol * 1.2) / 1000) * 1000;
+
+    const midY = padTop + chartH / 2; // CVD 0선 (중앙)
+
+    // 2. 가로 보조 점선 그리드 및 듀얼 Y축 눈금 출력
+    const levels = [
+        { cvd: cvdScaleMax,       vol: volScaleMax,       y: padTop },
+        { cvd: cvdScaleMax / 2,   vol: volScaleMax * 0.75, y: padTop + chartH * 0.25 },
+        { cvd: 0,                 vol: volScaleMax * 0.5,  y: midY },
+        { cvd: -cvdScaleMax / 2,  vol: volScaleMax * 0.25, y: padTop + chartH * 0.75 },
+        { cvd: -cvdScaleMax,      vol: 0,                 y: padTop + chartH }
+    ];
+
+    levels.forEach(lvl => {
+        // 가로 그리드 점선
+        ctx.strokeStyle = lvl.cvd === 0 ? 'rgba(148, 163, 184, 0.7)' : 'rgba(51, 65, 85, 0.4)';
+        ctx.lineWidth = lvl.cvd === 0 ? 1.5 : 1;
+        ctx.setLineDash(lvl.cvd === 0 ? [] : [3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft - 6, lvl.y);
+        ctx.lineTo(w - padRight + 6, lvl.y);
+        ctx.stroke();
+
+        // [좌측 Y축 라벨] CVD (누적 델타) - 에메랄드 / 화이트 / 로즈
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'right';
+        if (lvl.cvd > 0) {
+            ctx.fillStyle = '#34d399';
+            ctx.fillText(fmtCvdVal(lvl.cvd, true), padLeft - 10, lvl.y + 3.5);
+        } else if (lvl.cvd < 0) {
+            ctx.fillStyle = '#fb7185';
+            ctx.fillText(fmtCvdVal(lvl.cvd, true), padLeft - 10, lvl.y + 3.5);
+        } else {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText('0', padLeft - 10, lvl.y + 3.5);
+        }
+
+        // [우측 Y축 라벨] Volume (거래량) - 고대비 슬레이트 화이트
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(fmtCvdVal(lvl.vol, false), w - padRight + 10, lvl.y + 3.5);
+    });
+    ctx.setLineDash([]);
+
+    // Y축 헤더 배지 (좌측: CVD, 우측: VOL)
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = '#818cf8';
+    ctx.textAlign = 'right';
+    ctx.fillText('CVD(Δ)', padLeft - 10, padTop - 10);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.textAlign = 'left';
+    ctx.fillText('VOL', w - padRight + 10, padTop - 10);
+
+    // 3. 막대 거래량 및 CVD 곡선 렌더링
+    const stepX = chartW / bars.length;
+    const barW = Math.max(4, Math.min(24, stepX * 0.65));
+    cvdBarsCache = [];
+
+    const cvdPoints = [];
+
+    bars.forEach((b, i) => {
+        const x = padLeft + (i + 0.5) * stepX;
+        const vol = Number(b.volume || b.vol || 0);
+        const delta = Number(b.delta || (b.buy_vol - b.sell_vol) || 0);
+        const cvdVal = Number(b.cvd !== undefined ? b.cvd : (b.cum_delta || 0));
+
+        // 하단 40% 영역에 거래량 막대 배치
+        const volH = (vol / volScaleMax) * (chartH * 0.45);
+        const barY = (padTop + chartH) - volH;
+
+        ctx.fillStyle = delta >= 0 ? 'rgba(16, 185, 129, 0.45)' : 'rgba(244, 63, 94, 0.45)';
+        ctx.beginPath();
+        ctx.roundRect(x - barW / 2, barY, barW, volH, [2, 2, 0, 0]);
+        ctx.fill();
+
+        // CVD 좌표 산출 (-cvdScaleMax ~ +cvdScaleMax)
+        const cvdY = midY - (cvdVal / cvdScaleMax) * (chartH / 2);
+        cvdPoints.push({ x, y: cvdY, bar: b, vol, delta, cvdVal });
+
+        // X축 시간 라벨 (균등 간격 출력)
+        if (i % Math.ceil(bars.length / 6) === 0 || i === bars.length - 1) {
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            const timeStr = b.time || b.timestamp || '';
+            const shortTime = timeStr.includes(' ') ? timeStr.split(' ')[1].slice(0, 5) : timeStr.slice(0, 5);
+            ctx.fillText(shortTime, x, h - 8);
+        }
+    });
+
+    // 4. CVD 선(Line) 및 그라데이션 영역 드로잉
+    if (cvdPoints.length > 1) {
+        // CVD 라인
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        cvdPoints.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+
+        // 최신 포인트 하이라이트 원형 핑
+        const lastPt = cvdPoints[cvdPoints.length - 1];
+        ctx.fillStyle = lastPt.cvdVal >= 0 ? '#10b981' : '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(lastPt.x, lastPt.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
     }
-    cachedBars = c.bars || [];
-    if (priorBadge) {
-        priorBadge.classList.remove('hidden');
-        priorBadge.className = c.is_prior ? 'text-[9px] sm:text-xs bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono font-bold' : 'text-[9px] sm:text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono font-bold';
-        priorBadge.innerText = c.is_prior ? `🌙 전일(${c.session_date || '마감'}) 세션 · 09:30 ET 리셋` : '🟢 당일 정규장 실시간';
-    }
 
-    const is10mLast = currentCvdTf === '10m' && (c.last_bar_time || '').startsWith('15:50');
-    defaultCvdLastTime = is10mLast ? `${c.data_time} (15:50~16:00 마감)` : c.data_time;
-    defaultCvdSub = `최근 봉 <span class="text-slate-200">${c.recent_vol}</span> · 합계 <span class="text-slate-200">${c.total_vol}</span>`;
-    inspectCvdBar(null);
+    cvdBarsCache = cvdPoints;
+}
 
-    setText('cvd-source', c.source); setText('cvd-data-time', `Data as of ${c.data_time}`);
-    setText('cvd-agg-range', c.aggregate_range); setText('cvd-data-desc', c.data_desc);
-    setText('cvd-buy-pct', `▲ Buy ${c.buy_pct}% (${c.buy_vol})`); setText('cvd-sell-pct', `▼ Sell ${c.sell_pct}% (${c.sell_vol})`);
-    $('cvd-bar-fill').style.width = `${c.buy_pct}%`; $('cvd-sell-fill').style.width = `${c.sell_pct}%`;
-    setText('cvd-summary-text', c.summary_text);
+// ─────────────────────────────────────────────────────────────
+// 마우스 호버 인터랙티브 툴팁
+// ─────────────────────────────────────────────────────────────
+function initCvdInteraction() {
+    const canvas = $('cvd-chart-canvas') \vert{}\vert{}$('cvd-canvas');
+    const tt = $('cvd-tooltip') \vert{}\vert{}$('cvd-chart-tooltip');
+    if (!canvas) return;
 
-    const styles = { bull: ['bg-emerald-950/80 text-emerald-300 border-emerald-800/60', '↑'], bear: ['bg-rose-950/80 text-rose-300 border-rose-800/60', '↓'], flat: ['bg-slate-800 text-slate-300 border-slate-700', '↔'] };
-    const st = styles[c.tone] || styles.flat;
-    pill.className = `text-[10px] sm:text-xs lg:text-sm ${st[0]} border px-2 py-0.5 rounded font-semibold flex items-center space-x-1`;
-    pill.innerHTML = `<span>${st[1]} ${c.status}</span>`;
+    function handleMove(clientX, clientY) {
+        if (!cvdBarsCache.length) return;
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = clientX - rect.left;
+        const mouseY = clientY - rect.top;
 
-    const bars = cachedBars, maxVol = Math.max(...bars.map(b => b.vol), 0.1), maxCvd = Math.max(...bars.map(b => Math.abs(b.cvd_line)), 1.0);
-    const fmtK = v => (v >= 1000 ? `${(v / 1000).toFixed(2)}M` : `${v.toFixed(1)}K`);
-    setText('cvd-y-max', fmtK(maxVol)); setText('cvd-y-mid', fmtK(maxVol / 2));
-
-    const AREA_X0 = 40, AREA_W = 440, n = Math.max(bars.length, 1), slot = AREA_W / n;
-    const barW = Math.max(0.8, Math.min(24, slot * 0.7)), cx = i => AREA_X0 + i * slot + slot / 2;
-    const strokeW = slot < 2.5 ? '0' : '0.7';
-
-    $('cvd-real-bars').innerHTML = bars.map((b, i) => {
-        const h = Math.max(1.5, (b.vol / maxVol) * 85), x = cx(i) - barW / 2, y = 110 - h;
-        const d = new Date(b.t * 1000), timeStr = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' }) + ' ET';
-        const tipRange = (i === bars.length - 1) && currentCvdTf === '10m' ? ' [15:50~16:00 마감봉]' : '';
-        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${b.is_bull ? '#065f46' : '#881337'}" stroke="${b.is_bull ? '#10b981' : '#f43f5e'}" stroke-width="${strokeW}" class="cursor-pointer transition-opacity hover:opacity-75" onmouseover="inspectCvdBar(${i})" onmouseout="inspectCvdBar(null)" ontouchstart="inspectCvdBar(${i})"><title>[${timeStr}${tipRange}] Vol: ${b.vol}K | CVD: ${b.cvd_line}K</title></rect>`;
-    }).join('');
-
-    $('cvd-line-path').setAttribute('d', bars.map((b, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${(65 - (b.cvd_line / maxCvd) * 40).toFixed(1)}`).join(' '));
-
-    const gridGroup = $('cvd-vertical-grids');
-    if (!bars.length) gridGroup.innerHTML = '';
-    else {
-        let gridHtml = ''; const seenTicks = new Set();
-        bars.forEach((b, i) => {
-            const d = new Date(b.t * 1000);
-            const etHour = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10);
-            const etMin = parseInt(d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10);
-            const totalMinutes = etHour * 60 + etMin;
-            if (totalMinutes % 30 === 0 && !seenTicks.has(totalMinutes)) {
-                seenTicks.add(totalMinutes);
-                gridHtml += `<line x1="${cx(i).toFixed(1)}" y1="18" x2="${cx(i).toFixed(1)}" y2="110" stroke="#1e293b" stroke-dasharray="2,3" stroke-width="0.8" opacity="0.8"/><text x="${cx(i).toFixed(1)}" y="125" fill="#94a3b8" font-size="9" font-weight="bold" text-anchor="middle" font-family="monospace">${String(etHour).padStart(2, '0')}:${String(etMin).padStart(2, '0')}</text>`;
+        let closest = null;
+        let minDiff = Infinity;
+        cvdBarsCache.forEach(pt => {
+            const diff = Math.abs(pt.x - mouseX);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = pt;
             }
         });
-        const lastBar = bars[bars.length - 1], lastD = new Date(lastBar.t * 1000);
-        if (parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10) === 15 && parseInt(lastD.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, minute: '2-digit' }), 10) >= 40) {
-            gridHtml += `<line x1="480" y1="18" x2="480" y2="110" stroke="#475569" stroke-dasharray="2,2" stroke-width="1"/><text x="478" y="125" fill="#94a3b8" font-size="6.8" text-anchor="end" font-family="monospace" font-weight="bold">16:00</text>`;
+
+        if (closest && minDiff < 30 && tt) {
+            tt.classList.remove('hidden');
+            const timeStr = closest.bar.time || closest.bar.timestamp || '--';
+            setText('cvd-tt-time', timeStr);
+            setText('cvd-tt-vol', Number(closest.vol).toLocaleString());
+            
+            const deltaEl = $('cvd-tt-delta');
+            if (deltaEl) {
+                deltaEl.innerText = fmtCvdVal(closest.delta, true);
+                deltaEl.className = `font-bold ${closest.delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+            }
+
+            const cvdEl = $('cvd-tt-cvd');
+            if (cvdEl) {
+                cvdEl.innerText = fmtCvdVal(closest.cvdVal, true);
+                cvdEl.className = `font-bold ${closest.cvdVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+            }
+
+            let ttLeft = closest.x + 15;
+            if (ttLeft + 160 > rect.width) ttLeft = closest.x - 170;
+            tt.style.left = `${Math.max(10, ttLeft)}px`;
+            tt.style.top = `${Math.max(10, mouseY - 50)}px`;
+        } else if (tt) {
+            tt.classList.add('hidden');
         }
-        gridGroup.innerHTML = gridHtml;
     }
+
+    canvas.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+    canvas.addEventListener('mouseleave', () => { if (tt) tt.classList.add('hidden'); });
+    canvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    canvas.addEventListener('touchend', () => { if (tt) tt.classList.add('hidden'); });
+    window.addEventListener('resize', drawCvdChart);
+}
+
+document.addEventListener('DOMContentLoaded', initCvdInteraction);
+
+// ─────────────────────────────────────────────────────────────
+// 백엔드 API 데이터 수신 및 차트 갱신 진입점
+// ─────────────────────────────────────────────────────────────
+function renderCvd(cvd) {
+    if (!cvd) return;
+    currentCvdData = cvd;
+    drawCvdChart();
 }
