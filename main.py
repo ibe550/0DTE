@@ -817,17 +817,37 @@ def aggregate_candles(candles, minutes):
 
 
 def split_bar_volume(c):
-    """Standard High-Low range volume split (Halluu utubaa fi CVD 100% wal simsiisa)"""
+    """틱 데이터 부재를 보완하기 위한 위크-바디(Wick-Body) 볼륨 정밀 분배 알고리즘"""
     v, o, h, l, cl = c["v"], c["o"], c["h"], c["l"], c["c"]
     if v <= 0:
         return 0.0, 0.0
+    
     rng = h - l
     if rng <= 1e-9:
-        buy_ratio = 0.65 if cl > o else (0.35 if cl < o else 0.5)
-    else:
-        buy_ratio = max(0.05, min(0.95, (cl - l) / rng))
-    return v * buy_ratio, v * (1.0 - buy_ratio)
+        return (v * 0.5, v * 0.5)
 
+    body_top = max(o, cl)
+    body_bot = min(o, cl)
+    body_size = body_top - body_bot
+    upper_wick = h - body_top
+    lower_wick = body_bot - l
+
+    if cl >= o:
+        buy_power = lower_wick + body_size + (upper_wick * 0.2)
+        sell_power = upper_wick * 0.8
+    else:
+        buy_power = lower_wick * 0.8
+        sell_power = upper_wick + body_size + (lower_wick * 0.2)
+
+    total_power = buy_power + sell_power
+    if total_power <= 0:
+        buy_ratio = 0.5
+    else:
+        buy_ratio = buy_power / total_power
+
+    buy_ratio = max(0.05, min(0.95, buy_ratio))
+    
+    return v * buy_ratio, v * (1.0 - buy_ratio)
 
 def get_base_candles(token, ssym, freq, days):
     def load():
