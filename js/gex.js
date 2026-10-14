@@ -258,22 +258,13 @@ function renderSpreadOptimizer(opt, gexData) {
             let rawCallCredit = Math.max(0.05, (3.2 / (1 + (callDist / 12) * 1.8)) * timeDecayFactor);
             rawCallCredit = Math.round(rawCallCredit * 20) / 20;
 
-            let callStatus = 'WAITING';
-            let callBadge = '⏳ 대기';
-            let callGuide = `상방 방어선 이격 +${(callShort - callBound).toFixed(1)}pt`;
+            let callStatus = 'SWEET_SPOT';
+            let callBadge = '✅ 진입 적격';
+            let callGuide = `방어선 바깥 +${(callShort - callBound).toFixed(1)}pt`;
 
             if (callDist < 10) {
                 callStatus = 'DANGER';
                 callBadge = '⛔ 진입 금지 (근접 위험)';
-                callGuide = `현재가 근접(이격 ${callDist.toFixed(1)}pt) · 감마 스퀴즈 위험`;
-            } else if (rawCallCredit >= 1.00 && rawCallCredit <= 1.40) {
-                callStatus = 'SWEET_SPOT';
-                callBadge = '✅ 진입 적격 (스윗스팟)';
-                callGuide = `방어선 바깥 +${(callShort - callBound).toFixed(1)}pt · 안정적 진입`;
-            } else {
-                callStatus = 'SWEET_SPOT';
-                callBadge = '✅ 진입 적격';
-                callGuide = `방어선 바깥 +${(callShort - callBound).toFixed(1)}pt · 이격 확보 완료`;
             }
 
             // Bull Put Spread
@@ -285,22 +276,13 @@ function renderSpreadOptimizer(opt, gexData) {
             let rawPutCredit = Math.max(0.05, (3.4 / (1 + (putDist / 12) * 1.8)) * timeDecayFactor);
             rawPutCredit = Math.round(rawPutCredit * 20) / 20;
 
-            let putStatus = 'WAITING';
-            let putBadge = '⏳ 대기';
-            let putGuide = `하방 방어선 이격 -${(putBound - putShort).toFixed(1)}pt`;
+            let putStatus = 'SWEET_SPOT';
+            let putBadge = '✅ 진입 적격';
+            let putGuide = `방어선 바깥 -${(putBound - putShort).toFixed(1)}pt`;
 
             if (putDist < 10) {
                 putStatus = 'DANGER';
                 putBadge = '⛔ 진입 금지 (근접 위험)';
-                putGuide = `현재가 근접(이격 ${putDist.toFixed(1)}pt) · 감마 스퀴즈 위험`;
-            } else if (rawPutCredit >= 1.00 && rawPutCredit <= 1.40) {
-                putStatus = 'SWEET_SPOT';
-                putBadge = '✅ 진입 적격 (스윗스팟)';
-                putGuide = `방어선 바깥 -${(putBound - putShort).toFixed(1)}pt · 안정적 진입`;
-            } else {
-                putStatus = 'SWEET_SPOT';
-                putBadge = '✅ 진입 적격';
-                callGuide = `방어선 바깥 -${(putBound - putShort).toFixed(1)}pt · 이격 확보 완료`;
             }
 
             opt = {
@@ -335,29 +317,18 @@ function renderSpreadOptimizer(opt, gexData) {
     const c = opt.call_spread;
     if (c) {
         setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
-        // '목록 크레딧' 문구 관련 요소가 있으면 숨김 처리
-        const callCreditEl = $('opt-call-credit');
-        if (callCreditEl && callCreditEl.parentElement) {
-            callCreditEl.parentElement.style.display = 'none';
-        }
-        setText('opt-call-bound', `${c.boundary}`);
-        // renderSpreadOptimizer 함수 내부 하단 수정 예시:
-    const c = opt.call_spread;
-    if (c) {
-        setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
         setText('opt-call-bound', `${c.boundary}`);
         
-        // ── N/A가 뜨던 하단 가이드 칸을 아예 비우거나 숨김 ──
-        const callGuideEl = $('opt-call-guide');
-        if (callGuideEl) {
-            callGuideEl.textContent = '';
-            if (callGuideEl.parentElement) callGuideEl.parentElement.style.display = 'none';
-        }
+        // 목표 크레딧 문구 및 N/A 칸 영역 숨기기
+        const callCreditEl = document.getElementById('opt-call-credit');
+        if (callCreditEl && callCreditEl.parentElement) callCreditEl.parentElement.style.display = 'none';
+        const callGuideEl = document.getElementById('opt-call-guide');
+        if (callGuideEl && callGuideEl.parentElement) callGuideEl.parentElement.style.display = 'none';
 
         const stEl = $('opt-call-status');
         if (stEl) {
             stEl.innerText = c.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (c.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-rose-950 text-rose-300 border-rose-500')}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : 'bg-rose-950 text-rose-300 border-rose-500'}`;
         }
     }
 
@@ -366,19 +337,19 @@ function renderSpreadOptimizer(opt, gexData) {
         setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
         setText('opt-put-bound', `${p.boundary}`);
         
-        // ── N/A가 뜨던 하단 가이드 칸을 아예 비우거나 숨김 ──
-        const putGuideEl = $('opt-put-guide');
-        if (putGuideEl) {
-            putGuideEl.textContent = '';
-            if (putGuideEl.parentElement) putGuideEl.parentElement.style.display = 'none';
-        }
+        // 목표 크레딧 문구 및 N/A 칸 영역 숨기기
+        const putCreditEl = document.getElementById('opt-put-credit');
+        if (putCreditEl && putCreditEl.parentElement) putCreditEl.parentElement.style.display = 'none';
+        const putGuideEl = document.getElementById('opt-put-guide');
+        if (putGuideEl && putGuideEl.parentElement) putGuideEl.parentElement.style.display = 'none';
 
         const stEl = $('opt-put-status');
         if (stEl) {
             stEl.innerText = p.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : (p.status === 'WAITING' ? 'bg-slate-800 text-indigo-300 border-indigo-500' : 'bg-rose-950 text-rose-300 border-rose-500')}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : 'bg-rose-950 text-rose-300 border-rose-500'}`;
         }
     }
+}
 
 function renderGex(g) {
     const note = $('gex-note');
@@ -440,6 +411,6 @@ function renderGex(g) {
         drawGexBarChart();
     }
 
-    // 옵티마이저 바인딩 (fallback 파라미터 전달)
+    // 옵티마이저 바인딩
     renderSpreadOptimizer(g.spread_optimizer, g);
 }
