@@ -197,32 +197,76 @@
     </div>
 
     <!-- 4-1. 유가 2열 -->
-    <div class="grid grid-cols-2 gap-1.5 sm:gap-2 lg:gap-3 mb-1.5 lg:mb-2.5">
-        <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
-            <div class="flex justify-between items-start">
-                <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">WTI CRUDE (CL)</span>
-                <span id="wti-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
-            </div>
-            <div id="wti-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
-            <div id="wti-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
-        </div>
-        <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
-            <div class="flex justify-between items-start">
-                <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">BRENT (BZ)</span>
-                <span id="brent-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
-            </div>
-            <div id="brent-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
-            <div id="brent-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
+    <div class="grid grid-cols-3 gap-1.5 sm:gap-2 lg:gap-3 mb-1.5 lg:mb-2.5">
+            <!-- 1. WTI CRUDE (CL) -->
             <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
-        <div class="flex justify-between items-start">
-            <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">USO (OIL ETF)</span>
-            <span id="uso-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                <div class="flex justify-between items-start">
+                    <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">WTI CRUDE (CL)</span>
+                    <span id="wti-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                </div>
+                <div id="wti-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
+                <div id="wti-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
+            </div>
+
+            <!-- 2. BRENT (BZ) -->
+            <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">BRENT (BZ)</span>
+                    <span id="brent-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                </div>
+                <div id="brent-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
+                <div id="brent-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
+            </div>
+
+            <!-- 3. USO (OIL ETF) -->
+            <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">USO (OIL ETF)</span>
+                    <span id="uso-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">Yahoo (USO)</span>
+                </div>
+                <div id="uso-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
+                <div id="uso-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
+            </div>
         </div>
-        <div id="uso-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
-        <div id="uso-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
-    </div>
-        </div>
-    </div>
+        <script>
+        (function() {
+            function renderUso(cur, prev) {
+                var pEl = document.getElementById('uso-price');
+                var cEl = document.getElementById('uso-change');
+                var sEl = document.getElementById('uso-source');
+                if (!pEl || !cEl || !cur) return;
+                var chg = cur - (prev || cur);
+                var pct = prev ? (chg / prev) * 100 : 0;
+                var sign = chg > 0 ? '+' : '';
+                var col = chg > 0 ? 'text-emerald-400' : (chg < 0 ? 'text-rose-400' : 'text-slate-200');
+                pEl.textContent = cur.toFixed(2);
+                cEl.textContent = sign + chg.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
+                pEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + col + ' tracking-tight my-0.5 truncate';
+                cEl.className = 'text-[8px] sm:text-xs lg:text-sm font-semibold ' + col + ' truncate';
+                if (sEl) sEl.textContent = 'Yahoo (USO)';
+            }
+            function loadUso() {
+                var yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/USO?interval=1d&range=5d';
+                fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(yUrl))
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        var parsed = JSON.parse(d.contents);
+                        var m = parsed.chart.result[0].meta;
+                        renderUso(m.regularMarketPrice, m.chartPreviousClose || m.previousClose);
+                    })
+                    .catch(function() {
+                        fetch('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(yUrl))
+                            .then(function(r) { return r.json(); })
+                            .then(function(d) {
+                                var m = d.chart.result[0].meta;
+                                renderUso(m.regularMarketPrice, m.chartPreviousClose || m.previousClose);
+                            });
+                    });
+            }
+            loadUso();
+            setInterval(loadUso, 30000);
+        })();
+        </script>
 
 
     <!-- 4-2. Polymarket SPX -->
