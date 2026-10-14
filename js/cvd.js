@@ -9,14 +9,22 @@ function safeSet(id, val) {
     }
 }
 
-function fmtCvdVal(v, withSign) {
-    if (v === null || v === undefined || isNaN(v)) return '--';
-    var sign = '';
-    if (v > 0 && withSign) sign = '+';
-    var abs = Math.abs(v);
-    if (abs >= 1000000) return sign + (v / 1000000).toFixed(1) + 'M';
-    if (abs >= 1000) return sign + (v / 1000).toFixed(1) + 'K';
-    return sign + Math.round(v);
+// 백엔드 vol(천 주 단위)을 실제 주 단위로 환산하여 M(밀리언) / K 표기
+function fmtVolM(shares) {
+    if (shares === null || shares === undefined || isNaN(shares)) return '--';
+    var abs = Math.abs(shares);
+    if (abs >= 1000000) return (shares / 1000000).toFixed(2) + 'M';
+    if (abs >= 1000) return (shares / 1000).toFixed(0) + 'K';
+    return Math.round(shares).toString();
+}
+
+// 좌측 Y축 눈금용 간결한 M / K 표기
+function fmtYAxisVol(shares) {
+    if (shares === null || shares === undefined || isNaN(shares)) return '--';
+    var abs = Math.abs(shares);
+    if (abs >= 1000000) return (shares / 1000000).toFixed(1) + 'M';
+    if (abs >= 1000) return Math.round(shares / 1000) + 'K';
+    return Math.round(shares).toString();
 }
 
 function formatEtTime(unixSec) {
@@ -29,18 +37,18 @@ function formatEtTime(unixSec) {
     return hh + ':' + mm;
 }
 
-// 1. 타임프레임 전환 함수 (HTML onclick="changeCvdTimeframe(...)" 연동)
+// 타임프레임 버튼 클릭 연동 (1m / 5m / 10m / 15m / 30m / 1H)
 function changeCvdTimeframe(tf) {
     if (!tf) return;
     currentCvdTf = tf;
-    
+
     var btns = document.querySelectorAll('#cvd-tf-group button, [data-cvd-tf]');
     btns.forEach(function(btn) {
         var bText = (btn.getAttribute('data-cvd-tf') || btn.innerText || '').trim().toLowerCase();
         if (bText === tf.toLowerCase()) {
-            btn.className = 'px-2 py-0.5 text-xs font-mono font-bold bg-emerald-600 text-white rounded shadow-sm';
+            btn.className = 'px-2.5 py-1 text-xs font-mono font-bold bg-emerald-600 text-white rounded shadow-sm';
         } else {
-            btn.className = 'px-2 py-0.5 text-xs font-mono font-semibold bg-slate-800 text-slate-400 hover:text-slate-200 rounded';
+            btn.className = 'px-2.5 py-1 text-xs font-mono font-semibold bg-slate-800 text-slate-300 hover:text-white rounded';
         }
     });
 
@@ -51,149 +59,185 @@ function changeCvdTimeframe(tf) {
 window.changeCvdTimeframe = changeCvdTimeframe;
 window.setCvdTimeframe = changeCvdTimeframe;
 
-// 2. CVD 및 거래량 SVG 렌더링 진입점
 function renderCvd(cvd) {
     if (!cvd) return;
-    if (cvd.cvd && !cvd.bars) {
-        cvd = cvd.cvd;
-    }
+    if (cvd.cvd && !cvd.bars) cvd = cvd.cvd;
     currentCvdData = cvd;
 
     var bars = cvd.bars || cvd.series || cvd.data || cvd.candles || [];
     if (!Array.isArray(bars) || bars.length === 0) return;
 
-    // 상단 타이틀 & 메타데이터
-    safeSet('cvd-title-tf', (currentCvdTf || '10M').toUpperCase());
-    safeSet('cvd-source', cvd.source || 'Charles Schwab (SPY 10m)');
-    
-    var dtEl = document.getElementById('cvd-data-time');
-    if (dtEl) {
-        var dt = cvd.data_time || cvd.timestamp || cvd.time || '--';
-        dtEl.innerText = dtEl.innerText.indexOf('Data as of') !== -1 ? ('Data as of ' + dt) : dt;
-    }
+    var tfLabel = (cvd.timeframe || currentCvdTf || '10m');
+    var srcLabel = cvd.source || ('Charles Schwab (SPY ' + tfLabel + ')');
+
+    // 1. 상단 헤더 및 뱃지 복원
+    safeSet('cvd-title-tf', tfLabel.toUpperCase());
+    safeSet('cvd-source', srcLabel);
+    safeSet('cvd-data-time', 'Data as of ' + (cvd.data_time || '--'));
 
     var priorBadge = document.getElementById('cvd-prior-badge');
     if (priorBadge) {
-        if (cvd.is_prior) priorBadge.classList.remove('hidden');
-        else priorBadge.classList.add('hidden');
+        priorBadge.classList.remove('hidden');
+        if (cvd.is_prior) {
+            priorBadge.innerHTML = '🟡 전일 정규장 마감';
+        } else {
+            priorBadge.innerHTML = '🟢 당일 정규장 실시간';
+        }
     }
 
-    // 봉 데이터 집계
-    var maxVol = 10;
-    var totalBuy = 0;
-    var totalSell = 0;
+    // 2. 거래량 합산 (백엔드 vol이 K단위이므로 1000을 곱해 실제 주수로 환산)
+    var rawSum = 0;
+    bars.forEach(function(b) { rawSum += Number(b.vol || b.volume || 0); });
+    var unitMult = rawSum < 500000 ? 1000 : 1;
+
+    var maxVolShares = 1000;
+    var totalBuyShares = 0;
+    var totalSellShares = 0;
     var cvdVals = [];
 
     bars.forEach(function(b) {
-        var v = Number(b.vol !== undefined ? b.vol : (b.volume || 0));
-        if (v > maxVol) maxVol = v;
-        if (b.is_bull) totalBuy += v;
-        else totalSell += v;
-        var cLine = Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0));
-        cvdVals.push(cLine);
+        var vShares = Number(b.vol !== undefined ? b.vol : (b.volume || 0)) * unitMult;
+        if (vShares > maxVolShares) maxVolShares = vShares;
+        if (b.is_bull) totalBuyShares += vShares;
+        else totalSellShares += vShares;
+        cvdVals.push(Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0)));
     });
 
-    var totalVol = totalBuy + totalSell;
-    var buyPct = totalVol > 0 ? ((totalBuy / totalVol) * 100).toFixed(1) : '50.0';
-    var sellPct = totalVol > 0 ? ((totalSell / totalVol) * 100).toFixed(1) : '50.0';
+    var totalVolShares = totalBuyShares + totalSellShares;
+    var buyPctRound = totalVolShares > 0 ? Math.round((totalBuyShares / totalVolShares) * 100) : 50;
+    var sellPctRound = 100 - buyPctRound;
 
     var firstBar = bars[0];
     var lastBar = bars[bars.length - 1];
-    var lastCvd = cvdVals.length ? cvdVals[cvdVals.length - 1] : 0;
+    var lastBarShares = Number(lastBar.vol !== undefined ? lastBar.vol : (lastBar.volume || 0)) * unitMult;
 
     var tStart = formatEtTime(firstBar.t);
-    var tEnd = formatEtTime(lastBar.t);
-    
-    var rangeEl = document.getElementById('cvd-agg-range');
-    if (rangeEl) {
-        rangeEl.innerText = rangeEl.innerText.indexOf('집계 구간') !== -1 ? ('집계 구간 ' + tStart + ' ~ ' + tEnd + ' ET') : (tStart + ' ~ ' + tEnd + ' ET');
-    }
+    var tEndFull = cvd.last_bar_time || (formatEtTime(lastBar.t) + ':00 ET');
+    var sDate = cvd.session_date || (cvd.data_time ? cvd.data_time.split(' ')[0] : '');
 
-    var descEl = document.getElementById('cvd-data-desc');
-    if (descEl) {
-        descEl.innerText = descEl.innerText.indexOf('데이터') !== -1 ? ('데이터 ' + bars.length + '개 봉') : (bars.length + '개 봉');
-    }
+    // 집계 구간 및 데이터 설명 복원
+    safeSet('cvd-agg-range', sDate + ' 정규장 (' + tStart + ' ~ ' + tEndFull + ') · ' + bars.length + '개 ' + tfLabel + ' 봉');
+    safeSet('cvd-data-desc', 'SPY 정규장 · ' + srcLabel + ' · 체결 압력 CVD');
 
+    // 우측 상단 Buying / Selling Pressure 뱃지 복원
     var pill = document.getElementById('cvd-status-pill');
     if (pill) {
-        var isBull = totalBuy >= totalSell;
-        pill.innerText = isBull ? '매수 우세 (Bull)' : '매도 우세 (Bear)';
+        var isBull = totalBuyShares >= totalSellShares;
+        pill.textContent = isBull ? '↑ Buying Pressure' : '↓ Selling Pressure';
         pill.className = isBull
-            ? 'text-xs font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-600'
-            : 'text-xs font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-600';
+            ? 'text-xs font-bold px-2.5 py-1 rounded bg-emerald-950/90 text-emerald-400 border border-emerald-700/60'
+            : 'text-xs font-bold px-2.5 py-1 rounded bg-rose-950/90 text-rose-400 border border-rose-700/60';
     }
 
-// Y축 눈금 수치 반영 (상단 점선 및 중간 점선 - 고대비 네온 스타일)
-    function styleYAxis(id, text, color) {
+    // 3. 파란 동그라미 영역: 좌측 Y축 눈금 (선명한 M / K 단위 표시)
+    function setYLabel(id, text, color) {
         var el = document.getElementById(id);
         if (!el) return;
         el.textContent = text;
+        el.setAttribute('fill', color);
         el.style.fill = color;
         el.style.color = color;
-        el.setAttribute('fill', color);
         el.style.fontWeight = 'bold';
-        el.style.fontSize = '12px';
+        el.style.fontSize = '10px';
         el.style.fontFamily = 'monospace';
-        el.style.opacity = '1';
-        el.style.textShadow = '0 1px 4px rgba(0, 0, 0, 0.9), 0 0 2px #000';
     }
+    setYLabel('cvd-y-max', fmtYAxisVol(maxVolShares), '#38bdf8');
+    setYLabel('cvd-y-mid', fmtYAxisVol(maxVolShares / 2), '#e2e8f0');
 
-    styleYAxis('cvd-y-max', fmtCvdVal(maxVol, false), '#38bdf8');     // 상단 최대치 (선명한 스카이블루)
-    styleYAxis('cvd-y-mid', fmtCvdVal(maxVol / 2, false), '#f8fafc'); // 중간 기준치 (선명한 화이트)
-    // 하단 상세 수치 반영
-    safeSet('cvd-last-time', tEnd + ' ET');
-    safeSet('cvd-recent-vol', fmtCvdVal(lastBar.vol, false));
-    safeSet('cvd-total-vol', fmtCvdVal(totalVol, false));
-    safeSet('cvd-buy-pct', '▲ Buy ' + buyPct + '%');
-    safeSet('cvd-sell-pct', '▼ Sell ' + sellPct + '%');
+    // 4. 하단 밀리언(M) 거래량 및 Buy/Sell 상세 수치 복원
+    safeSet('cvd-inspect-label', '마지막 봉');
+    safeSet('cvd-last-time', cvd.data_time || (sDate + ' ' + tEndFull));
+    safeSet('cvd-inspect-sub', '최근 봉');
+    safeSet('cvd-recent-vol', fmtVolM(lastBarShares));
+    safeSet('cvd-total-vol', fmtVolM(totalVolShares));
+
+    safeSet('cvd-buy-pct', '▲ Buy ' + buyPctRound + '% (' + fmtVolM(totalBuyShares) + ')');
+    safeSet('cvd-sell-pct', '▼ Sell ' + sellPctRound + '% (' + fmtVolM(totalSellShares) + ')');
 
     var barFill = document.getElementById('cvd-bar-fill');
-    if (barFill) barFill.style.width = buyPct + '%';
+    if (barFill) barFill.style.width = buyPctRound + '%';
     var sellFill = document.getElementById('cvd-sell-fill');
-    if (sellFill) sellFill.style.width = sellPct + '%';
+    if (sellFill) sellFill.style.width = sellPctRound + '%';
 
-    safeSet('cvd-summary-text', 'SPY ' + (currentCvdTf || '10M').toUpperCase() + ' 누적: 총 거래량 ' + fmtCvdVal(totalVol, false) + ' (매수 ' + buyPct + '% / 매도 ' + sellPct + '%) · CVD ' + (lastCvd >= 0 ? '+' : '') + fmtCvdVal(lastCvd, false));
+    safeSet('cvd-summary-text', cvd.summary || ('CVD Flow: Buy ' + buyPctRound + '% / Sell ' + sellPctRound + '% in session.'));
 
-    // 3. SVG 차트 드로잉 (Volume 막대 및 CVD 꺾은선)
+    // 5. SVG 차트 렌더링 (원래 HTML 기준선 좌표 자동 감지)
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
 
-    var w = 1000, h = 200;
-    var vb = svg.getAttribute('viewBox');
-    if (vb) {
-        var parts = vb.trim().split(/[ ,]+/);
-        if (parts.length === 4) {
-            w = parseFloat(parts[2]) || 1000;
-            h = parseFloat(parts[3]) || 200;
+    var vGridGroup = document.getElementById('cvd-vertical-grids');
+    if (vGridGroup) vGridGroup.innerHTML = '';
+
+    // HTML에 정의된 가로 점선/실선의 정확한 좌우(x1, x2) 및 상하(yTop, yZero) 좌표 추출
+    var xStart = 36, xEnd = 585, yTop = 24, yZero = 130;
+    var staticLines = [];
+    var allLines = svg.querySelectorAll('line');
+    for (var li = 0; li < allLines.length; li++) {
+        var ln = allLines[li];
+        if (vGridGroup && vGridGroup.contains(ln)) continue;
+        var ly1 = parseFloat(ln.getAttribute('y1'));
+        var ly2 = parseFloat(ln.getAttribute('y2'));
+        if (!isNaN(ly1) && Math.abs(ly1 - ly2) < 1) {
+            staticLines.push(ln);
         }
-    } else {
-        svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-        svg.setAttribute('preserveAspectRatio', 'none');
     }
 
-    var yTop = h * 0.16;
-    var yZero = h * 0.82;
-    var chartH = yZero - yTop;
-    var stepX = w / bars.length;
-    var barW = Math.max(3, Math.min(22, stepX * 0.68));
+    if (staticLines.length >= 2) {
+        staticLines.sort(function(a, b) {
+            return parseFloat(a.getAttribute('y1')) - parseFloat(b.getAttribute('y1'));
+        });
+        var topLn = staticLines[0];
+        var botLn = staticLines[staticLines.length - 1];
+        xStart = parseFloat(topLn.getAttribute('x1')) || 36;
+        xEnd = parseFloat(topLn.getAttribute('x2')) || 585;
+        yTop = parseFloat(topLn.getAttribute('y1')) || 24;
+        yZero = parseFloat(botLn.getAttribute('y1')) || 130;
+    }
 
-    // 볼륨 막대 (<g id="cvd-real-bars">)
+    var chartW = xEnd - xStart;
+    var chartH = yZero - yTop;
+    var stepX = chartW / bars.length;
+    var barW = Math.max(2, Math.min(18, stepX * 0.72));
+
+    // (A) 30분 간격 세로 점선 및 하단 시간(09:30 ~ 16:00) 텍스트 렌더링
+    if (vGridGroup) {
+        var gridHtml = '';
+        bars.forEach(function(b, i) {
+            var tStr = formatEtTime(b.t);
+            var mins = tStr.split(':')[1];
+            var isHalfHour = (mins === '00' || mins === '30');
+            if (isHalfHour) {
+                var gx = xStart + (i + 0.5) * stepX;
+                gridHtml += '<line x1="' + gx.toFixed(1) + '" y1="' + yTop.toFixed(1) + '" x2="' + gx.toFixed(1) + '" y2="' + yZero.toFixed(1) + '" stroke="rgba(71, 85, 105, 0.35)" stroke-width="1" stroke-dasharray="2,3" />';
+                gridHtml += '<text x="' + gx.toFixed(1) + '" y="' + (yZero + 13).toFixed(1) + '" fill="#94a3b8" font-size="9" font-family="monospace" text-anchor="middle">' + tStr + '</text>';
+            }
+        });
+        // 우측 끝 16:00 마감 시간 표시
+        var lastTimeStr = formatEtTime(lastBar.t);
+        if (lastTimeStr !== '16:00') {
+            gridHtml += '<line x1="' + xEnd.toFixed(1) + '" y1="' + yTop.toFixed(1) + '" x2="' + xEnd.toFixed(1) + '" y2="' + yZero.toFixed(1) + '" stroke="rgba(71, 85, 105, 0.35)" stroke-width="1" stroke-dasharray="2,3" />';
+            gridHtml += '<text x="' + xEnd.toFixed(1) + '" y="' + (yZero + 13).toFixed(1) + '" fill="#94a3b8" font-size="9" font-family="monospace" text-anchor="middle">16:00</text>';
+        }
+        vGridGroup.innerHTML = gridHtml;
+    }
+
+    // (B) 거래량 막대 렌더링 (<g id="cvd-real-bars">)
     var realBarsGroup = document.getElementById('cvd-real-bars');
     if (realBarsGroup) {
         var barsHtml = '';
         bars.forEach(function(b, i) {
-            var v = Number(b.vol !== undefined ? b.vol : (b.volume || 0));
-            var barX = (i + 0.5) * stepX - barW / 2;
-            var barH = Math.max(3, (v / (maxVol || 1)) * chartH);
-            var barY = yZero - barH;
+            var vShares = Number(b.vol !== undefined ? b.vol : (b.volume || 0)) * unitMult;
+            var bx = xStart + (i + 0.5) * stepX - barW / 2;
+            var bh = Math.max(2, (vShares / (maxVolShares || 1)) * chartH);
+            var by = yZero - bh;
             var fill = b.is_bull ? 'rgba(16, 185, 129, 0.75)' : 'rgba(244, 63, 94, 0.75)';
             var stroke = b.is_bull ? '#10b981' : '#f43f5e';
-            barsHtml += '<rect x="' + barX.toFixed(1) + '" y="' + barY.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + barH.toFixed(1) + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1" rx="2" ry="2" />';
+            barsHtml += '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="0.8" rx="1" />';
         });
         realBarsGroup.innerHTML = barsHtml;
     }
 
-    // CVD 꺾은선 (<path id="cvd-line-path">)
+    // (C) 노란색 CVD 곡선 렌더링 (<path id="cvd-line-path">)
     var linePath = document.getElementById('cvd-line-path');
     if (linePath && cvdVals.length) {
         var minCvd = Math.min.apply(null, cvdVals);
@@ -203,60 +247,45 @@ function renderCvd(cvd) {
         var pathD = '';
         bars.forEach(function(b, i) {
             var cVal = Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0));
-            var ptX = (i + 0.5) * stepX;
-            var cvdRatio = (cVal - minCvd) / cvdSpan;
-            var ptY = yZero - (cvdRatio * chartH * 0.88 + chartH * 0.06);
-            if (i === 0) pathD += 'M ' + ptX.toFixed(1) + ' ' + ptY.toFixed(1);
-            else pathD += ' L ' + ptX.toFixed(1) + ' ' + ptY.toFixed(1);
+            var px = xStart + (i + 0.5) * stepX;
+            var py = yZero - (((cVal - minCvd) / cvdSpan) * (chartH * 0.82) + chartH * 0.08);
+            pathD += (i === 0 ? 'M ' : ' L ') + px.toFixed(1) + ' ' + py.toFixed(1);
         });
         linePath.setAttribute('d', pathD);
-        linePath.setAttribute('stroke', '#818cf8');
-        linePath.setAttribute('stroke-width', '2.5');
+        linePath.setAttribute('stroke', '#fbbf24');
+        linePath.setAttribute('stroke-width', '2');
         linePath.setAttribute('fill', 'none');
-        linePath.setAttribute('stroke-linecap', 'round');
-        linePath.setAttribute('stroke-linejoin', 'round');
     }
 
-    // 세로 보조선 (<g id="cvd-vertical-grids">)
-    var vGridGroup = document.getElementById('cvd-vertical-grids');
-    if (vGridGroup) {
-        var vGridHtml = '';
-        var gridStep = Math.max(1, Math.floor(bars.length / 6));
-        for (var gi = 0; gi < bars.length; gi += gridStep) {
-            var gx = (gi + 0.5) * stepX;
-            vGridHtml += '<line x1="' + gx.toFixed(1) + '" y1="' + yTop.toFixed(1) + '" x2="' + gx.toFixed(1) + '" y2="' + yZero.toFixed(1) + '" stroke="rgba(51, 65, 85, 0.4)" stroke-width="1" stroke-dasharray="3,3" />';
-        }
-        vGridGroup.innerHTML = vGridHtml;
-    }
-
-    cvdBarsCache = bars;
+    cvdBarsCache = { bars: bars, unitMult: unitMult, xStart: xStart, xEnd: xEnd, sDate: sDate, tEndFull: tEndFull, lastBarShares: lastBarShares };
 }
 
-// 4. 마우스 이동 시 실시간 봉 상세 탐색기
+// 마우스/터치 이동 시 개별 봉 거래량 확인
 function initCvdInteraction() {
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
 
     svg.addEventListener('mousemove', function(e) {
-        if (!cvdBarsCache || !cvdBarsCache.length) return;
+        if (!cvdBarsCache || !cvdBarsCache.bars || !cvdBarsCache.bars.length) return;
         var rect = svg.getBoundingClientRect();
-        var mouseX = e.clientX - rect.left;
-        var stepX = rect.width / cvdBarsCache.length;
-        var idx = Math.min(cvdBarsCache.length - 1, Math.max(0, Math.floor(mouseX / stepX)));
-        var bar = cvdBarsCache[idx];
+        var relX = (e.clientX - rect.left) / rect.width;
+        var idx = Math.min(cvdBarsCache.bars.length - 1, Math.max(0, Math.floor(relX * cvdBarsCache.bars.length)));
+        var bar = cvdBarsCache.bars[idx];
         if (!bar) return;
 
-        safeSet('cvd-inspect-label', formatEtTime(bar.t) + ' ET (' + (bar.is_bull ? '매수' : '매도') + ')');
-        safeSet('cvd-recent-vol', fmtCvdVal(bar.vol, false));
-        safeSet('cvd-inspect-sub', 'CVD ' + fmtCvdVal(bar.cvd_line, true));
+        var vShares = Number(bar.vol || 0) * cvdBarsCache.unitMult;
+        safeSet('cvd-inspect-label', '선택 봉');
+        safeSet('cvd-last-time', (cvdBarsCache.sDate ? cvdBarsCache.sDate + ' ' : '') + formatEtTime(bar.t) + ':00 ET');
+        safeSet('cvd-inspect-sub', bar.is_bull ? '매수 봉' : '매도 봉');
+        safeSet('cvd-recent-vol', fmtVolM(vShares));
     });
 
     svg.addEventListener('mouseleave', function() {
-        if (!cvdBarsCache || !cvdBarsCache.length) return;
-        var lastBar = cvdBarsCache[cvdBarsCache.length - 1];
+        if (!cvdBarsCache || !cvdBarsCache.bars || !cvdBarsCache.bars.length) return;
         safeSet('cvd-inspect-label', '마지막 봉');
-        safeSet('cvd-recent-vol', fmtCvdVal(lastBar.vol, false));
+        safeSet('cvd-last-time', currentCvdData.data_time || (cvdBarsCache.sDate + ' ' + cvdBarsCache.tEndFull));
         safeSet('cvd-inspect-sub', '최근 봉');
+        safeSet('cvd-recent-vol', fmtVolM(cvdBarsCache.lastBarShares));
     });
 }
 
