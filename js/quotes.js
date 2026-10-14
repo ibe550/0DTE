@@ -147,69 +147,42 @@ function renderStatus(data) {
     }
 }
 // ─────────────────────────────────────────────────────────────
-// USO (United States Oil Fund ETF) 실시간 시세 바인딩 및 자동 조회
+// USO (United States Oil Fund ETF) 실시간 시세 연동 (CNBC 직접 호출)
 // ─────────────────────────────────────────────────────────────
 function updateUsoCard(price, change, changePct, sourceLabel) {
     var priceEl = document.getElementById('uso-price');
     var changeEl = document.getElementById('uso-change');
     var srcEl = document.getElementById('uso-source');
-    if (!priceEl || !changeEl) return;
-
-    if (price === null || price === undefined || isNaN(price)) return;
+    if (!priceEl || !changeEl || price === null || price === undefined || isNaN(price)) return;
 
     var pNum = Number(price);
     var cNum = Number(change || 0);
     var pctNum = Number(changePct || 0);
     var sign = cNum > 0 ? '+' : '';
 
-    priceEl.textContent = '$' + pNum.toFixed(2);
+    priceEl.textContent = pNum.toFixed(2);
     changeEl.textContent = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
 
-    if (cNum > 0) {
-        changeEl.className = 'text-[10px] sm:text-xs font-mono font-bold text-emerald-400 mt-0.5';
-    } else if (cNum < 0) {
-        changeEl.className = 'text-[10px] sm:text-xs font-mono font-bold text-rose-400 mt-0.5';
-    } else {
-        changeEl.className = 'text-[10px] sm:text-xs font-mono text-slate-400 mt-0.5';
-    }
+    var colorCls = cNum > 0 ? 'text-emerald-400' : (cNum < 0 ? 'text-rose-400' : 'text-slate-200');
+    priceEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + colorCls + ' tracking-tight my-0.5 truncate';
+    changeEl.className = 'text-[8px] sm:text-xs lg:text-sm font-semibold ' + colorCls + ' truncate';
 
-    if (srcEl && sourceLabel) {
-        srcEl.textContent = sourceLabel;
-    }
+    if (srcEl && sourceLabel) srcEl.textContent = sourceLabel;
 }
 
 function fetchUsoQuoteFallback() {
-    var priceEl = document.getElementById('uso-price');
-    if (!priceEl) return;
-
-    // 1순위: 백엔드 API 응답 내 uso 데이터 확인
-    fetch('https://0-dte-seven.vercel.app/api/market-data')
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=USO&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+    fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            var q = (d && (d.quotes || d.market_data || d)) || {};
-            var u = q.uso || q.USO || d.uso;
-            if (u && (u.price || u.last)) {
-                updateUsoCard(u.price || u.last, u.change || u.chg, u.change_pct || u.pct, u.source || 'Schwab');
-                return;
-            }
-            // 2순위: 백엔드에 USO가 없을 경우 Yahoo Finance 실시간 차트 API 호출
-            var yUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/USO?interval=1d&range=2d');
-            return fetch('https://api.allorigins.win/raw?url=' + yUrl)
-                .then(function(res) { return res.json(); })
-                .then(function(yData) {
-                    var meta = yData && yData.chart && yData.chart.result && yData.chart.result[0] && yData.chart.result[0].meta;
-                    if (meta && meta.regularMarketPrice) {
-                        var cur = meta.regularMarketPrice;
-                        var prev = meta.chartPreviousClose || meta.previousClose || cur;
-                        var chg = cur - prev;
-                        var pct = prev ? (chg / prev) * 100 : 0;
-                        updateUsoCard(cur, chg, pct, 'Yahoo');
-                    }
-                });
+            var q = d && d.FormattedQuoteResult && d.FormattedQuoteResult.FormattedQuote && d.FormattedQuoteResult.FormattedQuote[0];
+            if (!q || !q.last) return;
+            var cur = parseFloat(String(q.last).replace(/,/g, ''));
+            var chg = parseFloat(String(q.change || '0').replace(/,/g, '').replace('+', ''));
+            var pct = parseFloat(String(q.change_pct || '0').replace(/,/g, '').replace('%', '').replace('+', ''));
+            updateUsoCard(cur, chg, pct, 'CNBC (USO)');
         })
-        .catch(function(e) {
-            console.warn('USO 시세 조회 대기:', e);
-        });
+        .catch(function() {});
 }
 
 document.addEventListener('DOMContentLoaded', function() {
