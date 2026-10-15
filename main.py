@@ -633,7 +633,7 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
     if not events:
         return {"items": [], "flash_news": flash_news, "source": "N/A", "error": "경제 캘린더 조회 실패"}
 
-   today = now_et.date()
+  today = now_et.date()
     # 금요일 16:00 이후면 월요일(+3), 평일이면 익일(+1)
     days_ahead = 3 if today.weekday() == 4 else (2 if today.weekday() == 5 else 1)
     tomorrow = today + timedelta(days=days_ahead)
@@ -641,7 +641,7 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
     is_tomorrow = False
     target_items = []
 
-    # 16:00 ET 장 마감 이후에는 무조건 다음 영업일(내일) 지표를 최우선 추출
+    # 16:00 ET 이후에는 당일 잔여 일정과 무관하게 내일(익일) 지표를 1순위로 강제 설정
     if now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
@@ -654,6 +654,11 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
                 target_items = [e for e in future_events if e["dt"].date() == next_date]
                 is_tomorrow = True
 
+    # 장중(16:00 ET 이전)이거나 미래 일정이 전혀 없을 때만 당일 이벤트 노출
+    if not target_items:
+        today_items = [e for e in events if e["dt"].date() == today]
+        target_items = today_items
+        is_tomorrow = False
     # 장중(16:00 ET 이전)이거나 다음 날 일정이 없을 때는 당일 지표 표시
     if not target_items:
         today_items = [e for e in events if e["dt"].date() == today]
