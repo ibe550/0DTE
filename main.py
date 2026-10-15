@@ -640,7 +640,7 @@ today = now_et.date()
     is_tomorrow = False
     target_items = []
 
-    # 16:00 ET 이후에는 오늘 밤 잔여 일정(22:55 등)을 무시하고 무조건 익일(내일) 지표를 1순위로 강제 설정
+    # 16:00 ET 이후에는 오늘 밤 잔여 일정을 무시하고 익일(내일) 지표를 1순위로 강제 설정
     if now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
