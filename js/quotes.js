@@ -83,11 +83,13 @@ function renderYields(y) {
         }
         setText(`${k}-src`, srcShort(item.source)); $(`${k}-src`).title = item.source || '';
     });
+    
+    // ▼▼▼ [수정] 10Y-3M 스프레드 렌더링 안전 장치 추가 (price 값만 있어도 bp 계산 표시) ▼▼▼
     const spread = y.spread;
-    if (spread && isNum(spread.change)) {
-        const spBp = Math.round(spread.change * 100);
+    if (spread && isNum(spread.price)) {
+        const spBp = Math.round(spread.price * 100);
         setText('yield-spread', `${spBp > 0 ? '+' : ''}${spBp} bp`);
-        setTone('yield-spread', spBp > 0 ? 'text-emerald-400' : 'text-rose-400');
+        setTone('yield-spread', spBp >= 0 ? 'text-emerald-400' : 'text-rose-400');
     } else {
         setText('yield-spread', NA); setTone('yield-spread', 'text-slate-500');
     }
@@ -150,4 +152,11 @@ function renderStatus(data) {
         line.classList.remove('hidden');
         line.innerText = `⚠ ${data.schwab_status}`;
     }
+}
+
+// ▼▼▼ [추가] 대시보드 메인 렌더링 함수 내에 USO 호출 연결 함수 (만약 이 파일에 다른 렌더링 총괄 함수가 있다면 여기에 함께 매핑됩니다) ▼▼Y
+function renderAllQuotes(data) {
+    // 기존 다른 자산들과 함께 USO 렌더링 호출 추가
+    renderQuote('uso', data.uso);
+    renderYields(data.yields);
 }
