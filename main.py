@@ -689,63 +689,106 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
 
     return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None}
 
-
-# ─────────────────────────────────────────────────────────────
-# Polymarket SPX 마켓 데이터 수집
-# ─────────────────────────────────────────────────────────────
 def fetch_polymarket_spx_data(spx_price):
-    try:
-        url = "https://gamma-api.polymarket.com/events?limit=15&active=true&closed=false&q=S%26P"
-        r = requests.get(url, headers=HEADERS, timeout=3.5)
-        if r.status_code == 200:
-            events = r.json()
-            target_market = None
+    import json as _json
+    search_queries = ["S%26P%20500", "SPX", "SPY", "Fed%20interest%20rates"]
+
+    for q in search_queries:
+        try:
+            url = f"https://gamma-api.polymarket.com/public-search?q={q}&events_status=active&limit_per_type=15"
+            r = requests.get(url, headers=HEADERS, timeout=4.0)
+            if r.status_code != 200:
+                continue
+
+            data = r.json()
+            events = data.get("events", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            if not events:
+                continue
+
+            best_market = None
+            best_ev_title = ""
+
             for ev in events:
-                title = ev.get("title", "").lower()
-                if "s&p" in title or "spx" in title:
-                    for m in ev.get("markets", []):
-                        if not m.get("closed"):
-                            target_market = m
+                if ev.get("closed"):
+                    continue
+                ev_title = (ev.get("title") or "").strip()
+                markets = [m for m in (ev.get("markets") or []) if m.get("active") is not False and not m.get("closed")]
+                if not markets:
+                    continue
+
+                # SPX 가격과 가장 가까운 행사가 마켓이 있으면 우선 선택, 없으면 거래량 최상위 마켓 선택
+                if spx_price and len(markets) > 1:
+                    def _score_market(m):
+                        q_str = (m.get("question") or m.get("groupItemTitle") or "")
+                        import re
+                        nums = [float(x.replace(",", "")) for x in re.findall(r"\d{1,2},\d{3}|\d{4}", q_str)]
+                        if nums:
+                            return abs(nums[0] - spx_price)
+                        return 999999.0
+                    markets.sort(key=_score_market)
+
+                for m in markets:
+                    raw_prices = m.get("outcomePrices")
+                    if not raw_prices:
+                        continue
+                    prices = _json.loads(raw_prices) if isinstance(raw_prices, str) else raw_prices
+                    if prices and len(prices) >= 2:
+                        p0 = float(prices[0])
+                        # 이미 100% / 0%로 종료된 마켓은 제외하고 실시간 진행 중인 마켓 선택
+                        if 0.005 < p0 < 0.995:
+                            best_market = m
+                            best_ev_title = ev_title
                             break
-                if target_market:
+                if best_market:
                     break
 
-            if target_market:
-                outcome_prices = target_market.get("outcomePrices")
-                q_title = target_market.get("question", "S&P 500 Market")
-                if outcome_prices:
-                    import json
-                    prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
-                    yes_pct = int(round(float(prices[0]) * 100)) if len(prices) > 0 else 50
-                    no_pct = 100 - yes_pct
-                    return {
-                        "available": True,
-                        "title": q_title,
-                        "yes_pct": yes_pct,
-                        "no_pct": no_pct,
-                        "summary": f"Yes {yes_pct}% · No {no_pct}%",
-                        "source": "Polymarket CLOB"
-                    }
-    except Exception:
-        pass
+            if best_market:
+                raw_prices = best_market.get("outcomePrices")
+                prices = _json.loads(raw_prices) if isinstance(raw_prices, str) else raw_prices
+                raw_outcomes = best_market.get("outcomes")
+                outcomes = _json.loads(raw_outcomes) if isinstance(raw_outcomes, str) else (raw_outcomes or ["Yes", "No"])
 
-    if spx_price:
-        round_strike = int(round(spx_price / 10.0)) * 10
-        return {
-            "available": True,
-            "title": f"SPX {round_strike}선 마감 확률",
-            "yes_pct": 52,
-            "no_pct": 48,
-            "summary": "상회 52% · 하회 48%",
-            "source": "Polymarket SPX Index"
-        }
+                yes_pct = int(round(float(prices[0]) * 100))
+                no_pct = int(round(float(prices[1]) * 100))
+
+                lbl_yes = str(outcomes[0]) if len(outcomes) > 0 else "Yes"
+                lbl_no = str(outcomes[1]) if len(outcomes) > 1 else "No"
+                if lbl_yes.lower() == "up":
+                    lbl_yes, lbl_no = "상승(Up)", "하락(Down)"
+                elif lbl_yes.lower() == "yes":
+                    lbl_yes, lbl_no = "예(Yes)", "아니오(No)"
+
+                q_title = (best_market.get("question") or best_ev_title).strip()
+                sub_item = (best_market.get("groupItemTitle") or "").strip()
+                display_title = f"{best_ev_title} ({sub_item})" if sub_item and sub_item not in best_ev_title else q_title
+
+                vol = float(best_market.get("volume") or 0)
+                vol_str = f" · 거래량 ${int(vol):,}" if vol > 0 else ""
+
+                return {
+                    "available": True,
+                    "title": display_title,
+                    "yes_pct": yes_pct,
+                    "no_pct": no_pct,
+                    "summary": f"{lbl_yes} {yes_pct}% · {lbl_no} {no_pct}%",
+                    "source": f"Polymarket Live{vol_str}"
+                }
+        except Exception:
+            continue
+
     return None
 
 
 def get_polymarket_spx(spx_price):
-    return cached("polymarket_spx", 30, lambda: fetch_polymarket_spx_data(spx_price)) or {
-        "available": False, "title": "Polymarket SPX", "summary": "집계 대기 중", "source": "Polymarket"
+    return cached("polymarket_spx", 60, lambda: fetch_polymarket_spx_data(spx_price)) or {
+        "available": False,
+        "title": "현재 열린 SPX 폴리마켓 배팅 없음",
+        "yes_pct": 0,
+        "no_pct": 0,
+        "summary": "실시간 마켓 개설 대기 중",
+        "source": "Polymarket Live"
     }
+
 
 # ─────────────────────────────────────────────────────────────
 # 캔들 데이터 / CVD / Volume Profile (전 시간대 1분봉 실시간 정밀 합성)
