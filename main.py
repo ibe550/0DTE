@@ -15,9 +15,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+# 기존 코드에 MAGS(MAG7 ETF)와 국채 금리 지표($IRX, $TNX, $TYX)를 추가합니다.
 SCHWAB_QUOTES = OrderedDict([
     ("spx", "$SPX"), ("vix1d", "$VIX1D"), ("vix", "$VIX"), ("spy", "SPY"),
     ("es", "/ES"), ("wti", "/CL"), ("brent", "/BZ"), ("uso", "USO"),
+    ("mag7", "MAGS"),       # MAG7 ETF (Schwab API용)
+    ("yield-3m", "$IRX"),   # 3개월물 T-Bill
+    ("yield-10y", "$TNX"),  # 10년물 국채 금리
+    ("yield-30y", "$TYX")   # 30년물 국채 금리
 ])
 
 def _find_quote(data, sym):
