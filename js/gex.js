@@ -230,6 +230,18 @@ document.addEventListener('DOMContentLoaded', initChartInteraction);
 // ─────────────────────────────────────────────────────────────
 // 0DTE CREDIT SPREAD OPTIMIZER
 // ─────────────────────────────────────────────────────────────
+// 스프레드 체결 상태 4단계 색상
+function optStatusClass(status) {
+    switch (status) {
+        case 'SWEET_SPOT': return 'bg-emerald-950 text-emerald-300 border-emerald-500';
+        case 'LIMIT_OK': return 'bg-amber-950 text-amber-300 border-amber-500';
+        case 'WIDE_SPREAD': return 'bg-orange-950 text-orange-300 border-orange-500';
+        case 'LOW_LIQ':
+        case 'DANGER': return 'bg-rose-950 text-rose-300 border-rose-500';
+        default: return 'bg-slate-800 text-slate-300 border-slate-600'; // WAITING
+    }
+}
+
 function renderSpreadOptimizer(opt, gexData) {
     const card = $('spread-optimizer-card');
     if (!card) return;
@@ -241,9 +253,8 @@ function renderSpreadOptimizer(opt, gexData) {
             const cWall = isNum(gexData.call_wall) ? gexData.call_wall : (spot + em);
             const pWall = isNum(gexData.put_wall) ? gexData.put_wall : (spot - em);
 
-            const now = new Date();
-            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-            const nowET = new Date(utc - (4 * 3600000));
+            // ET 기준 현재 시각 (서머타임 자동 반영)
+            const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
             const currentMins = nowET.getHours() * 60 + nowET.getMinutes();
             const closeMins = 16 * 60;
             const remainMins = Math.max(10, Math.min(390, closeMins - currentMins));
@@ -318,17 +329,12 @@ function renderSpreadOptimizer(opt, gexData) {
     if (c) {
         setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
         setText('opt-call-bound', `${c.boundary}`);
-        
-        // 목표 크레딧 문구 및 N/A 칸 영역 숨기기
-        const callCreditEl = document.getElementById('opt-call-credit');
-        if (callCreditEl && callCreditEl.parentElement) callCreditEl.parentElement.style.display = 'none';
-        const callGuideEl = document.getElementById('opt-call-guide');
-        if (callGuideEl && callGuideEl.parentElement) callGuideEl.parentElement.style.display = 'none';
+        setText('opt-call-guide', c.guide || '');
 
         const stEl = $('opt-call-status');
         if (stEl) {
             stEl.innerText = c.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${c.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : 'bg-rose-950 text-rose-300 border-rose-500'}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${optStatusClass(c.status)}`;
         }
     }
 
@@ -336,17 +342,12 @@ function renderSpreadOptimizer(opt, gexData) {
     if (p) {
         setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
         setText('opt-put-bound', `${p.boundary}`);
-        
-        // 목표 크레딧 문구 및 N/A 칸 영역 숨기기
-        const putCreditEl = document.getElementById('opt-put-credit');
-        if (putCreditEl && putCreditEl.parentElement) putCreditEl.parentElement.style.display = 'none';
-        const putGuideEl = document.getElementById('opt-put-guide');
-        if (putGuideEl && putGuideEl.parentElement) putGuideEl.parentElement.style.display = 'none';
+        setText('opt-put-guide', p.guide || '');
 
         const stEl = $('opt-put-status');
         if (stEl) {
             stEl.innerText = p.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${p.status === 'SWEET_SPOT' ? 'bg-emerald-950 text-emerald-300 border-emerald-500' : 'bg-rose-950 text-rose-300 border-rose-500'}`;
+            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${optStatusClass(p.status)}`;
         }
     }
 }
@@ -411,6 +412,6 @@ function renderGex(g) {
         drawGexBarChart();
     }
 
-    // 옵티마이저 바인딩
-    renderSpreadOptimizer(g.spread_optimizer, g);
+    // 옵티마이저 바인딩 (백엔드는 oi_skew 안에 중첩해서 전달)
+    renderSpreadOptimizer((g.oi_skew && g.oi_skew.spread_optimizer) || null, g);
 }
