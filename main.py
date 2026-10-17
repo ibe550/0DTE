@@ -14,6 +14,7 @@ import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi import FastAPI
 
 app = FastAPI()
 handler = app
