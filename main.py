@@ -1249,110 +1249,285 @@ def fetch_schwab_chain(token, today_date):
 # ─────────────────────────────────────────────────────────────
 # 0DTE Credit Spread Optimizer 계산 엔진
 # ─────────────────────────────────────────────────────────────
-def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
+def compute_spread_optimizer(
+    contracts,
+    spot,
+    call_wall,
+    put_wall,
+    em_pt
+):
+
     if not spot:
         return None
 
-    cw = call_wall or (spot + 30.0)
-    pw = put_wall or (spot - 30.0)
-    em = em_pt or 25.0
+    spread_width = 10.0
 
-    c_bound = max(cw, spot + em)
-    p_bound = min(pw, spot - em)
+    contract_map = {}
 
-    price_map = {}
-    if contracts:
-        for c in contracts:
-            k = round(c.get("K", 0), 1)
-            side = c.get("side")
-            b, a, last = c.get("bid"), c.get("ask"), c.get("last")
-            mid = ((b + a) / 2.0) if (b and a and b > 0 and a > 0) else last
-            if mid and mid > 0:
-                price_map[(side, k)] = mid
+    for c in contracts or []:
 
-    min_short_c = math.ceil(c_bound / 5.0) * 5.0
-    if min_short_c <= c_bound:
-        min_short_c += 5.0
+        strike = round(c.get("K", 0), 1)
 
-    best_c = None
-    call_candidates = []
-    for i in range(5):
-        s_k = min_short_c + (i * 5.0)
-        l_k = s_k + 10.0
-        p_s = price_map.get(("C", s_k))
-        p_l = price_map.get(("C", l_k))
-        cr = round(p_s - p_l, 2) if (p_s is not None and p_l is not None and p_s > p_l) else None
-        call_candidates.append({"short": s_k, "long": l_k, "credit": cr})
+        contract_map[
+            (c["side"], strike)
+        ] = c
 
-    for cand in call_candidates:
-        if cand["credit"] is not None and 1.00 <= cand["credit"] <= 1.35:
-            best_c = {**cand, "status": "SWEET_SPOT", "badge": "✅ 진입 적격 (스윗스팟)", "guide": f"안전선({c_bound:.0f}) 바깥 {cand['short']-c_bound:.1f}pt 이격 · 목표 수취율 충족"}
+    def calc_metrics(
+        short_opt,
+        long_opt,
+        side
+    ):
+
+        sb = num(short_opt.get("bid"))
+        sa = num(short_opt.get("ask"))
+
+        lb = num(long_opt.get("bid"))
+        la = num(long_opt.get("ask"))
+
+        if None in (
+            sb, sa,
+            lb, la
+        ):
+            return None
+
+        nat_credit = round(
+            sb - la,
+            2
+        )
+
+        mid_credit = round(
+            ((sb + sa) / 2.0)
+            -
+            ((lb + la) / 2.0),
+            2
+        )
+
+        if nat_credit <= 0:
+            return None
+
+        max_profit = round(
+            nat_credit * 100,
+            0
+        )
+
+        max_loss = round(
+            (
+                spread_width
+                -
+                nat_credit
+            ) * 100,
+            0
+        )
+
+        if side == "C":
+
+            breakeven = round(
+                short_opt["K"]
+                +
+                nat_credit,
+                2
+            )
+
+        else:
+
+            breakeven = round(
+                short_opt["K"]
+                -
+                nat_credit,
+                2
+            )
+
+        fill_ratio = round(
+            nat_credit / mid_credit,
+            2
+        ) if mid_credit > 0 else 0
+
+        return {
+            "real_credit": nat_credit,
+            "mid_credit": mid_credit,
+            "max_profit": max_profit,
+            "max_loss": max_loss,
+            "breakeven": breakeven,
+            "fill_ratio": fill_ratio
+        }
+
+    def score_trade(metrics):
+
+        score = 100
+
+        if metrics["real_credit"] < 0.80:
+            score -= 35
+
+        if metrics["fill_ratio"] < 0.60:
+            score -= 25
+
+        if metrics["max_loss"] > 950:
+            score -= 20
+
+        return max(score, 0)
+
+    cw = call_wall or (
+        spot + 30
+    )
+
+    pw = put_wall or (
+        spot - 30
+    )
+
+    em = em_pt or 25
+
+    call_boundary = max(
+        cw,
+        spot + em
+    )
+
+    put_boundary = min(
+        pw,
+        spot - em
+    )
+
+    best_call = None
+    best_put = None
+
+    #
+    # CALL CREDIT SPREAD
+    #
+
+    start_call = (
+        math.ceil(
+            call_boundary / 5
+        ) * 5
+    )
+
+    for i in range(8):
+
+        short_k = start_call + i * 5
+        long_k = short_k + 10
+
+        short_opt = contract_map.get(
+            ("C", short_k)
+        )
+
+        long_opt = contract_map.get(
+            ("C", long_k)
+        )
+
+        if not short_opt or not long_opt:
+            continue
+
+        metrics = calc_metrics(
+            short_opt,
+            long_opt,
+            "C"
+        )
+
+        if not metrics:
+            continue
+
+        score = score_trade(
+            metrics
+        )
+
+        if score >= 70:
+
+            best_call = {
+
+                "short": short_k,
+
+                "long": long_k,
+
+                "score": score,
+
+                **metrics,
+
+                "status":
+                    "TRADEABLE",
+
+                "badge":
+                    "✅ 체결 가능",
+
+                "guide":
+                    f"Call Wall 기준 "
+                    f"{short_k-call_boundary:.1f}pt "
+                    f"이격"
+            }
+
             break
 
-    if not best_c and call_candidates:
-        first_c = call_candidates[0]
-        if first_c["credit"] is not None:
-            if first_c["credit"] < 0.80:
-                best_c = {**first_c, "status": "LOW_PREMIUM", "badge": "⛔ 패스 (보상 부족)", "guide": f"최외곽 수취액(${first_c['credit']:.2f}) 부족 · 지수 안쪽 무리한 진입 금지"}
-            elif first_c["credit"] > 1.35:
-                sweet = next((c for c in call_candidates if c["credit"] and 0.95 <= c["credit"] <= 1.35), None)
-                if sweet:
-                    best_c = {**sweet, "status": "SWEET_SPOT", "badge": "✅ 진입 적격 (스윗스팟)", "guide": f"변동성 감안 외가격 {sweet['short']-c_bound:.0f}pt 추가 이격 · 안전 진입"}
-                else:
-                    best_c = {**first_c, "status": "HIGH_VOL", "badge": "⚠️ 변동성 경계", "guide": "프리미엄 과대 구간 · 숏 레그 외가격 추가 이격 필요"}
+    #
+    # PUT CREDIT SPREAD
+    #
 
-    if not best_c:
-        best_c = {
-            "short": min_short_c, "long": min_short_c + 10.0, "credit": None,
-            "status": "WAITING", "badge": "장중 호가 대기",
-            "guide": f"안전선({c_bound:.0f}) 바깥 10pt 폭 권장 · 정규장 실시간 체결가 산출"
-        }
-    best_c["boundary"] = round(c_bound, 1)
+    start_put = (
+        math.floor(
+            put_boundary / 5
+        ) * 5
+    )
 
-    max_short_p = math.floor(p_bound / 5.0) * 5.0
-    if max_short_p >= p_bound:
-        max_short_p -= 5.0
+    for i in range(8):
 
-    best_p = None
-    put_candidates = []
-    for i in range(5):
-        s_k = max_short_p - (i * 5.0)
-        l_k = s_k - 10.0
-        p_s = price_map.get(("P", s_k))
-        p_l = price_map.get(("P", l_k))
-        cr = round(p_s - p_l, 2) if (p_s is not None and p_l is not None and p_s > p_l) else None
-        put_candidates.append({"short": s_k, "long": l_k, "credit": cr})
+        short_k = start_put - i * 5
+        long_k = short_k - 10
 
-    for cand in put_candidates:
-        if cand["credit"] is not None and 1.00 <= cand["credit"] <= 1.35:
-            best_p = {**cand, "status": "SWEET_SPOT", "badge": "✅ 진입 적격 (스윗스팟)", "guide": f"안전선({p_bound:.0f}) 바깥 {p_bound-cand['short']:.1f}pt 이격 · 목표 수취율 충족"}
+        short_opt = contract_map.get(
+            ("P", short_k)
+        )
+
+        long_opt = contract_map.get(
+            ("P", long_k)
+        )
+
+        if not short_opt or not long_opt:
+            continue
+
+        metrics = calc_metrics(
+            short_opt,
+            long_opt,
+            "P"
+        )
+
+        if not metrics:
+            continue
+
+        score = score_trade(
+            metrics
+        )
+
+        if score >= 70:
+
+            best_put = {
+
+                "short": short_k,
+
+                "long": long_k,
+
+                "score": score,
+
+                **metrics,
+
+                "status":
+                    "TRADEABLE",
+
+                "badge":
+                    "✅ 체결 가능",
+
+                "guide":
+                    f"Put Wall 기준 "
+                    f"{put_boundary-short_k:.1f}pt "
+                    f"이격"
+            }
+
             break
-
-    if not best_p and put_candidates:
-        first_p = put_candidates[0]
-        if first_p["credit"] is not None:
-            if first_p["credit"] < 0.80:
-                best_p = {**first_p, "status": "LOW_PREMIUM", "badge": "⛔ 패스 (보상 부족)", "guide": f"최외곽 수취액(${first_p['credit']:.2f}) 부족 · 지수 안쪽 무리한 진입 금지"}
-            elif first_p["credit"] > 1.35:
-                sweet = next((c for c in put_candidates if c["credit"] and 0.95 <= c["credit"] <= 1.35), None)
-                if sweet:
-                    best_p = {**sweet, "status": "SWEET_SPOT", "badge": "✅ 진입 적격 (스윗스팟)", "guide": f"변동성 감안 외가격 {p_bound-sweet['short']:.0f}pt 추가 이격 · 안전 진입"}
-                else:
-                    best_p = {**first_p, "status": "HIGH_VOL", "badge": "⚠️ 변동성 경계", "guide": "프리미엄 과대 구간 · 숏 레그 외가격 추가 이격 필요"}
-
-    if not best_p:
-        best_p = {
-            "short": max_short_p, "long": max_short_p - 10.0, "credit": None,
-            "status": "WAITING", "badge": "장중 호가 대기",
-            "guide": f"안전선({p_bound:.0f}) 바깥 10pt 폭 권장 · 정규장 실시간 체결가 산출"
-        }
-    best_p["boundary"] = round(p_bound, 1)
 
     return {
+
         "available": True,
+
         "width": 10,
-        "call_spread": best_c,
-        "put_spread": best_p,
+
+        "call_spread": best_call,
+
+        "put_spread": best_put
     }
 
 
