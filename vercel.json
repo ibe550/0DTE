@@ -2,20 +2,12 @@
   "version": 2,
   "routes": [
     {
-      "src": "/api/callback",
-      "destination": "main.py"
-    },
-    {
-      "src": "/api/market-data",
-      "destination": "main.py"
-    },
-    {
-      "src": "/api/refresh-token",
-      "destination": "main.py"
+      "src": "/api/(.*)",
+      "destination": "/api/main.py"
     },
     {
       "src": "/(.*)",
-      "destination": "main.py"
+      "destination": "/api/main.py"
     }
   ],
   "crons": [
