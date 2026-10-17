@@ -1521,10 +1521,10 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
 
         # 호가 기반 실제 체결 가능성(Fill Feasibility) 판정
         slip_ratio = leg_spread_sum / max(fill_cr, 0.01)
+        # 호가 공백(LOW_LIQ)은 추천 후보에서 제외 — 체결 불가 스프레드 추천 방지
         if qs["bid"] <= 0.05 or leg_spread_sum > 2.50:
-            fill_status = "LOW_LIQ"
-            badge = f"⚠️ 호가 공백 · 체결 주의 (BEP {bep:.1f})"
-        elif nat_cr is not None and nat_cr >= 0.25 and slip_ratio <= 0.45:
+            return None
+        if nat_cr is not None and nat_cr >= 0.25 and slip_ratio <= 0.45:
             fill_status = "SWEET_SPOT"
             badge = f"✅ 즉시 체결 양호 · BEP {bep:.1f} · 최대손실 -${max_loss_usd}"
         elif slip_ratio <= 0.85:
