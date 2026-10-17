@@ -2022,6 +2022,7 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
             "3m": quotes.get("yield-3m"),
             "10y": quotes.get("yield-10y"),
             "30y": quotes.get("yield-30y"),
+            "spread": spread_val,
         },
         "polymarket": polymarket,
         "volume_profile": vp,
