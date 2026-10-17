@@ -2,6 +2,11 @@ var currentCvdTf = '10m';
 var currentCvdData = null;
 var cvdBarsCache = [];
 
+// app.js의 API_URL 상수 재사용 (배포 URL 변경 대응)
+function cvdApiUrl() {
+    try { return API_URL; } catch (e) { return 'https://0-dte-seven.vercel.app/api/market-data'; }
+}
+
 function safeSet(id, val) {
     var el = document.getElementById(id);
     if (el && val !== undefined && val !== null) {
@@ -23,6 +28,13 @@ function fmtYAxisVol(shares) {
     if (abs >= 1000000) return (shares / 1000000).toFixed(1) + 'M';
     if (abs >= 1000) return Math.round(shares / 1000) + 'K';
     return Math.round(shares).toString();
+}
+
+// 부호 포함 볼륨 표기 (CVD 값용: +1.25M / -800K)
+function fmtSignedM(shares) {
+    if (shares === null || shares === undefined || isNaN(shares)) return '--';
+    var s = fmtVolM(shares);
+    return (shares > 0 ? '+' : '') + s;
 }
 
 function formatEtTime(unixSec) {
@@ -48,18 +60,22 @@ function changeCvdTimeframe(tf) {
     window.currentCvdTf = currentCvdTf;
     window.cvdTf = currentCvdTf;
 
-    var btns = document.querySelectorAll('#cvd-tf-group button, [data-cvd-tf]');
+    // 버튼 스타일 토글 (반응형 클래스 유지 — className 덮어쓰기 금지)
+    var btns = document.querySelectorAll('#cvd-tf-group button');
     btns.forEach(function(btn) {
-        var bText = (btn.getAttribute('data-cvd-tf') || btn.innerText || '').trim().toLowerCase();
-        if (bText === currentCvdTf) {
-            btn.className = 'px-2.5 py-1 text-xs font-mono font-bold bg-emerald-600 text-white rounded shadow-sm';
-        } else {
-            btn.className = 'px-2.5 py-1 text-xs font-mono font-semibold bg-slate-800 text-slate-300 hover:text-white rounded';
-        }
+        var bText = (btn.getAttribute('data-tf') || btn.innerText || '').trim().toLowerCase();
+        var active = (bText === currentCvdTf);
+        btn.classList.toggle('bg-teal-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('font-bold', active);
+        btn.classList.toggle('shadow', active);
+        btn.classList.toggle('bg-slate-800/80', !active);
+        btn.classList.toggle('text-slate-300', !active);
+        btn.classList.toggle('hover:bg-slate-700', !active);
     });
 
     // 5m cuqaasamee 1m akka hin agarsiisneef kallattiin API cvd_tf waliin waama
-    fetch('https://0-dte-seven.vercel.app/api/market-data?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
+    fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
         .then(function(r) { return r.json(); })
         .then(function(d) {
             if (d && d.cvd) {
@@ -84,7 +100,7 @@ function renderCvd(cvd) {
     var incomingSource = String(cvd.source || '');
     var expectedTag = 'SPY ' + (currentCvdTf === '1h' ? '1H' : currentCvdTf);
     if (incomingSource.indexOf('SPY ') !== -1 && incomingSource.indexOf(expectedTag) === -1) {
-        fetch('https://0-dte-seven.vercel.app/api/market-data?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
+        fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
             .then(function(r) { return r.json(); })
             .then(function(d) { if (d && d.cvd) renderCvdDirect(d.cvd); })
             .catch(function() {});
@@ -105,6 +121,7 @@ function renderCvdDirect(cvd) {
     safeSet('cvd-title-tf', tfLabel.toUpperCase());
     safeSet('cvd-source', srcLabel);
     safeSet('cvd-data-time', 'Data as of ' + (cvd.data_time || '--'));
+    safeSet('cvd-x-caption', 'Time (Eastern Time, ET) · ' + tfLabel + ' Intervals');
 
     var priorBadge = document.getElementById('cvd-prior-badge');
     if (priorBadge) {
@@ -112,9 +129,8 @@ function renderCvdDirect(cvd) {
         priorBadge.innerHTML = cvd.is_prior ? '🟡 전일 정규장 마감' : '🟢 당일 정규장 실시간';
     }
 
-    var rawSum = 0;
-    bars.forEach(function(b) { rawSum += Number(b.vol || b.volume || 0); });
-    var unitMult = rawSum < 500000 ? 1000 : 1;
+    // 백엔드가 명시한 단위 배율 사용 (휴리스틱 추측 제거)
+    var unitMult = Number(cvd.vol_scale) > 0 ? Number(cvd.vol_scale) : 1000;
 
     var maxVolShares = 1000;
     var totalVolShares = 0;
@@ -126,6 +142,11 @@ function renderCvdDirect(cvd) {
         totalVolShares += vShares;
         cvdVals.push(Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0)));
     });
+
+    // CVD 라인 정규화용 min/max (우측 축 라벨과 라인 렌더링이 공유)
+    var minCvd = Math.min.apply(null, cvdVals);
+    var maxCvd = Math.max.apply(null, cvdVals);
+    var cvdSpan = (maxCvd - minCvd) || 1;
 
     var buyPctRound = (cvd.buy_pct !== undefined && cvd.buy_pct !== null) ? Number(cvd.buy_pct) : 50;
     var sellPctRound = (cvd.sell_pct !== undefined && cvd.sell_pct !== null) ? Number(cvd.sell_pct) : (100 - buyPctRound);
@@ -180,6 +201,8 @@ function renderCvdDirect(cvd) {
     safeSet('cvd-inspect-sub', '최근 봉');
     safeSet('cvd-recent-vol', cvd.recent_vol || fmtVolM(lastBarShares));
     safeSet('cvd-total-vol', cvd.total_vol || fmtVolM(totalVolShares));
+    var lastCvdShares = Number(lastBar.cvd_line !== undefined ? lastBar.cvd_line : (lastBar.cvd || 0)) * unitMult;
+    safeSet('cvd-inspect-cvd', fmtSignedM(lastCvdShares));
 
     safeSet('cvd-buy-pct', '▲ Buy ' + buyPctRound + '% (' + buyVolText + ')');
     safeSet('cvd-sell-pct', '▼ Sell ' + sellPctRound + '% (' + sellVolText + ')');
@@ -244,6 +267,12 @@ function renderCvdDirect(cvd) {
             gridHtml += '<line x1="' + xEnd.toFixed(1) + '" y1="' + yTop.toFixed(1) + '" x2="' + xEnd.toFixed(1) + '" y2="' + yZero.toFixed(1) + '" stroke="rgba(71, 85, 105, 0.35)" stroke-width="1" stroke-dasharray="2,3" />';
             gridHtml += '<text x="' + xEnd.toFixed(1) + '" y="' + (yZero + 13).toFixed(1) + '" fill="#94a3b8" font-size="9" font-family="monospace" text-anchor="middle">16:00</text>';
         }
+        // CVD 우측 축 라벨 (CVD 라인은 자체 스케일로 정규화 — 좌측 볼륨 축과 무관)
+        var yForCvd = function(cv) { return yZero - (((cv - minCvd) / cvdSpan) * (chartH * 0.82) + chartH * 0.08); };
+        var midCvd = (maxCvd + minCvd) / 2;
+        gridHtml += '<text x="' + (xEnd + 6).toFixed(1) + '" y="' + (yForCvd(maxCvd) + 3).toFixed(1) + '" fill="#fbbf24" font-size="9" font-family="monospace">' + fmtSignedM(maxCvd * unitMult) + '</text>';
+        gridHtml += '<text x="' + (xEnd + 6).toFixed(1) + '" y="' + (yForCvd(midCvd) + 3).toFixed(1) + '" fill="#fbbf24" font-size="9" font-family="monospace">' + fmtSignedM(midCvd * unitMult) + '</text>';
+        gridHtml += '<text x="' + (xEnd + 6).toFixed(1) + '" y="' + (yForCvd(minCvd) + 3).toFixed(1) + '" fill="#fbbf24" font-size="9" font-family="monospace">' + fmtSignedM(minCvd * unitMult) + '</text>';
         vGridGroup.innerHTML = gridHtml;
     }
 
@@ -263,12 +292,9 @@ function renderCvdDirect(cvd) {
     }
 
     // (C) Sarara keelloo CVD (0 기준선 포함하여 1H에서도 방향 왜곡 방지)
+    // minCvd/maxCvd/cvdSpan은 상단에서 계산됨 (우측 축 라벨과 공유)
     var linePath = document.getElementById('cvd-line-path');
     if (linePath && cvdVals.length) {
-        var minCvd = Math.min.apply(null, cvdVals);
-        var maxCvd = Math.max.apply(null, cvdVals);
-        var cvdSpan = (maxCvd - minCvd) || 1;
-
         var pathD = '';
         bars.forEach(function(b, i) {
             var cVal = Number(b.cvd_line !== undefined ? b.cvd_line : (b.cvd || 0));
@@ -289,28 +315,46 @@ function initCvdInteraction() {
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
 
-    svg.addEventListener('mousemove', function(e) {
+    function barCvdShares(bar, unit) {
+        return Number(bar.cvd_line !== undefined ? bar.cvd_line : (bar.cvd || 0)) * unit;
+    }
+
+    function inspectAt(clientX) {
         if (!cvdBarsCache || !cvdBarsCache.bars || !cvdBarsCache.bars.length) return;
         var rect = svg.getBoundingClientRect();
-        var relX = (e.clientX - rect.left) / rect.width;
+        var relX = (clientX - rect.left) / rect.width;
         var idx = Math.min(cvdBarsCache.bars.length - 1, Math.max(0, Math.floor(relX * cvdBarsCache.bars.length)));
         var bar = cvdBarsCache.bars[idx];
         if (!bar) return;
 
-        var vShares = Number(bar.vol || 0) * cvdBarsCache.unitMult;
+        var vShares = Number(bar.vol !== undefined ? bar.vol : (bar.volume || 0)) * cvdBarsCache.unitMult;
         safeSet('cvd-inspect-label', '선택 봉');
         safeSet('cvd-last-time', (cvdBarsCache.sDate ? cvdBarsCache.sDate + ' ' : '') + formatEtTime(bar.t) + ':00 ET');
         safeSet('cvd-inspect-sub', bar.is_bull ? '매수 우세 봉' : '매도 우세 봉');
         safeSet('cvd-recent-vol', fmtVolM(vShares));
-    });
+        safeSet('cvd-inspect-cvd', fmtSignedM(barCvdShares(bar, cvdBarsCache.unitMult)));
+    }
 
-    svg.addEventListener('mouseleave', function() {
+    function resetInspect() {
         if (!cvdBarsCache || !cvdBarsCache.bars || !cvdBarsCache.bars.length) return;
+        var lastBar = cvdBarsCache.bars[cvdBarsCache.bars.length - 1];
         safeSet('cvd-inspect-label', '마지막 봉');
-        safeSet('cvd-last-time', currentCvdData.data_time || (cvdBarsCache.sDate + ' ' + cvdBarsCache.tEndFull));
+        safeSet('cvd-last-time', (currentCvdData && currentCvdData.data_time) || (cvdBarsCache.sDate + ' ' + cvdBarsCache.tEndFull));
         safeSet('cvd-inspect-sub', '최근 봉');
         safeSet('cvd-recent-vol', fmtVolM(cvdBarsCache.lastBarShares));
-    });
+        safeSet('cvd-inspect-cvd', fmtSignedM(barCvdShares(lastBar, cvdBarsCache.unitMult)));
+    }
+
+    svg.addEventListener('mousemove', function(e) { inspectAt(e.clientX); });
+    svg.addEventListener('mouseleave', resetInspect);
+    // 모바일 터치 지원
+    svg.addEventListener('touchstart', function(e) {
+        if (e.touches.length > 0) inspectAt(e.touches[0].clientX);
+    }, { passive: true });
+    svg.addEventListener('touchmove', function(e) {
+        if (e.touches.length > 0) inspectAt(e.touches[0].clientX);
+    }, { passive: true });
+    svg.addEventListener('touchend', resetInspect);
 }
 
 document.addEventListener('DOMContentLoaded', initCvdInteraction);
