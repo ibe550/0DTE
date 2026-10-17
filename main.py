@@ -690,7 +690,7 @@ def fetch_polymarket_spx_data(spx_price):
     now_et = datetime.now(ET)
     today = now_et.date()
 
-    # 평일 16:00 ET 이후이거나 주말(토/일)이면 다음 거래일(월요일/익일) 일일 마켓을 타겟팅
+    # 평일 16:00 ET 이후이거나 주말(토/일)이면 다음 거래일(월요일/익일) 일일 마켓 타겟팅
     if today.weekday() == 5:      # 토요일 -> 월요일(+2)
         target_date = today + timedelta(days=2)
     elif today.weekday() == 6:    # 일요일 -> 월요일(+1)
@@ -705,19 +705,18 @@ def fetch_polymarket_spx_data(spx_price):
     month_short = target_date.strftime("%b")       # 예: Oct
     day_num = str(target_date.day)                 # 예: 19
 
-    # 일일(Daily) SPX / S&P 500 / SPY 전용 타겟 검색어
+    # SPY 완전 제외, 순수 S&P 500 / SPX 일일 마켓만 검색
     search_queries = [
         quote(f"S&P 500 {month_full} {day_num}"),
         quote(f"SPX {month_full} {day_num}"),
-        quote(f"SPY {month_full} {day_num}"),
         quote("S&P 500 Up or Down"),
-        quote("S&P 500 close above"),
-        quote("SPY close above"),
+        quote("S&P 500 close"),
+        quote("SPX close"),
     ]
 
-    # 연말/월말/장기 마켓 원천 배제 키워드
-    long_term_ban = [
-        "end of year", "eoy", "end of month", "by end of",
+    # 연말/월말/장기 마켓 및 SPY 원천 배제 키워드
+    ban_keywords = [
+        "spy", "etf", "end of year", "eoy", "end of month", "by end of",
         "in 2026", "in 2027", "by december", "in october", "in november",
         "all time high", "ath", "recession", "fed ", "interest rate", "president"
     ]
@@ -743,15 +742,13 @@ def fetch_polymarket_spx_data(spx_price):
                 ev_title = (ev.get("title") or "").strip()
                 t_low = ev_title.lower()
 
-                # S&P 500 / SPX / SPY 관련 마켓만 허용
-                if not any(k in t_low for k in ("s&p", "spx", "spy")):
+                # 오직 S&P 500 / SPX만 허용 (SPY 제외)
+                if not any(k in t_low for k in ("s&p", "spx")):
+                    continue
+                if any(b in t_low for b in ban_keywords):
                     continue
 
-                # 장기/연말 마켓 즉시 제외
-                if any(b in t_low for b in long_term_ban):
-                    continue
-
-                # 만기일(endDate) 체크: 오늘로부터 5일 이상 남은 장기 마켓은 무조건 제외
+                # 만기일(endDate) 체크: 오늘로부터 5일 이내에 마감되는 단기/일일 마켓만 통과
                 end_str = str(ev.get("endDate") or "")[:10]
                 if end_str:
                     try:
@@ -762,7 +759,6 @@ def fetch_polymarket_spx_data(spx_price):
                     except Exception:
                         pass
 
-                # 타겟 날짜(예: Oct 19)가 제목에 명시되어 있는지 확인 (가산점 부여용)
                 is_exact_date = (
                     f"{month_full.lower()} {day_num}" in t_low
                     or f"{month_short.lower()} {day_num}" in t_low
@@ -775,7 +771,7 @@ def fetch_polymarket_spx_data(spx_price):
 
                     q_str = (m.get("question") or m.get("groupItemTitle") or "").strip()
                     q_low = q_str.lower()
-                    if any(b in q_low for b in long_term_ban):
+                    if any(b in q_low for b in ban_keywords):
                         continue
 
                     raw_prices = m.get("outcomePrices")
@@ -786,26 +782,21 @@ def fetch_polymarket_spx_data(spx_price):
                         continue
 
                     p0 = float(prices[0])
-                    # 이미 100% / 0%로 결판난 행사가 제외, 50:50에 가까운 ATM(등가격) 승부처 선호
                     if not (0.02 <= p0 <= 0.98):
                         continue
 
-                    # 질문에서 행사가(예: 7,720 또는 772.5) 추출해 현재 SPX 가격과의 거리 계산
-                    nums = [float(x.replace(",", "")) for x in re.findall(r"\d{1,2},\d{3}(?:\.\d+)?|\d{3,4}(?:\.\d+)?", q_str)]
+                    # SPX 지수 범위(4,000 ~ 12,000)의 행사가만 추출 (3자리 SPY 가격 무시)
+                    nums = [float(x.replace(",", "")) for x in re.findall(r"\d{1,2},\d{3}(?:\.\d+)?|\d{4}(?:\.\d+)?", q_str)]
                     strike_dist = 9999.0
                     extracted_strike = None
-                    if spx_price and nums:
+                    if nums:
                         for n in nums:
-                            if 4000 <= n <= 12000:  # SPX 지수 범위
-                                strike_dist = abs(n - spx_price)
+                            if 4000 <= n <= 12000 and int(n) not in (2025, 2026, 2027):
                                 extracted_strike = int(round(n))
-                                break
-                            elif 400 <= n <= 1200:  # SPY 가격 범위 (SPX의 1/10 환산 비교)
-                                strike_dist = abs((n * 10.0) - spx_price)
-                                extracted_strike = f"SPY ${n:g}"
+                                if spx_price:
+                                    strike_dist = abs(n - spx_price)
                                 break
 
-                    # 정렬 우선순위: 1) 타겟 날짜 정확 일치 2) 현재가(ATM) 근접도 3) 확률이 50%에 가까운 정도
                     atm_score = abs(p0 - 0.5)
                     sort_key = (0 if is_exact_date else 1, strike_dist, atm_score)
                     candidates.append((sort_key, ev_title, m, prices, extracted_strike))
@@ -837,7 +828,7 @@ def fetch_polymarket_spx_data(spx_price):
     sub_item = (best_m.get("groupItemTitle") or "").strip()
     date_tag = target_date.strftime("%m/%d")
     if extracted_strike:
-        display_title = f"[{date_tag}] SPX {extracted_strike}선 마감 확률" if isinstance(extracted_strike, int) else f"[{date_tag}] {extracted_strike} 마감 확률"
+        display_title = f"[{date_tag}] SPX {extracted_strike}선 마감 확률"
     elif sub_item and sub_item not in best_ev_title:
         display_title = f"[{date_tag}] {best_ev_title} ({sub_item})"
     else:
@@ -852,18 +843,18 @@ def fetch_polymarket_spx_data(spx_price):
         "yes_pct": yes_pct,
         "no_pct": no_pct,
         "summary": f"{lbl_yes} {yes_pct}% · {lbl_no} {no_pct}%",
-        "source": f"Polymarket Daily{vol_str}"
+        "source": f"Polymarket SPX{vol_str}"
     }
 
 
 def get_polymarket_spx(spx_price):
-    return cached("polymarket_spx_daily", 60, lambda: fetch_polymarket_spx_data(spx_price)) or {
+    return cached("polymarket_spx_only", 60, lambda: fetch_polymarket_spx_data(spx_price)) or {
         "available": False,
         "title": "당일 SPX 일일 폴리마켓 개장 대기",
         "yes_pct": 0,
         "no_pct": 0,
-        "summary": "연말/장기 마켓 제외됨 (일일 마켓 전용)",
-        "source": "Polymarket Daily"
+        "summary": "차기 거래일 SPX 마켓 생성 대기 중",
+        "source": "Polymarket SPX"
     }
 
 # ─────────────────────────────────────────────────────────────
