@@ -1,6 +1,38 @@
 let _vix1dPrice = null;
 let _vixPrice = null;
 
+// ─────────────────────────────────────────────────────────────
+// Schwab 우선 · CNBC 폴백 (히스테리시스로 소스 깜빡임 방지)
+//  - schwab 모드: 백엔드가 2회 연속 실패(≈10초)해야 CNBC로 전환
+//  - cnbc 모드: 백엔드가 3회 연속 성공(≈15초)해야 Schwab으로 복귀
+//  - 전환 시 상단(#schwab-status-line)에 안내 문구 표시
+// ─────────────────────────────────────────────────────────────
+const DUAL_SRC = ['es', 'wti', 'brent'];
+const DUAL_LABEL = { es: 'ES', wti: 'WTI', brent: 'BRENT' };
+const symMode = { es: 'schwab', wti: 'schwab', brent: 'schwab' };
+const backendSeen = { es: false, wti: false, brent: false };
+const symMiss = { es: 0, wti: 0, brent: 0 };
+const symHit = { es: 0, wti: 0, brent: 0 };
+const MISS_TO_FALLBACK = 2;
+const HIT_TO_RECOVER = 3;
+
+function refreshSourceNotice() {
+    const line = $('schwab-status-line');
+    if (!line) return;
+    const fb = DUAL_SRC.filter(s => symMode[s] === 'cnbc');
+    const fbTxt = fb.length ? `CNBC 데이터로 표시 중: ${fb.map(s => DUAL_LABEL[s]).join(' · ')}` : '';
+    if (window.__schwabOk === false) {
+        line.classList.remove('hidden');
+        line.innerText = fbTxt ? `⚠ ${window.__schwabMsg} → ${fbTxt}` : `⚠ ${window.__schwabMsg}`;
+    } else if (fbTxt) {
+        line.classList.remove('hidden');
+        line.innerText = `⚠ Schwab 데이터를 받지 못해 ${fbTxt}`;
+    } else {
+        line.classList.add('hidden');
+        line.innerText = '';
+    }
+}
+
 function updateVixRatio() {
     const card = $('vix-ratio-card');
     const badge = $('vix-status-badge');
@@ -46,7 +78,38 @@ function updateVixRatio() {
 function renderQuote(pfx, q, opts = {}) {
     // CNBC에서 직접 받아오는 종목들은 백엔드가 빈 값(null)을 보내도 N/A로 지우지 않도록 보호
     if (pfx === 'mag7' || pfx === 'mags' || pfx === 'uso') return;
-    if ((pfx === 'es' || pfx === 'wti' || pfx === 'brent') && (!q || !isNum(q.price))) return;
+
+    // Schwab/CNBC 이중 소스 종목: 히스테리시스로 표시 소스 고정 (깜빡임 방지)
+    if (DUAL_SRC.includes(pfx)) {
+        const ok = q && isNum(q.price);
+        if (symMode[pfx] === 'schwab') {
+            if (!ok) {
+                symMiss[pfx]++;
+                if (symMiss[pfx] >= MISS_TO_FALLBACK) {
+                    symMode[pfx] = 'cnbc';
+                    symMiss[pfx] = 0; symHit[pfx] = 0;
+                    refreshSourceNotice();
+                    if (typeof fetchCnbcMacroQuotes === 'function') fetchCnbcMacroQuotes();
+                }
+                return; // 1회성 실패는 기존 표시 유지
+            }
+            symMiss[pfx] = 0;
+            backendSeen[pfx] = true;
+        } else {
+            // cnbc 모드: 백엔드가 연속 3회 유효해야 Schwab으로 복귀
+            if (ok) {
+                symHit[pfx]++;
+                if (symHit[pfx] < HIT_TO_RECOVER) return;
+                symMode[pfx] = 'schwab';
+                symHit[pfx] = 0; symMiss[pfx] = 0;
+                backendSeen[pfx] = true;
+                refreshSourceNotice();
+            } else {
+                symHit[pfx] = 0;
+                return;
+            }
+        }
+    }
 
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
@@ -122,19 +185,17 @@ function renderShockAlert(alert) {
 
 function renderStatus(data) {
     $('global-source-badge').innerText = `Source: ${data.source_summary}`;
-    const line = $('schwab-status-line');
-    const okSchwab = (data.schwab_status || '').startsWith('연결됨');
-    if (okSchwab) line.classList.add('hidden');
-    else {
-        line.classList.remove('hidden');
-        line.innerText = `⚠ ${data.schwab_status}`;
-    }
+    window.__schwabOk = (data.schwab_status || '').startsWith('연결됨');
+    window.__schwabMsg = data.schwab_status || '';
+    refreshSourceNotice();
 }
 
 // ─────────────────────────────────────────────────────────────
 // ES · WTI · BRENT · MAG7 · USO · 미 국채 3종(3M·10Y·30Y) CNBC 통합 연동
 // ─────────────────────────────────────────────────────────────
 function applyMacroCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText, useComma) {
+    // Schwab이 정상 표시 중인 종목은 CNBC가 덮어쓰지 않음 (깜빡임 방지)
+    if (DUAL_SRC.includes(prefix) && symMode[prefix] === 'schwab' && backendSeen[prefix]) return;
     var priceEl = document.getElementById(prefix + '-price');
     var changeEl = document.getElementById(prefix + '-change');
     var srcEl = document.getElementById(prefix + '-source');
