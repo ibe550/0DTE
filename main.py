@@ -1,4 +1,9 @@
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)"""
+from fastapi import FastAPI
+
+app = FastAPI()
+handler = app
+application = app
 import math
 import os
 import time
@@ -14,11 +19,7 @@ import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from fastapi import FastAPI
 
-app = FastAPI()
-handler = app
-application = app
 
 # 기존 코드에 MAGS(MAG7 ETF)와 국채 금리 지표($IRX, $TNX, $TYX)를 추가합니다.
 SCHWAB_QUOTES = OrderedDict([
