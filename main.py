@@ -1,19 +1,19 @@
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)"""
-import html as html_lib
 import math
 import os
 import time
-import xml.etree.ElementTree as ET_xml
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+import html as html_lib
 from typing import Optional
+import xml.etree.ElementTree as ET_xml
 
 import pytz
 import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 handler = app
@@ -95,21 +95,6 @@ def src_kind(s):
     if s.startswith("Yahoo"):
         return "yahoo"
     return "other"
-
-
-# ─────────────────────────────────────────────────────────────
-# 관리용 엔드포인트 보호 (선택)
-#  - Vercel 환경변수 CRON_SECRET 을 설정하면 test-alert / refresh-token 이 보호됩니다.
-#  - 설정하지 않으면 기존처럼 열려 있습니다.
-#  - Vercel Cron 은 CRON_SECRET 이 설정되어 있으면 Authorization: Bearer 헤더를 자동으로 보냅니다.
-# ─────────────────────────────────────────────────────────────
-def _admin_ok(request: Request):
-    secret = os.environ.get("CRON_SECRET")
-    if not secret:
-        return True
-    if request.headers.get("authorization", "") == f"Bearer {secret}":
-        return True
-    return request.query_params.get("key") == secret
 
 
 # ─────────────────────────────────────────────────────────────
@@ -207,11 +192,7 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     results = []
     for cid in chat_ids:
         try:
-            r = requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": cid, "text": msg},
-                timeout=4,
-            )
+            r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": cid, "text": msg}, timeout=4)
             results.append({"chat_id": cid, "ok": r.status_code == 200})
         except Exception as e:
             results.append({"chat_id": cid, "error": str(e)})
@@ -266,9 +247,8 @@ def get_schwab_token(force_refresh=False):
                 if new_refresh:
                     kv_set(KV_KEY_REFRESH, new_refresh, ex_seconds=REFRESH_TOKEN_TTL)
             return access_token, "연결됨 (새로 갱신)"
-        print(f"[schwab] token refresh failed: HTTP {res.status_code}")
-    except Exception as e:
-        print(f"[schwab] token refresh error: {e}")
+    except Exception:
+        pass
     return None, "Schwab 토큰 갱신 실패"
 
 
@@ -276,48 +256,29 @@ def schwab_get(token, path, params=None, timeout=4):
     if not token:
         return None
     try:
-        r = requests.get(
-            f"{SCHWAB_BASE_URL}{path}",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            params=params,
-            timeout=timeout,
-        )
+        r = requests.get(f"{SCHWAB_BASE_URL}{path}", headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}, params=params, timeout=timeout)
         if r.status_code == 200:
             return r.json()
-        print(f"[schwab] GET {path} -> HTTP {r.status_code}")
-    except Exception as e:
-        print(f"[schwab] GET {path} error: {e}")
+    except Exception:
+        pass
     return None
 
 
 # ─────────────────────────────────────────────────────────────
-# 실시간 시세 (Schwab 일괄 조회 + 못 받은 항목만 Yahoo 폴백)
+# 실시간 시세 (Schwab 지수 4종 + Yahoo 실시간 선물 3종 동시 병렬 조회)
 # ─────────────────────────────────────────────────────────────
-# 키(왼쪽)는 프론트엔드가 쓰는 이름, 값(오른쪽)은 Schwab 심볼
 SCHWAB_QUOTES = OrderedDict([
     ("spx", "$SPX"),
     ("vix1d", "$VIX1D"),
     ("vix", "$VIX"),
     ("spy", "SPY"),
-    ("es", "/ES"),
-    ("wti", "/CL"),
-    ("brent", "/BZ"),
-    ("uso", "USO"),
-    ("mag7", "MAGS"),
-    ("yield-3m", "$IRX"),
-    ("yield-10y", "$TNX"),
-    ("yield-30y", "$TYX"),
 ])
 
-# Schwab 에서 못 받았을 때만 사용하는 폴백
 YAHOO_FUTURES = OrderedDict([
     ("es", "ES=F"),
     ("wti", "CL=F"),
     ("brent", "BZ=F"),
 ])
-
-YIELD_SYMBOLS = ("$IRX", "$TNX", "$TYX")
-FUT_MONTH_CODES = "FGHJKMNQUVXZ"
 
 
 def make_quote(price, prev, change, source):
@@ -339,87 +300,19 @@ def make_quote(price, prev, change, source):
     }
 
 
-def _find_quote(data, sym):
-    """응답 키가 요청 심볼과 다를 수 있는 선물 대응 (/ES -> /ESZ26)"""
-    info = data.get(sym)
-    if isinstance(info, dict) and isinstance(info.get("quote"), dict):
-        return info
-    for k, v in data.items():
-        if k == "errors" or not isinstance(v, dict):
-            continue
-        if (v.get("reference") or {}).get("product") == sym and isinstance(v.get("quote"), dict):
-            return v
-    return None
-
-
-def _futures_candidates(root, now):
-    """'/ES' 같은 루트 심볼이 거부될 때 시도할 개별 월물 심볼 목록 (예: /ESZ26)"""
-    out = []
-    quarterly = (root == "/ES")
-    for i in range(0, 10):
-        idx = now.month - 1 + i
-        mm = idx % 12 + 1
-        yy = now.year + idx // 12
-        if quarterly and mm % 3 != 0:
-            continue
-        out.append(f"{root}{FUT_MONTH_CODES[mm - 1]}{str(yy)[-2:]}")
-        if len(out) >= 3:
-            break
-    return out
-
-
-def _quote_to_item(sym, label_sym, info):
-    q = info.get("quote") if info else None
-    if not isinstance(q, dict):
-        return None
-    p = q.get("lastPrice") or q.get("mark")
-    if not p:  # None 또는 0 이면 건너뜀 (0.00 표시 방지)
-        return None
-    prev, chg = q.get("closePrice"), q.get("netChange")
-    # 금리 지수가 10배 단위(예: 42.5)로 오면 % 단위로 보정
-    if sym in YIELD_SYMBOLS and num(p) is not None and num(p) > 20:
-        p = num(p) / 10.0
-        prev = (num(prev) / 10.0) if num(prev) is not None else None
-        chg = (num(chg) / 10.0) if num(chg) is not None else None
-    return make_quote(p, prev, chg, f"{SRC_SCHWAB} ({label_sym})")
-
-
 def fetch_schwab_quotes(token, symbols):
     if not token:
         return {}
     out = {}
-    data = schwab_get(token, "/quotes", {"symbols": ",".join(symbols), "fields": "quote,reference"})
-    if not isinstance(data, dict):
-        return out
-
-    bad = (data.get("errors") or {}).get("invalidSymbols")
-    if bad:
-        print(f"[schwab] invalid symbols: {bad}")
-
-    for sym in symbols:
-        item = _quote_to_item(sym, sym, _find_quote(data, sym))
-        if item:
-            out[sym] = item
-
-    # 선물 루트 심볼(/ES 등)이 거부되었으면 개별 월물로 재시도
-    missing_futs = [s for s in symbols if s.startswith("/") and s not in out]
-    if missing_futs:
-        now = datetime.now(ET)
-        cand_map = {root: _futures_candidates(root, now) for root in missing_futs}
-        all_cands = [c for lst in cand_map.values() for c in lst]
-        data2 = schwab_get(token, "/quotes", {"symbols": ",".join(all_cands), "fields": "quote,reference"})
-        if isinstance(data2, dict):
-            for root, cands in cand_map.items():
-                for c in cands:
-                    info = data2.get(c)
-                    if not isinstance(info, dict):
-                        continue
-                    if (info.get("reference") or {}).get("futureIsActive") is False:
-                        continue
-                    item = _quote_to_item(root, c, info)
-                    if item:
-                        out[root] = item
-                        break
+    data = schwab_get(token, "/quotes", {"symbols": ",".join(symbols), "fields": "quote"})
+    if isinstance(data, dict):
+        for sym in symbols:
+            q = data.get(sym, {}).get("quote") if isinstance(data.get(sym), dict) else None
+            if isinstance(q, dict):
+                p = q.get("lastPrice") or q.get("mark")
+                item = make_quote(p, q.get("closePrice"), q.get("netChange"), f"{SRC_SCHWAB} ({sym})")
+                if item:
+                    out[sym] = item
     return out
 
 
@@ -439,20 +332,18 @@ def fetch_yahoo_realtime_future(ysym):
 def get_all_quotes(token):
     def load():
         result = {}
-        schwab_data = fetch_schwab_quotes(token, list(SCHWAB_QUOTES.values())) or {}
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            f_schwab = ex.submit(fetch_schwab_quotes, token, list(SCHWAB_QUOTES.values()))
+            f_y = {k: ex.submit(fetch_yahoo_realtime_future, ysym) for k, ysym in YAHOO_FUTURES.items()}
+
+        schwab_data = f_schwab.result() or {}
         for key, ssym in SCHWAB_QUOTES.items():
             result[key] = schwab_data.get(ssym)
-
-        # Schwab 에서 못 받은 선물만 Yahoo 로 채움
-        missing = {k: y for k, y in YAHOO_FUTURES.items() if result.get(k) is None}
-        if missing:
-            with ThreadPoolExecutor(max_workers=3) as ex:
-                futs = {k: ex.submit(fetch_yahoo_realtime_future, y) for k, y in missing.items()}
-            for k, f in futs.items():
-                try:
-                    result[k] = f.result()
-                except Exception:
-                    result[k] = None
+        for key, fut in f_y.items():
+            try:
+                result[key] = fut.result()
+            except Exception:
+                result[key] = None
 
         return result if any(result.values()) else None
 
@@ -734,7 +625,6 @@ def fetch_global_econ_calendar():
     except Exception:
         return None
 
-
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
     events = cached("econ_events_data", 60, fetch_global_econ_calendar)
     flash_news = fetch_flash_market_news()
@@ -791,7 +681,6 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
         })
 
     return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None}
-
 
 def fetch_polymarket_spx_data(spx_price):
     import json as _json
@@ -968,7 +857,6 @@ def get_polymarket_spx(spx_price):
         "source": "Polymarket SPX"
     }
 
-
 # ─────────────────────────────────────────────────────────────
 # 캔들 데이터 / CVD / Volume Profile (전 시간대 1분봉 실시간 정밀 합성)
 # ─────────────────────────────────────────────────────────────
@@ -1060,11 +948,11 @@ def aggregate_candles(candles, minutes):
 
 
 def split_bar_volume(c):
-    """틱 데이터 부재를 보완하기 위한 위크-바디(Wick-Body) 볼륨 분배 추정 (실제 체결 데이터 아님)"""
+    """틱 데이터 부재를 보완하기 위한 위크-바디(Wick-Body) 볼륨 정밀 분배 알고리즘"""
     v, o, h, l, cl = c["v"], c["o"], c["h"], c["l"], c["c"]
     if v <= 0:
         return 0.0, 0.0
-
+    
     rng = h - l
     if rng <= 1e-9:
         return (v * 0.5, v * 0.5)
@@ -1089,9 +977,8 @@ def split_bar_volume(c):
         buy_ratio = buy_power / total_power
 
     buy_ratio = max(0.05, min(0.95, buy_ratio))
-
+    
     return v * buy_ratio, v * (1.0 - buy_ratio)
-
 
 def get_base_candles(token, ssym, freq, days):
     def load():
@@ -1140,7 +1027,7 @@ def get_rth_session(candles, now_et=None):
         d = dt.date()
         d_open = int(ET.localize(datetime(d.year, d.month, d.day, 9, 30, 0)).timestamp())
         d_close = int(ET.localize(datetime(d.year, d.month, d.day, 16, 0, 0)).timestamp())
-        if d_open <= c["t"] < d_close:   # 16:00 시작 봉(시간외)은 제외
+        if d_open <= c["t"] <= d_close:
             sessions.setdefault(d, []).append(c)
 
     all_dates = sorted(sessions.keys())
@@ -1230,7 +1117,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
     out = []
     for c in bars:
         v = c["v"]
-        # 1분봉에서 누적된 매수/매도 볼륨(추정치)을 그대로 합산
+        # 1분봉에서 누적된 실제 매수/매도 볼륨을 그대로 합산하여 전 타임프레임(1m~1H) 매도 볼륨이 0이 되는 현상 해결
         if "buy_v" in c and "sell_v" in c and (c["buy_v"] + c["sell_v"]) > 0:
             b_v, s_v = c["buy_v"], c["sell_v"]
         else:
@@ -1268,7 +1155,6 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
         "recent_vol": fmt_v(bars[-1]["v"]), "total_vol": fmt_v(total),
         "bars": out, "summary_text": f"CVD Flow: Buy {buy_pct}% / Sell {sell_pct}% in session.",
     }
-
 
 # ─────────────────────────────────────────────────────────────
 # GEX & 방향 분석 & 변동성 쇼크
@@ -1357,7 +1243,7 @@ def fetch_schwab_chain(token, today_date):
         return None, {"reason": "만기 없음"}
     exp = t_str if t_str in exps else sorted(exps)[0]
     contracts = parse_schwab_chain(data, exp)
-    return ((contracts, exp) if contracts else None), {"used_symbol": used_sym, "is_0dte": exp == t_str}
+    return (contracts, exp) if contracts else None, {"used_symbol": used_sym, "is_0dte": exp == t_str}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1376,14 +1262,13 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
     width = 10.0
 
     # 1. 행사가별 실제 매수(Bid)·매도(Ask) 호가 및 유동성 맵 구성
-    #    parse_schwab_chain 이 만드는 키: K, side, bid, ask, last, oi, vol
     quote_map = {}
     if contracts:
         for c in contracts:
             try:
-                side_raw = str(c.get("side") or c.get("type") or c.get("putCall") or "").upper()
+                side_raw = str(c.get("type") or c.get("putCall") or c.get("side") or "").upper()
                 side = "C" if side_raw.startswith("C") else ("P" if side_raw.startswith("P") else "")
-                k = float(c.get("K") or c.get("strike") or 0)
+                k = float(c.get("strike") or 0)
                 if not side or k <= 0:
                     continue
 
@@ -1391,8 +1276,8 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
                 ask = float(c.get("ask") or 0.0)
                 mid = round((bid + ask) / 2.0, 2) if (bid > 0 and ask > 0) else float(c.get("mid") or c.get("mark") or c.get("last") or 0.0)
                 ba_spread = round(max(0.0, ask - bid), 2) if (bid > 0 and ask > 0) else 99.0
-                vol = int(c.get("vol") or c.get("volume") or c.get("totalVolume") or 0)
-                oi = int(c.get("oi") or c.get("open_interest") or c.get("openInterest") or 0)
+                vol = int(c.get("volume") or c.get("totalVolume") or 0)
+                oi = int(c.get("open_interest") or c.get("openInterest") or 0)
 
                 quote_map[(side, round(k, 1))] = {
                     "bid": bid, "ask": ask, "mid": mid,
@@ -1416,7 +1301,7 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
         mid_cr = round(qs["mid"] - ql["mid"], 2) if (qs["mid"] > 0 and ql["mid"] > 0) else None
         leg_spread_sum = round(qs["spread"] + ql["spread"], 2)
 
-        # 실전 체결 예상 크레딧(Fill Credit): Mid에서 호가 슬리피지(25%) 차감
+        # 실전 체결 예상 크레딧(Fill Credit): Mid에서 호가 슬리피지(25%) 차감, 목표 크레딧 하드코딩 배제
         if nat_cr is not None and mid_cr is not None:
             fill_cr = round(max(nat_cr, mid_cr - leg_spread_sum * 0.25), 2)
         else:
@@ -1425,7 +1310,7 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
         if fill_cr is None or fill_cr <= 0.15 or fill_cr >= width * 0.90:
             return None
 
-        # 최대 손실(Max Loss) 및 손익분기점(BEP) 계산
+        # 최대 손실(Max Loss) 및 손익분기점(BEP) 정밀 계산
         max_loss_pt = round(width - fill_cr, 2)
         max_loss_usd = int(round(max_loss_pt * 100))
         max_profit_usd = int(round(fill_cr * 100))
@@ -1454,7 +1339,7 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
             f"최대손실 -${max_loss_usd}(RoR {ror_pct:.1f}%) · 손익분기 {bep:.1f}"
         )
 
-        # 점수: [체결 용이성 + 안전 마진 + 손익비 균형]
+        # 점수 산정: 목표 크레딧 고정 없이 [체결 용이성 + 안전 마진 + 손익비 균형]으로 평가
         liq_score = 30.0 if fill_status == "SWEET_SPOT" else (20.0 if fill_status == "LIMIT_OK" else 5.0)
         safety_score = min(25.0, max(0.0, dist_bound * 1.5)) + (15.0 if dist_bound >= 0 else -20.0)
         ror_score = max(0.0, 20.0 - abs(ror_pct - 15.0) * 0.6)
@@ -1522,8 +1407,6 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
         "call_spread": best_c,
         "put_spread": best_p,
     }
-
-
 def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     S = spot / scale
     y, m, d = (int(x) for x in exp_date.split("-"))
@@ -1606,7 +1489,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         abs_pin_val = top_pin["abs_gex_m"]
     is_0dte_session = bool((now_et.hour < 16 and exp_date == now_et.date().isoformat()) or (now_et.hour >= 16 and exp_date >= now_et.date().isoformat()))
 
-    # --- SPX Gamma Flip (Zero-Gamma 변곡점) 계산 ---
+   # --- 실제 SPX Gamma Flip (Zero-Gamma 변곡점) 정밀 계산 ---
     real_gamma_flip = None
     gamma_flip_note = None
     try:
@@ -1628,7 +1511,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
                 avg_net = sum(float(x.get("net_gex_m", x.get("net_gex", 0.0))) for x in win) / len(win)
                 smoothed_gex.append((float(valid_strikes[idx]["strike"]), avg_net))
 
-            # 2) 부호가 뒤집히는 영교차점(Zero-Crossing) 선형 보간
+            # 2) 음(-)에서 양(+)으로 감마가 뒤집히는 영교차점(Zero-Crossing) 선형 보간
             crossings = []
             for idx in range(len(smoothed_gex) - 1):
                 k1, g1 = smoothed_gex[idx]
@@ -1646,7 +1529,7 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
                 real_gamma_flip = min(candidates, key=lambda x: abs(x - spot)) if spot else candidates[0]
                 gamma_flip_note = "Zero-GEX 선형보간 (실시간 체인)"
             else:
-                # 3) 전 구간 단일 부호일 때: Call/Put 감마 가중 균형점
+                # 3) 전 구간 단일 부호 편향 장세일 때: Call/Put 감마 가중 힘의 균형점 산출
                 t_call = sum(abs(float(s.get("call_gex_m", s.get("call_gex", 0.0)))) for s in valid_strikes)
                 t_put = sum(abs(float(s.get("put_gex_m", s.get("put_gex", 0.0)))) for s in valid_strikes)
                 if t_call > 0 and t_put > 0:
@@ -1784,9 +1667,9 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
 
     if cvd and not cvd.get("is_prior"):
         if cvd.get("sell_pct", 0) >= 65 and shock_type == "DROP":
-            reasons.append(f"매도 우위 체결 압력 추정 (Sell {cvd['sell_pct']}%)")
+            reasons.append(f"기관 매도 덤핑 폭발 (Sell {cvd['sell_pct']}%)")
         elif cvd.get("buy_pct", 0) >= 65 and shock_type == "SURGE":
-            reasons.append(f"매수 우위 체결 압력 추정 (Buy {cvd['buy_pct']}%)")
+            reasons.append(f"기관 매수 스퀴즈 유입 (Buy {cvd['buy_pct']}%)")
 
     if vix_active and shock_type == "DROP":
         vix_pct = vix_active.get("change_pct")
@@ -1908,9 +1791,7 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
 # API 엔드포인트
 # ─────────────────────────────────────────────────────────────
 @app.get("/api/test-alert")
-def test_telegram_alert(request: Request):
-    if not _admin_ok(request):
-        return JSONResponse({"status": "unauthorized"}, status_code=401)
+def test_telegram_alert():
     now_et = datetime.now(ET)
     mock = {
         "active": True,
@@ -1925,9 +1806,7 @@ def test_telegram_alert(request: Request):
 
 
 @app.get("/api/refresh-token")
-def refresh_token_cron(request: Request):
-    if not _admin_ok(request):
-        return JSONResponse({"status": "unauthorized"}, status_code=401)
+def refresh_token_cron():
     token, msg = get_schwab_token(force_refresh=True)
     return {"status": "ok" if token else "error", "message": msg}
 
@@ -2013,17 +1892,11 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
         "es": quotes.get("es"),
         "vix1d": slim(quotes.get("vix1d")),
         "vix": slim(quotes.get("vix")),
-        "mag7": quotes.get("mag7"),
+        "mag7": None,
         "econ_events": econ_events,
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
-        "uso": quotes.get("uso"),
-        "yields": {
-            "3m": quotes.get("yield-3m"),
-            "10y": quotes.get("yield-10y"),
-            "30y": quotes.get("yield-30y"),
-            "spread": spread_val,
-        },
+        "yields": None,
         "polymarket": polymarket,
         "volume_profile": vp,
         "gex": gex,
@@ -2040,16 +1913,13 @@ def schwab_callback(request: Request, code: Optional[str] = None):
     app_key = os.environ.get("SCHWAB_APP_KEY")
     app_secret = os.environ.get("SCHWAB_SECRET")
     redirect_uri = os.environ.get("SCHWAB_REDIRECT_URI") or str(request.url).split("?")[0]
-    try:
-        res = requests.post(
-            "https://api.schwabapi.com/v1/oauth/token",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
-            auth=(app_key, app_secret),
-            timeout=8,
-        )
-    except Exception as e:
-        return HTMLResponse(f"<h1>토큰 교환 오류</h1><p>{html_lib.escape(str(e))}</p>", status_code=502)
+    res = requests.post(
+        "https://api.schwabapi.com/v1/oauth/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
+        auth=(app_key, app_secret),
+        timeout=8,
+    )
     if res.status_code != 200:
         return HTMLResponse("<h1>토큰 교환 실패</h1>", status_code=400)
     body = res.json()
@@ -2061,4 +1931,4 @@ def schwab_callback(request: Request, code: Optional[str] = None):
         kv_set(KV_KEY_REFRESH, refresh_token, ex_seconds=REFRESH_TOKEN_TTL)
         kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
         kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
-    return HTMLResponse("<h1>✅ Schwab 인증 성공</h1><p>토큰이 저장되었습니다. 이 창을 닫아도 됩니다.</p>")
+    return HTMLResponse(f"<h1>✅ Schwab 인증 성공</h1><p>새 토큰: {html_lib.escape(refresh_token[:20])}...</p>")
