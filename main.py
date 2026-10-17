@@ -684,11 +684,49 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
 
 def fetch_polymarket_spx_data(spx_price):
     import json as _json
-    search_queries = ["S%26P%20500", "SPX", "SPY", "Fed%20interest%20rates"]
+    import re
+    from urllib.parse import quote
+
+    now_et = datetime.now(ET)
+    today = now_et.date()
+
+    # 평일 16:00 ET 이후이거나 주말(토/일)이면 다음 거래일(월요일/익일) 일일 마켓을 타겟팅
+    if today.weekday() == 5:      # 토요일 -> 월요일(+2)
+        target_date = today + timedelta(days=2)
+    elif today.weekday() == 6:    # 일요일 -> 월요일(+1)
+        target_date = today + timedelta(days=1)
+    elif now_et.hour >= 16:       # 평일 장 마감 후 -> 다음 영업일
+        days_ahead = 3 if today.weekday() == 4 else 1
+        target_date = today + timedelta(days=days_ahead)
+    else:
+        target_date = today
+
+    month_full = target_date.strftime("%B")        # 예: October
+    month_short = target_date.strftime("%b")       # 예: Oct
+    day_num = str(target_date.day)                 # 예: 19
+
+    # 일일(Daily) SPX / S&P 500 / SPY 전용 타겟 검색어
+    search_queries = [
+        quote(f"S&P 500 {month_full} {day_num}"),
+        quote(f"SPX {month_full} {day_num}"),
+        quote(f"SPY {month_full} {day_num}"),
+        quote("S&P 500 Up or Down"),
+        quote("S&P 500 close above"),
+        quote("SPY close above"),
+    ]
+
+    # 연말/월말/장기 마켓 원천 배제 키워드
+    long_term_ban = [
+        "end of year", "eoy", "end of month", "by end of",
+        "in 2026", "in 2027", "by december", "in october", "in november",
+        "all time high", "ath", "recession", "fed ", "interest rate", "president"
+    ]
+
+    candidates = []
 
     for q in search_queries:
         try:
-            url = f"https://gamma-api.polymarket.com/public-search?q={q}&events_status=active&limit_per_type=15"
+            url = f"https://gamma-api.polymarket.com/public-search?q={q}&events_status=active&limit_per_type=20"
             r = requests.get(url, headers=HEADERS, timeout=4.0)
             if r.status_code != 200:
                 continue
@@ -698,90 +736,135 @@ def fetch_polymarket_spx_data(spx_price):
             if not events:
                 continue
 
-            best_market = None
-            best_ev_title = ""
-
             for ev in events:
                 if ev.get("closed"):
                     continue
+
                 ev_title = (ev.get("title") or "").strip()
-                markets = [m for m in (ev.get("markets") or []) if m.get("active") is not False and not m.get("closed")]
-                if not markets:
+                t_low = ev_title.lower()
+
+                # S&P 500 / SPX / SPY 관련 마켓만 허용
+                if not any(k in t_low for k in ("s&p", "spx", "spy")):
                     continue
 
-                # SPX 가격과 가장 가까운 행사가 마켓이 있으면 우선 선택, 없으면 거래량 최상위 마켓 선택
-                if spx_price and len(markets) > 1:
-                    def _score_market(m):
-                        q_str = (m.get("question") or m.get("groupItemTitle") or "")
-                        import re
-                        nums = [float(x.replace(",", "")) for x in re.findall(r"\d{1,2},\d{3}|\d{4}", q_str)]
-                        if nums:
-                            return abs(nums[0] - spx_price)
-                        return 999999.0
-                    markets.sort(key=_score_market)
+                # 장기/연말 마켓 즉시 제외
+                if any(b in t_low for b in long_term_ban):
+                    continue
 
-                for m in markets:
+                # 만기일(endDate) 체크: 오늘로부터 5일 이상 남은 장기 마켓은 무조건 제외
+                end_str = str(ev.get("endDate") or "")[:10]
+                if end_str:
+                    try:
+                        end_dt = datetime.strptime(end_str, "%Y-%m-%d").date()
+                        days_diff = (end_dt - today).days
+                        if days_diff < 0 or days_diff > 5:
+                            continue
+                    except Exception:
+                        pass
+
+                # 타겟 날짜(예: Oct 19)가 제목에 명시되어 있는지 확인 (가산점 부여용)
+                is_exact_date = (
+                    f"{month_full.lower()} {day_num}" in t_low
+                    or f"{month_short.lower()} {day_num}" in t_low
+                    or f"{target_date.month}/{day_num}" in t_low
+                )
+
+                for m in (ev.get("markets") or []):
+                    if m.get("closed") or m.get("active") is False:
+                        continue
+
+                    q_str = (m.get("question") or m.get("groupItemTitle") or "").strip()
+                    q_low = q_str.lower()
+                    if any(b in q_low for b in long_term_ban):
+                        continue
+
                     raw_prices = m.get("outcomePrices")
                     if not raw_prices:
                         continue
                     prices = _json.loads(raw_prices) if isinstance(raw_prices, str) else raw_prices
-                    if prices and len(prices) >= 2:
-                        p0 = float(prices[0])
-                        # 이미 100% / 0%로 종료된 마켓은 제외하고 실시간 진행 중인 마켓 선택
-                        if 0.005 < p0 < 0.995:
-                            best_market = m
-                            best_ev_title = ev_title
-                            break
-                if best_market:
-                    break
+                    if not prices or len(prices) < 2:
+                        continue
 
-            if best_market:
-                raw_prices = best_market.get("outcomePrices")
-                prices = _json.loads(raw_prices) if isinstance(raw_prices, str) else raw_prices
-                raw_outcomes = best_market.get("outcomes")
-                outcomes = _json.loads(raw_outcomes) if isinstance(raw_outcomes, str) else (raw_outcomes or ["Yes", "No"])
+                    p0 = float(prices[0])
+                    # 이미 100% / 0%로 결판난 행사가 제외, 50:50에 가까운 ATM(등가격) 승부처 선호
+                    if not (0.02 <= p0 <= 0.98):
+                        continue
 
-                yes_pct = int(round(float(prices[0]) * 100))
-                no_pct = int(round(float(prices[1]) * 100))
+                    # 질문에서 행사가(예: 7,720 또는 772.5) 추출해 현재 SPX 가격과의 거리 계산
+                    nums = [float(x.replace(",", "")) for x in re.findall(r"\d{1,2},\d{3}(?:\.\d+)?|\d{3,4}(?:\.\d+)?", q_str)]
+                    strike_dist = 9999.0
+                    extracted_strike = None
+                    if spx_price and nums:
+                        for n in nums:
+                            if 4000 <= n <= 12000:  # SPX 지수 범위
+                                strike_dist = abs(n - spx_price)
+                                extracted_strike = int(round(n))
+                                break
+                            elif 400 <= n <= 1200:  # SPY 가격 범위 (SPX의 1/10 환산 비교)
+                                strike_dist = abs((n * 10.0) - spx_price)
+                                extracted_strike = f"SPY ${n:g}"
+                                break
 
-                lbl_yes = str(outcomes[0]) if len(outcomes) > 0 else "Yes"
-                lbl_no = str(outcomes[1]) if len(outcomes) > 1 else "No"
-                if lbl_yes.lower() == "up":
-                    lbl_yes, lbl_no = "상승(Up)", "하락(Down)"
-                elif lbl_yes.lower() == "yes":
-                    lbl_yes, lbl_no = "예(Yes)", "아니오(No)"
+                    # 정렬 우선순위: 1) 타겟 날짜 정확 일치 2) 현재가(ATM) 근접도 3) 확률이 50%에 가까운 정도
+                    atm_score = abs(p0 - 0.5)
+                    sort_key = (0 if is_exact_date else 1, strike_dist, atm_score)
+                    candidates.append((sort_key, ev_title, m, prices, extracted_strike))
 
-                q_title = (best_market.get("question") or best_ev_title).strip()
-                sub_item = (best_market.get("groupItemTitle") or "").strip()
-                display_title = f"{best_ev_title} ({sub_item})" if sub_item and sub_item not in best_ev_title else q_title
-
-                vol = float(best_market.get("volume") or 0)
-                vol_str = f" · 거래량 ${int(vol):,}" if vol > 0 else ""
-
-                return {
-                    "available": True,
-                    "title": display_title,
-                    "yes_pct": yes_pct,
-                    "no_pct": no_pct,
-                    "summary": f"{lbl_yes} {yes_pct}% · {lbl_no} {no_pct}%",
-                    "source": f"Polymarket Live{vol_str}"
-                }
+            if any(c[0][0] == 0 for c in candidates):
+                break
         except Exception:
             continue
 
-    return None
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    _, best_ev_title, best_m, prices, extracted_strike = candidates[0]
+
+    raw_outcomes = best_m.get("outcomes")
+    outcomes = _json.loads(raw_outcomes) if isinstance(raw_outcomes, str) else (raw_outcomes or ["Yes", "No"])
+
+    yes_pct = int(round(float(prices[0]) * 100))
+    no_pct = int(round(float(prices[1]) * 100))
+
+    lbl_yes = str(outcomes[0]) if len(outcomes) > 0 else "Yes"
+    lbl_no = str(outcomes[1]) if len(outcomes) > 1 else "No"
+    if lbl_yes.lower() == "up":
+        lbl_yes, lbl_no = "상승(Up)", "하락(Down)"
+    elif lbl_yes.lower() in ("yes", "above"):
+        lbl_yes, lbl_no = "상회(Yes)", "하회(No)"
+
+    sub_item = (best_m.get("groupItemTitle") or "").strip()
+    date_tag = target_date.strftime("%m/%d")
+    if extracted_strike:
+        display_title = f"[{date_tag}] SPX {extracted_strike}선 마감 확률" if isinstance(extracted_strike, int) else f"[{date_tag}] {extracted_strike} 마감 확률"
+    elif sub_item and sub_item not in best_ev_title:
+        display_title = f"[{date_tag}] {best_ev_title} ({sub_item})"
+    else:
+        display_title = f"[{date_tag}] {(best_m.get('question') or best_ev_title).strip()}"
+
+    vol = float(best_m.get("volume") or 0)
+    vol_str = f" · 거래량 ${int(vol):,}" if vol > 0 else ""
+
+    return {
+        "available": True,
+        "title": display_title,
+        "yes_pct": yes_pct,
+        "no_pct": no_pct,
+        "summary": f"{lbl_yes} {yes_pct}% · {lbl_no} {no_pct}%",
+        "source": f"Polymarket Daily{vol_str}"
+    }
 
 
 def get_polymarket_spx(spx_price):
-    return cached("polymarket_spx", 60, lambda: fetch_polymarket_spx_data(spx_price)) or {
+    return cached("polymarket_spx_daily", 60, lambda: fetch_polymarket_spx_data(spx_price)) or {
         "available": False,
-        "title": "현재 열린 SPX 폴리마켓 배팅 없음",
+        "title": "당일 SPX 일일 폴리마켓 개장 대기",
         "yes_pct": 0,
         "no_pct": 0,
-        "summary": "실시간 마켓 개설 대기 중",
-        "source": "Polymarket Live"
+        "summary": "연말/장기 마켓 제외됨 (일일 마켓 전용)",
+        "source": "Polymarket Daily"
     }
-
 
 # ─────────────────────────────────────────────────────────────
 # 캔들 데이터 / CVD / Volume Profile (전 시간대 1분봉 실시간 정밀 합성)
