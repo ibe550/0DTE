@@ -1251,12 +1251,14 @@ def get_candles(token, inst, tf):
 
 def resolve_futures_front(token, root):
     """선물 캔들용 근월물 심볼 결정 (pricehistory는 개별 월물 필요).
-    후보 월물 중 최근 1일 거래량 최대인 것을 선택, 24시간 캐시 (만기 롤오버 자동 대응)."""
+    후보 월물 중 최근 5일 거래량 최대인 것을 선택, 24시간 캐시 (만기 롤오버 자동 대응).
+    5일 윈도우라 주말에도 금요일 데이터가 포함됨. 전부 실패 시 첫 후보 반환 (None 금지)."""
     def load():
         now = datetime.now(ET)
+        cands = _futures_candidates(root, now)
         best, best_vol = None, 0.0
-        for cand in _futures_candidates(root, now):
-            cs = schwab_candles(token, cand, 1, 1)
+        for cand in cands:
+            cs = schwab_candles(token, cand, 1, 5)
             if not cs:
                 continue
             v = sum(c["v"] for c in cs)
@@ -1264,7 +1266,7 @@ def resolve_futures_front(token, root):
                 best, best_vol = cand, v
             elif best and v < best_vol * 0.5:
                 break  # 이후 월물은 거래량이 더 작으므로 중단
-        return best
+        return best or (cands[0] if cands else None)
 
     return cached(f"futures_front:{root}", 86400, load)
 
@@ -2231,9 +2233,11 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
 
     vwap_calc = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m else None
     vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
-    # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약)
+    # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약). ES 실패 시 SPY로 폴백 (카드가 비지 않도록).
     cvd = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts") if es_c else None
     cvd_overnight = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="overnight") if es_c else None
+    if cvd is None and spy_c:
+        cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et)
 
     rsi = None
     if spx_r and spx_r.get("candles"):
