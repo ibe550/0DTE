@@ -15,11 +15,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
-# ▼▼▼ 이 세 줄이 반드시 있어야 Vercel 서버가 정상 작동합니다 ▼▼▼
 app = FastAPI()
 handler = app
 application = app
-# ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲ ▲▲▲
 
 # 기존 코드에 MAGS(MAG7 ETF)와 국채 금리 지표($IRX, $TNX, $TYX)를 추가합니다.
 SCHWAB_QUOTES = OrderedDict([
