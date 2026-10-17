@@ -660,13 +660,6 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
         target_items = active_today_items if active_today_items else today_items
         is_tomorrow = False
 
-    # 장중(16:00 ET 이전)이거나 미래 일정이 전혀 없을 때만 당일 이벤트 노출
-    if not target_items:
-        today_items = [e for e in events if e["dt"].date() == today]
-        active_today_items = [e for e in today_items if (now_ts - e["ts"]) <= 3600]
-        target_items = active_today_items if active_today_items else today_items
-        is_tomorrow = False
-
     target_items.sort(key=lambda x: x["ts"])
     out_items = []
     for it in target_items:
