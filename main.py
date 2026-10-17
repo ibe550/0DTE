@@ -1371,10 +1371,66 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         abs_pin_val = top_pin["abs_gex_m"]
     is_0dte_session = bool((now_et.hour < 16 and exp_date == now_et.date().isoformat()) or (now_et.hour >= 16 and exp_date >= now_et.date().isoformat()))
 
+   # --- 실제 SPX Gamma Flip (Zero-Gamma 변곡점) 정밀 계산 ---
+    real_gamma_flip = None
+    gamma_flip_note = None
+    try:
+        valid_strikes = sorted(
+            [s for s in by_strike if s.get("strike") is not None],
+            key=lambda x: float(x["strike"])
+        )
+        if spot and len(valid_strikes) >= 4:
+            near_strikes = [s for s in valid_strikes if abs(float(s["strike"]) - spot) <= 150]
+            if len(near_strikes) >= 4:
+                valid_strikes = near_strikes
+
+        if len(valid_strikes) >= 2:
+            # 1) 개별 행사가 노이즈 완화를 위한 3-Strike 스무딩 Net GEX 산출
+            n_st = len(valid_strikes)
+            smoothed_gex = []
+            for idx in range(n_st):
+                win = valid_strikes[max(0, idx - 1):min(n_st, idx + 2)]
+                avg_net = sum(float(x.get("net_gex_m", x.get("net_gex", 0.0))) for x in win) / len(win)
+                smoothed_gex.append((float(valid_strikes[idx]["strike"]), avg_net))
+
+            # 2) 음(-)에서 양(+)으로 감마가 뒤집히는 영교차점(Zero-Crossing) 선형 보간
+            crossings = []
+            for idx in range(len(smoothed_gex) - 1):
+                k1, g1 = smoothed_gex[idx]
+                k2, g2 = smoothed_gex[idx + 1]
+                if g1 == 0:
+                    crossings.append((round(k1, 1), g2 > 0))
+                elif (g1 < 0 and g2 > 0) or (g1 > 0 and g2 < 0):
+                    flip_pt = k1 + (k2 - k1) * (0.0 - g1) / (g2 - g1)
+                    crossings.append((round(flip_pt, 1), g1 < 0 and g2 > 0))
+
+            if crossings:
+                # 음(-) -> 양(+) 정방향 변곡점 우선, 현재가(spot)에서 가장 가까운 지점 선택
+                pos_crossings = [c[0] for c in crossings if c[1]]
+                candidates = pos_crossings if pos_crossings else [c[0] for c in crossings]
+                real_gamma_flip = min(candidates, key=lambda x: abs(x - spot)) if spot else candidates[0]
+                gamma_flip_note = "Zero-GEX 선형보간 (실시간 체인)"
+            else:
+                # 3) 전 구간 단일 부호 편향 장세일 때: Call/Put 감마 가중 힘의 균형점 산출
+                t_call = sum(abs(float(s.get("call_gex_m", s.get("call_gex", 0.0)))) for s in valid_strikes)
+                t_put = sum(abs(float(s.get("put_gex_m", s.get("put_gex", 0.0)))) for s in valid_strikes)
+                if t_call > 0 and t_put > 0:
+                    c_center = sum(float(s["strike"]) * abs(float(s.get("call_gex_m", s.get("call_gex", 0.0)))) for s in valid_strikes) / t_call
+                    p_center = sum(float(s["strike"]) * abs(float(s.get("put_gex_m", s.get("put_gex", 0.0)))) for s in valid_strikes) / t_put
+                    w_put = t_put / (t_call + t_put)
+                    real_gamma_flip = round(c_center * w_put + p_center * (1.0 - w_put), 1)
+                    gamma_flip_note = "Call/Put 감마 가중 균형점"
+    except Exception:
+        real_gamma_flip = None
+
+    if real_gamma_flip is None:
+        real_gamma_flip = round((call_wall + put_wall) / 2.0, 1) if (call_wall and put_wall) else round(spot, 1)
+        gamma_flip_note = "Wall 중간값 폴백"
+
     return {
-        "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session,
+        "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session, "spot": round(spot, 1),
         "call_wall": round(call_wall, 1) if call_wall else None, "put_wall": round(put_wall, 1) if put_wall else None,
-        "gamma_flip": round(spot, 1), "gamma_flip_note": None,
+        "gamma_flip": real_gamma_flip, "gamma_flip_note": gamma_flip_note,
         "em_pt": round(em_pt, 1) if em_pt else None, "expected_move": f"±{em_pt:.1f}pt ({em_pt / spot * 100:.2f}%)" if em_pt else None,
         "net_gex": fmt_dollars(net_total), "regime": "positive" if net_total >= 0 else "negative",
         "regime_text": "양(+) 감마 우세 - 딜러 헤지가 변동성 억제" if net_total >= 0 else "음(−) 감마 우세 - 변동성 증폭 구간",
