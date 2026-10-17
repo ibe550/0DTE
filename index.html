@@ -222,7 +222,7 @@
             <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
                 <div class="flex justify-between items-start">
                     <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">USO (OIL ETF)</span>
-                    <span id="uso-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">Yahoo (USO)</span>
+                    <span id="uso-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">Schwab (USO)</span>
                 </div>
                 <div id="uso-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
                 <div id="uso-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
@@ -243,7 +243,7 @@
                 cEl.textContent = sign + chg.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
                 pEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + col + ' tracking-tight my-0.5 truncate';
                 cEl.className = 'text-[8px] sm:text-xs lg:text-sm font-semibold ' + col + ' truncate';
-                if (sEl) sEl.textContent = 'Yahoo (USO)';
+                if (sEl) sEl.textContent = 'Schwab (USO)';
             }
             function loadUso() {
                 var yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/USO?interval=1d&range=5d';
