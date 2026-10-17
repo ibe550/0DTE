@@ -98,8 +98,9 @@ function renderCvd(cvd) {
 
     // Auto-refresh yeroo dhufu tf filatamee jiru (fakkeenyaaf 5m) chaartii 1mtiin akka hin balleessine eega
     var incomingSource = String(cvd.source || '');
-    var expectedTag = 'SPY ' + (currentCvdTf === '1h' ? '1H' : currentCvdTf);
-    if (incomingSource.indexOf('SPY ') !== -1 && incomingSource.indexOf(expectedTag) === -1) {
+    var symTag = incomingSource.indexOf('ES ') !== -1 ? 'ES ' : (incomingSource.indexOf('SPY ') !== -1 ? 'SPY ' : '');
+    var expectedTag = symTag + (currentCvdTf === '1h' ? '1H' : currentCvdTf);
+    if (symTag && incomingSource.indexOf(expectedTag) === -1) {
         fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
             .then(function(r) { return r.json(); })
             .then(function(d) { if (d && d.cvd) renderCvdDirect(d.cvd); })
@@ -116,7 +117,7 @@ function renderCvdDirect(cvd) {
     if (!bars.length) return;
 
     var tfLabel = (currentCvdTf === '1h' ? '1H' : currentCvdTf);
-    var srcLabel = cvd.source || ('Charles Schwab (SPY ' + tfLabel + ')');
+    var srcLabel = cvd.source || ('Charles Schwab (ES ' + tfLabel + ')');
 
     safeSet('cvd-title-tf', tfLabel.toUpperCase());
     safeSet('cvd-source', srcLabel);
@@ -166,7 +167,7 @@ function renderCvdDirect(cvd) {
     var sDate = cvd.session_date || (cvd.data_time ? cvd.data_time.split(' ')[0] : '');
 
     safeSet('cvd-agg-range', cvd.aggregate_range || (sDate + ' 정규장 (' + tStart + ' ~ ' + tEndFull + ') · ' + bars.length + '개 ' + tfLabel + ' 봉'));
-    safeSet('cvd-data-desc', cvd.data_desc || ('SPY 정규장 · ' + srcLabel + ' · 체결 압력 CVD'));
+    safeSet('cvd-data-desc', cvd.data_desc || ('ES 정규장 · ' + srcLabel + ' · 체결 압력 CVD (BVC 추정치)'));
 
     var pill = document.getElementById('cvd-status-pill');
     if (pill) {
@@ -212,7 +213,14 @@ function renderCvdDirect(cvd) {
     var sellFill = document.getElementById('cvd-sell-fill');
     if (sellFill) sellFill.style.width = sellPctRound + '%';
 
-    safeSet('cvd-summary-text', cvd.summary_text || cvd.summary || ('CVD Flow: Buy ' + buyPctRound + '% / Sell ' + sellPctRound + '% in session.'));
+    var extraTxt = '';
+    if (cvd.divergence && cvd.divergence.text) {
+        extraTxt += ' · ' + (cvd.divergence.type === 'bearish' ? '🔻' : '🔺') + cvd.divergence.text;
+    }
+    if (cvd.momentum && cvd.momentum.text) {
+        extraTxt += ' · ' + cvd.momentum.text;
+    }
+    safeSet('cvd-summary-text', (cvd.summary_text || cvd.summary || ('CVD Flow: Buy ' + buyPctRound + '% / Sell ' + sellPctRound + '% in session.')) + extraTxt);
 
     var svg = document.getElementById('cvd-bars-svg');
     if (!svg) return;
@@ -358,3 +366,23 @@ function initCvdInteraction() {
 }
 
 document.addEventListener('DOMContentLoaded', initCvdInteraction);
+
+// 야간 ES CVD 한 줄 표시 (전일 18:00 → 당일 09:30 ET)
+function renderCvdOvernight(cvdOn) {
+    var el = document.getElementById('cvd-overnight-line');
+    if (!el) return;
+    if (!cvdOn || !cvdOn.bars || !cvdOn.bars.length) {
+        el.style.display = 'none';
+        return;
+    }
+    el.style.display = '';
+    var toneTxt = cvdOn.tone === 'bull' ? '매수 우세' : (cvdOn.tone === 'bear' ? '매도 우세' : '균형');
+    var toneCls = cvdOn.tone === 'bull' ? 'text-emerald-300' : (cvdOn.tone === 'bear' ? 'text-rose-300' : 'text-slate-300');
+    var scale = Number(cvdOn.vol_scale) > 0 ? Number(cvdOn.vol_scale) : 1000;
+    var lastCvd = Number(cvdOn.bars[cvdOn.bars.length - 1].cvd_line || 0) * scale;
+    var unitLbl = cvdOn.vol_unit_label || '계약';
+    el.innerHTML = '🌙 야간 CVD <span class="' + toneCls + ' font-bold">' + toneTxt + '</span>'
+        + ' <span class="text-slate-500">' + (cvdOn.aggregate_range || '') + '</span>'
+        + ' · Buy ' + cvdOn.buy_pct + '% / Sell ' + cvdOn.sell_pct + '%'
+        + ' · CVD <span class="text-amber-200 font-bold">' + fmtSignedM(lastCvd) + '</span> ' + unitLbl;
+}
