@@ -1249,288 +1249,164 @@ def fetch_schwab_chain(token, today_date):
 # ─────────────────────────────────────────────────────────────
 # 0DTE Credit Spread Optimizer 계산 엔진
 # ─────────────────────────────────────────────────────────────
-def compute_spread_optimizer(
-    contracts,
-    spot,
-    call_wall,
-    put_wall,
-    em_pt
-):
-
+def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
     if not spot:
         return None
 
-    spread_width = 10.0
+    cw = float(call_wall) if call_wall else (spot + 30.0)
+    pw = float(put_wall) if put_wall else (spot - 30.0)
+    em = float(em_pt) if em_pt else 25.0
 
-    contract_map = {}
+    c_bound = max(cw, spot + em)
+    p_bound = min(pw, spot - em)
+    width = 10.0
 
-    for c in contracts or []:
+    # 1. 행사가별 실제 매수(Bid)·매도(Ask) 호가 및 유동성 맵 구성
+    quote_map = {}
+    if contracts:
+        for c in contracts:
+            try:
+                side_raw = str(c.get("type") or c.get("putCall") or c.get("side") or "").upper()
+                side = "C" if side_raw.startswith("C") else ("P" if side_raw.startswith("P") else "")
+                k = float(c.get("strike") or 0)
+                if not side or k <= 0:
+                    continue
 
-        strike = round(c.get("K", 0), 1)
+                bid = float(c.get("bid") or 0.0)
+                ask = float(c.get("ask") or 0.0)
+                mid = round((bid + ask) / 2.0, 2) if (bid > 0 and ask > 0) else float(c.get("mid") or c.get("mark") or c.get("last") or 0.0)
+                ba_spread = round(max(0.0, ask - bid), 2) if (bid > 0 and ask > 0) else 99.0
+                vol = int(c.get("volume") or c.get("totalVolume") or 0)
+                oi = int(c.get("open_interest") or c.get("openInterest") or 0)
 
-        contract_map[
-            (c["side"], strike)
-        ] = c
+                quote_map[(side, round(k, 1))] = {
+                    "bid": bid, "ask": ask, "mid": mid,
+                    "spread": ba_spread, "liq": vol + oi
+                }
+            except Exception:
+                continue
 
-    def calc_metrics(
-        short_opt,
-        long_opt,
-        side
-    ):
+    def _eval_spread(side, s_k, l_k, bound_val):
+        qs = quote_map.get((side, round(s_k, 1)))
+        ql = quote_map.get((side, round(l_k, 1)))
+        dist_bound = round((s_k - bound_val) if side == "C" else (bound_val - s_k), 1)
+        dist_spot = round(abs(s_k - spot), 1)
 
-        sb = num(short_opt.get("bid"))
-        sa = num(short_opt.get("ask"))
-
-        lb = num(long_opt.get("bid"))
-        la = num(long_opt.get("ask"))
-
-        if None in (
-            sb, sa,
-            lb, la
-        ):
+        if not qs or not ql or (qs["bid"] <= 0 and qs["mid"] <= 0):
             return None
 
-        nat_credit = round(
-            sb - la,
-            2
-        )
+        # 실제 매수·매도 호가 기반 체결가 계산
+        # Natural(즉시 체결가) = 매도레그 Bid - 매수레그 Ask
+        nat_cr = round(qs["bid"] - ql["ask"], 2) if (qs["bid"] > 0 and ql["ask"] > 0) else None
+        mid_cr = round(qs["mid"] - ql["mid"], 2) if (qs["mid"] > 0 and ql["mid"] > 0) else None
+        leg_spread_sum = round(qs["spread"] + ql["spread"], 2)
 
-        mid_credit = round(
-            ((sb + sa) / 2.0)
-            -
-            ((lb + la) / 2.0),
-            2
-        )
-
-        if nat_credit <= 0:
-            return None
-
-        max_profit = round(
-            nat_credit * 100,
-            0
-        )
-
-        max_loss = round(
-            (
-                spread_width
-                -
-                nat_credit
-            ) * 100,
-            0
-        )
-
-        if side == "C":
-
-            breakeven = round(
-                short_opt["K"]
-                +
-                nat_credit,
-                2
-            )
-
+        # 실전 체결 예상 크레딧(Fill Credit): Mid에서 호가 슬리피지(25%) 차감, 목표 크레딧 하드코딩 배제
+        if nat_cr is not None and mid_cr is not None:
+            fill_cr = round(max(nat_cr, mid_cr - leg_spread_sum * 0.25), 2)
         else:
+            fill_cr = mid_cr if (mid_cr and mid_cr > 0) else nat_cr
 
-            breakeven = round(
-                short_opt["K"]
-                -
-                nat_credit,
-                2
-            )
+        if fill_cr is None or fill_cr <= 0.15 or fill_cr >= width * 0.90:
+            return None
 
-        fill_ratio = round(
-            nat_credit / mid_credit,
-            2
-        ) if mid_credit > 0 else 0
+        # 최대 손실(Max Loss) 및 손익분기점(BEP) 정밀 계산
+        max_loss_pt = round(width - fill_cr, 2)
+        max_loss_usd = int(round(max_loss_pt * 100))
+        max_profit_usd = int(round(fill_cr * 100))
+        bep = round(s_k + fill_cr, 2) if side == "C" else round(s_k - fill_cr, 2)
+        ror_pct = round((fill_cr / max_loss_pt) * 100, 1) if max_loss_pt > 0 else 0.0
+
+        # 호가 기반 실제 체결 가능성(Fill Feasibility) 판정
+        slip_ratio = leg_spread_sum / max(fill_cr, 0.01)
+        if qs["bid"] <= 0.05 or leg_spread_sum > 2.50:
+            fill_status = "LOW_LIQ"
+            badge = f"⚠️ 호가 공백 · 체결 주의 (BEP {bep:.1f})"
+        elif nat_cr is not None and nat_cr >= 0.25 and slip_ratio <= 0.45:
+            fill_status = "SWEET_SPOT"
+            badge = f"✅ 즉시 체결 양호 · BEP {bep:.1f} · 최대손실 -${max_loss_usd}"
+        elif slip_ratio <= 0.85:
+            fill_status = "LIMIT_OK"
+            badge = f"🟢 지정가 체결 가능 · BEP {bep:.1f} · 최대손실 -${max_loss_usd}"
+        else:
+            fill_status = "WIDE_SPREAD"
+            badge = f"🟡 호가 벌어짐(슬리피지 주의) · BEP {bep:.1f}"
+
+        nat_str = f"${nat_cr:.2f}" if nat_cr is not None and nat_cr > 0 else "불가"
+        guide = (
+            f"실제호가(매도Bid ${qs['bid']:.2f}/매수Ask ${ql['ask']:.2f}) · "
+            f"즉시체결 {nat_str} / 예상체결 ${fill_cr:.2f}(+${max_profit_usd}) · "
+            f"최대손실 -${max_loss_usd}(RoR {ror_pct:.1f}%) · 손익분기 {bep:.1f}"
+        )
+
+        # 점수 산정: 목표 크레딧 고정 없이 [체결 용이성 + 안전 마진 + 손익비 균형]으로 평가
+        liq_score = 30.0 if fill_status == "SWEET_SPOT" else (20.0 if fill_status == "LIMIT_OK" else 5.0)
+        safety_score = min(25.0, max(0.0, dist_bound * 1.5)) + (15.0 if dist_bound >= 0 else -20.0)
+        ror_score = max(0.0, 20.0 - abs(ror_pct - 15.0) * 0.6)
+        score = liq_score + safety_score + ror_score
 
         return {
-            "real_credit": nat_credit,
-            "mid_credit": mid_credit,
-            "max_profit": max_profit,
-            "max_loss": max_loss,
-            "breakeven": breakeven,
-            "fill_ratio": fill_ratio
+            "short": s_k, "long": l_k, "credit": fill_cr,
+            "nat_credit": nat_cr, "mid_credit": mid_cr,
+            "max_loss": max_loss_pt, "max_loss_usd": max_loss_usd,
+            "max_profit_usd": max_profit_usd, "bep": bep, "ror_pct": ror_pct,
+            "short_bid": qs["bid"], "long_ask": ql["ask"], "ba_spread": leg_spread_sum,
+            "dist_spot": dist_spot, "dist_bound": dist_bound,
+            "status": fill_status, "badge": badge, "guide": guide,
+            "boundary": round(bound_val, 1), "_score": score
         }
 
-    def score_trade(metrics):
+    # 2. 안전선(c_bound / p_bound) 바깥 행사가 후보군 탐색 (5pt 단위)
+    min_short_c = float(int((c_bound + 4.99) // 5) * 5)
+    max_short_p = float(int(p_bound // 5) * 5)
 
-        score = 100
-
-        if metrics["real_credit"] < 0.80:
-            score -= 35
-
-        if metrics["fill_ratio"] < 0.60:
-            score -= 25
-
-        if metrics["max_loss"] > 950:
-            score -= 20
-
-        return max(score, 0)
-
-    cw = call_wall or (
-        spot + 30
-    )
-
-    pw = put_wall or (
-        spot - 30
-    )
-
-    em = em_pt or 25
-
-    call_boundary = max(
-        cw,
-        spot + em
-    )
-
-    put_boundary = min(
-        pw,
-        spot - em
-    )
-
-    best_call = None
-    best_put = None
-
-    #
-    # CALL CREDIT SPREAD
-    #
-
-    start_call = (
-        math.ceil(
-            call_boundary / 5
-        ) * 5
-    )
-
+    call_candidates = []
+    put_candidates = []
     for i in range(8):
+        sc = min_short_c + (i * 5.0)
+        res_c = _eval_spread("C", sc, sc + width, c_bound)
+        if res_c:
+            call_candidates.append(res_c)
 
-        short_k = start_call + i * 5
-        long_k = short_k + 10
+        sp = max_short_p - (i * 5.0)
+        res_p = _eval_spread("P", sp, sp - width, p_bound)
+        if res_p:
+            put_candidates.append(res_p)
 
-        short_opt = contract_map.get(
-            ("C", short_k)
-        )
+    best_c = max(call_candidates, key=lambda x: x["_score"]) if call_candidates else None
+    best_p = max(put_candidates, key=lambda x: x["_score"]) if put_candidates else None
 
-        long_opt = contract_map.get(
-            ("C", long_k)
-        )
+    if not best_c:
+        bep_fallback_c = round(min_short_c, 1)
+        best_c = {
+            "short": min_short_c, "long": min_short_c + width, "credit": None,
+            "max_loss": None, "max_loss_usd": None, "bep": bep_fallback_c,
+            "status": "WAITING", "badge": f"장중 호가 대기 · 기준선 {min_short_c:.0f}",
+            "guide": f"안전선({c_bound:.0f}) 바깥 {width:.0f}pt 폭 · 정규장 개장 후 매수·매도 호가 유입 시 최대손실·BEP 자동 산출",
+            "boundary": round(c_bound, 1)
+        }
+    else:
+        best_c.pop("_score", None)
 
-        if not short_opt or not long_opt:
-            continue
-
-        metrics = calc_metrics(
-            short_opt,
-            long_opt,
-            "C"
-        )
-
-        if not metrics:
-            continue
-
-        score = score_trade(
-            metrics
-        )
-
-        if score >= 70:
-
-            best_call = {
-
-                "short": short_k,
-
-                "long": long_k,
-
-                "score": score,
-
-                **metrics,
-
-                "status":
-                    "TRADEABLE",
-
-                "badge":
-                    "✅ 체결 가능",
-
-                "guide":
-                    f"Call Wall 기준 "
-                    f"{short_k-call_boundary:.1f}pt "
-                    f"이격"
-            }
-
-            break
-
-    #
-    # PUT CREDIT SPREAD
-    #
-
-    start_put = (
-        math.floor(
-            put_boundary / 5
-        ) * 5
-    )
-
-    for i in range(8):
-
-        short_k = start_put - i * 5
-        long_k = short_k - 10
-
-        short_opt = contract_map.get(
-            ("P", short_k)
-        )
-
-        long_opt = contract_map.get(
-            ("P", long_k)
-        )
-
-        if not short_opt or not long_opt:
-            continue
-
-        metrics = calc_metrics(
-            short_opt,
-            long_opt,
-            "P"
-        )
-
-        if not metrics:
-            continue
-
-        score = score_trade(
-            metrics
-        )
-
-        if score >= 70:
-
-            best_put = {
-
-                "short": short_k,
-
-                "long": long_k,
-
-                "score": score,
-
-                **metrics,
-
-                "status":
-                    "TRADEABLE",
-
-                "badge":
-                    "✅ 체결 가능",
-
-                "guide":
-                    f"Put Wall 기준 "
-                    f"{put_boundary-short_k:.1f}pt "
-                    f"이격"
-            }
-
-            break
+    if not best_p:
+        bep_fallback_p = round(max_short_p, 1)
+        best_p = {
+            "short": max_short_p, "long": max_short_p - width, "credit": None,
+            "max_loss": None, "max_loss_usd": None, "bep": bep_fallback_p,
+            "status": "WAITING", "badge": f"장중 호가 대기 · 기준선 {max_short_p:.0f}",
+            "guide": f"안전선({p_bound:.0f}) 바깥 {width:.0f}pt 폭 · 정규장 개장 후 매수·매도 호가 유입 시 최대손실·BEP 자동 산출",
+            "boundary": round(p_bound, 1)
+        }
+    else:
+        best_p.pop("_score", None)
 
     return {
-
         "available": True,
-
-        "width": 10,
-
-        "call_spread": best_call,
-
-        "put_spread": best_put
+        "width": int(width),
+        "engine_policy": "실제 매수·매도 호가로 체결 가능성을 검토하고, 최대 손실과 손익분기점을 계산합니다. 목표 크레딧만으로 추천하지 않습니다.",
+        "call_spread": best_c,
+        "put_spread": best_p,
     }
-
-
 def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
     S = spot / scale
     y, m, d = (int(x) for x in exp_date.split("-"))
