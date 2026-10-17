@@ -1,8 +1,6 @@
 let _vix1dPrice = null;
 let _vixPrice = null;
 
-
-
 function updateVixRatio() {
     const card = $('vix-ratio-card');
     const badge = $('vix-status-badge');
@@ -10,8 +8,6 @@ function updateVixRatio() {
     const ratioEl = $('vix-ratio-val');
     const dot = $('vix-status-dot');
     if (!card || !badge || !desc || !ratioEl || !dot) return;
-
-
 
     if (!isNum(_vix1dPrice) || !isNum(_vixPrice) || _vixPrice <= 0) {
         badge.className = 'px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-slate-800 text-slate-400 border border-slate-700';
@@ -48,6 +44,10 @@ function updateVixRatio() {
 }
 
 function renderQuote(pfx, q, opts = {}) {
+    // CNBC에서 직접 받아오는 종목들은 백엔드가 빈 값(null)을 보내도 N/A로 지우지 않도록 보호
+    if (pfx === 'mag7' || pfx === 'mags' || pfx === 'uso') return;
+    if ((pfx === 'es' || pfx === 'wti' || pfx === 'brent') && (!q || !isNum(q.price))) return;
+
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
         setTone(pfx + '-price', 'text-slate-500'); setTone(pfx + '-change', 'text-slate-500');
@@ -62,39 +62,14 @@ function renderQuote(pfx, q, opts = {}) {
     setTone(pfx + '-price', toneOf(dir));
     setTone(pfx + '-change', toneOf(dir));
     const s = $(pfx + '-source');
-    if (s && q.source) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
+    if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
+
     if (pfx === 'vix1d') { _vix1dPrice = q.price; updateVixRatio(); }
     if (pfx === 'vix') { _vixPrice = q.price; updateVixRatio(); }
 }
 
 function renderYields(y) {
-    if (!y) return;
-    const yieldKeys = ['yield-3m', 'yield-10y', 'yield-30y'];
-    yieldKeys.forEach(k => {
-        const item = y[k.replace('yield-', '')];
-        if (!item) {
-            setText(k, NA); setText(`${k}-chg`, NA); setText(`${k}-src`, NA);
-            setTone(k, 'text-slate-500'); setTone(`${k}-chg`, 'text-slate-500');
-            return;
-        }
-        setText(k, item.price ? item.price.toFixed(3) + '%' : NA);
-        const bp = isNum(item.change) ? Math.round(item.change * 100) : null;
-        if (bp !== null) {
-            setText(`${k}-chg`, `${bp > 0 ? '+' : ''}${bp} bp`);
-            setTone(`${k}-chg`, bp > 0 ? 'text-rose-400' : (bp < 0 ? 'text-emerald-400' : 'text-slate-400'));
-        } else {
-            setText(`${k}-chg`, NA); setTone(`${k}-chg`, 'text-slate-500');
-        }
-        setText(`${k}-src`, srcShort(item.source)); $(`${k}-src`).title = item.source || '';
-    });
-    const spread = y.spread;
-    if (spread && isNum(spread.change)) {
-        const spBp = Math.round(spread.change * 100);
-        setText('yield-spread', `${spBp > 0 ? '+' : ''}${spBp} bp`);
-        setTone('yield-spread', spBp > 0 ? 'text-emerald-400' : 'text-rose-400');
-    } else {
-        setText('yield-spread', NA); setTone('yield-spread', 'text-slate-500');
-    }
+    return;
 }
 
 function renderPolymarket(p) {
@@ -115,7 +90,6 @@ function renderRsi(r) {
         if (badge) badge.classList.add('hidden');
         return;
     }
-
     badge.classList.remove('hidden');
     const val = r.val.toFixed(1);
     let statusText = '중립', colorCls = 'bg-slate-800 text-slate-300 border-slate-700';
@@ -147,7 +121,7 @@ function renderShockAlert(alert) {
 }
 
 function renderStatus(data) {
-    $('global-source-badge').innerText = `Source: Schwab API Connected`;
+    $('global-source-badge').innerText = `Source: ${data.source_summary}`;
     const line = $('schwab-status-line');
     const okSchwab = (data.schwab_status || '').startsWith('연결됨');
     if (okSchwab) line.classList.add('hidden');
@@ -156,3 +130,115 @@ function renderStatus(data) {
         line.innerText = `⚠ ${data.schwab_status}`;
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// ES · WTI · BRENT · MAG7 · USO · 미 국채 3종(3M·10Y·30Y) CNBC 통합 연동
+// ─────────────────────────────────────────────────────────────
+function applyMacroCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText, useComma) {
+    var priceEl = document.getElementById(prefix + '-price');
+    var changeEl = document.getElementById(prefix + '-change');
+    var srcEl = document.getElementById(prefix + '-source');
+    if (!priceEl || !changeEl || price === null || price === undefined || isNaN(price)) return;
+
+    var pNum = Number(price);
+    var cNum = Number(change || 0);
+    var pctNum = Number(changePct || 0);
+    var sign = cNum > 0 ? '+' : '';
+
+    priceEl.textContent = useComma
+        ? pNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : pNum.toFixed(2);
+
+    var chgStr = sign + cNum.toFixed(2) + ' (' + sign + pctNum.toFixed(2) + '%)';
+    changeEl.textContent = extraSubText ? (chgStr + ' · ' + extraSubText) : chgStr;
+
+    var tone = cNum > 0 ? 'text-emerald-400' : (cNum < 0 ? 'text-rose-400' : 'text-slate-200');
+    setTone(prefix + '-price', tone);
+    setTone(prefix + '-change', tone);
+
+    if (srcEl && sourceLabel) srcEl.textContent = sourceLabel;
+}
+
+function applyYieldCardStyle(idPrefix, yieldVal, changeVal, sourceLabel) {
+    if (yieldVal === null || yieldVal === undefined || isNaN(yieldVal)) return;
+    var bp = Math.round((changeVal || 0) * 100);
+    var bpSign = bp > 0 ? '+' : '';
+
+    setText(idPrefix, yieldVal.toFixed(3) + '%');
+    setTone(idPrefix, 'text-slate-200');
+    setText(idPrefix + '-src', sourceLabel);
+    setText(idPrefix + '-chg', bpSign + bp + ' bp');
+    setTone(idPrefix + '-chg', bp > 0 ? 'text-rose-400' : (bp < 0 ? 'text-emerald-400' : 'text-slate-400'));
+}
+
+function handleEtfWithExtended(prefix, baseLabel, q, regPrice, regChg, regPct) {
+    var ext = q.ExtendedMktQuote;
+    if (q.curmktstatus && q.curmktstatus !== 'REG_MKT' && ext && ext.last) {
+        var extPrice = parseFloat(String(ext.last).replace(/[^0-9.-]/g, ''));
+        var extChg = parseFloat(String(ext.change || '0').replace(/[^0-9.-]/g, ''));
+        var extPct = parseFloat(String(ext.change_pct || '0').replace(/[^0-9.-]/g, ''));
+        if (!isNaN(extPrice) && extPrice > 0) {
+            var tag = ext.type === 'PRE' ? 'PRE' : 'AH';
+            applyMacroCardStyle(prefix, extPrice, extChg, extPct, 'CNBC (' + tag + ')', '종가 ' + regPrice.toFixed(2), false);
+            return;
+        }
+    }
+    applyMacroCardStyle(prefix, regPrice, regChg, regPct, 'CNBC (' + baseLabel + ')', null, false);
+}
+
+function fetchCnbcMacroQuotes() {
+    // ES(@SP.1), WTI(@CL.1), BRENT(@LCO.1) 포함 8종목 모두 한 번에 호출하여 N/A 원천 방지
+    var url = 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=@SP.1%7CMAGS%7C@CL.1%7C@LCO.1%7CUSO%7CUS3M%7CUS10Y%7CUS30Y&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var list = d && d.FormattedQuoteResult && d.FormattedQuoteResult.FormattedQuote;
+            if (!Array.isArray(list)) return;
+
+            var y3mVal = null;
+            var y10Val = null;
+            var magPrefix = document.getElementById('mag7-price') ? 'mag7' : 'mags';
+
+            list.forEach(function(q) {
+                if (!q || !q.symbol || !q.last) return;
+                var sym = q.symbol.toUpperCase();
+                var regPrice = parseFloat(String(q.last).replace(/[^0-9.-]/g, ''));
+                var regChg = parseFloat(String(q.change || '0').replace(/[^0-9.-]/g, ''));
+                var regPct = parseFloat(String(q.change_pct || '0').replace(/[^0-9.-]/g, ''));
+
+                if (sym === '@SP.1') {
+                    applyMacroCardStyle('es', regPrice, regChg, regPct, 'CNBC (ES)', null, true);
+                } else if (sym === 'MAGS') {
+                    handleEtfWithExtended(magPrefix, 'MAGS', q, regPrice, regChg, regPct);
+                } else if (sym === '@CL.1') {
+                    applyMacroCardStyle('wti', regPrice, regChg, regPct, 'CNBC (CL)', null, false);
+                } else if (sym === '@LCO.1') {
+                    applyMacroCardStyle('brent', regPrice, regChg, regPct, 'CNBC (BZ)', null, false);
+                } else if (sym === 'USO') {
+                    handleEtfWithExtended('uso', 'USO', q, regPrice, regChg, regPct);
+                } else if (sym === 'US3M') {
+                    y3mVal = regPrice;
+                    applyYieldCardStyle('yield-3m', regPrice, regChg, 'CNBC (US3M)');
+                } else if (sym === 'US10Y') {
+                    y10Val = regPrice;
+                    applyYieldCardStyle('yield-10y', regPrice, regChg, 'CNBC (US10Y)');
+                } else if (sym === 'US30Y') {
+                    applyYieldCardStyle('yield-30y', regPrice, regChg, 'CNBC (US30Y)');
+                }
+            });
+
+            if (y10Val !== null && y3mVal !== null && !isNaN(y10Val) && !isNaN(y3mVal)) {
+                var spreadBp = Math.round((y10Val - y3mVal) * 100);
+                var spSign = spreadBp > 0 ? '+' : '';
+                setText('yield-spread', spSign + spreadBp + ' bp');
+                setTone('yield-spread', spreadBp < 0 ? 'text-rose-400' : 'text-emerald-400');
+            }
+        })
+        .catch(function() {});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    fetchCnbcMacroQuotes();
+    setInterval(fetchCnbcMacroQuotes, 15000);
+});
