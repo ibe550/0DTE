@@ -1925,28 +1925,36 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     used = [q["source"] for q in quotes.values() if q]
     schwab_cnt = sum(1 for s in used if src_kind(s) == "schwab")
 
-    return {
-        "status": "success",
-        "timestamp": now_str,
-        "source_summary": f"Schwab {schwab_cnt} · Realtime Hybrid",
-        "schwab_status": schwab_msg,
-        "shock_alert": shock_alert,
-        "spx": q_spx,
-        "es": quotes.get("es"),
-        "vix1d": slim(quotes.get("vix1d")),
-        "vix": slim(quotes.get("vix")),
-        "mag7": None,
-        "econ_events": econ_events,
-        "wti": quotes.get("wti"),
-        "brent": quotes.get("brent"),
-        "yields": None,
-        "polymarket": polymarket,
-        "volume_profile": vp,
-        "gex": gex,
-        "rsi": rsi,
-        "cvd": cvd,
-        "direction": direction,
-    }
+   # 기존 main.py 어딘가에 이 부분이 있을 것입니다.
+        # 이 전체 딕셔너리를 아래 코드로 교체해 주세요!
+        
+        return {
+            "status": "success",
+            "timestamp": now_str,
+            "source_summary": f"Schwab {schwab_cnt} · Realtime Hybrid",
+            "schwab_status": schwab_msg,
+            "shock_alert": shock_alert,
+            "spx": q_spx,
+            "es": quotes.get("/ES"),         # 수정: "es" -> "/ES" (Schwab 선물 심볼)
+            "vix1d": slim(quotes.get("$VIX1D")), # 수정: "vix1d" -> "$VIX1D"
+            "vix": slim(quotes.get("$VIX")),     # 수정: "vix" -> "$VIX"
+            "mag7": quotes.get("MAGS"),      # 수정: None -> quotes.get("MAGS")
+            "econ_events": econ_events,
+            "wti": quotes.get("/CL"),        # 수정: "wti" -> "/CL"
+            "brent": quotes.get("/BZ"),      # 수정: "brent" -> "/BZ"
+            "uso": quotes.get("USO"),        # 추가: USO 데이터 반환
+            "yields": {                      # 수정: None -> 실제 데이터 구조로 변경
+                "3m": quotes.get("$IRX"),
+                "10y": quotes.get("$TNX"),
+                "30y": quotes.get("$TYX")
+            },
+            "polymarket": polymarket,
+            "volume_profile": vp,
+            "gex": gex,
+            "rsi": rsi,
+            "cvd": cvd,
+            "direction": direction,
+        }
 
 
 @app.get("/api/callback", response_class=HTMLResponse)
