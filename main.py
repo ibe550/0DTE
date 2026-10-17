@@ -1249,6 +1249,44 @@ def get_candles(token, inst, tf):
     return cached(f"candles:{inst}:{key}", 4, load)
 
 
+def resolve_futures_front(token, root):
+    """선물 캔들용 근월물 심볼 결정 (pricehistory는 개별 월물 필요).
+    후보 월물 중 최근 1일 거래량 최대인 것을 선택, 24시간 캐시 (만기 롤오버 자동 대응)."""
+    def load():
+        now = datetime.now(ET)
+        best, best_vol = None, 0.0
+        for cand in _futures_candidates(root, now):
+            cs = schwab_candles(token, cand, 1, 1)
+            if not cs:
+                continue
+            v = sum(c["v"] for c in cs)
+            if v > best_vol:
+                best, best_vol = cand, v
+            elif best and v < best_vol * 0.5:
+                break  # 이후 월물은 거래량이 더 작으므로 중단
+        return best
+
+    return cached(f"futures_front:{root}", 86400, load)
+
+
+def get_es_candles(token, tf):
+    """ES 선물 캔들 (근월물 자동 결정, BVC 매수/매도 분류 포함)"""
+    key = normalize_tf(tf)
+
+    def load():
+        s_freq, s_days, agg = TF_SPEC[key]
+        ssym = resolve_futures_front(token, "/ES")
+        if not ssym:
+            return None
+        base = get_base_candles(token, ssym, s_freq, s_days)
+        if not base:
+            return None
+        cs = aggregate_candles(base, agg) if agg else [dict(c) for c in base]
+        return {"candles": cs, "source": f"{SRC_SCHWAB} (ES {TF_LABEL[key]})"}
+
+    return cached(f"candles:es:{key}", 4, load)
+
+
 def get_rth_session(candles, now_et=None):
     if not candles:
         return [], False, None
@@ -1279,6 +1317,22 @@ def get_rth_session(candles, now_et=None):
     if all_dates:
         return sessions[all_dates[-1]], (all_dates[-1] != today), all_dates[-1].strftime("%m/%d")
     return [], False, today.strftime("%m/%d")
+
+
+def get_overnight_session(candles, now_et=None):
+    """야간 세션: 전일 18:00 ET ~ 당일 09:30 ET (ES 24시간 거래용).
+    장 시작 전 야간 기관 수급 파악용. sess_date는 'MM/DD 18:00→MM/DD 09:30' 형식."""
+    if not candles:
+        return [], False, None
+    if now_et is None:
+        now_et = datetime.now(ET)
+    today = now_et.date()
+    prev = today - timedelta(days=1)
+    start_ts = int(ET.localize(datetime(prev.year, prev.month, prev.day, 18, 0, 0)).timestamp())
+    end_ts = int(ET.localize(datetime(today.year, today.month, today.day, 9, 30, 0)).timestamp())
+    sess = [c for c in candles if start_ts <= c["t"] < end_ts]
+    label = f"{prev.strftime('%m/%d')} 18:00→{today.strftime('%m/%d')} 09:30"
+    return sess, False, label
 
 
 def compute_vwap(spy_candles, ratio, now_et=None):
@@ -1341,21 +1395,53 @@ def compute_volume_profile(spy_candles, ratio, source, now_et=None):
     }
 
 
-def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
+def detect_cvd_divergence(bars):
+    """고전적 다이버전스: 가격 고점(저점) 시점의 CVD 값을 비교 (세션 3분할: 초반 vs 후반).
+    bars: {h, l, cvd_line} 포함. 반환: None 또는 {"type": "bearish"/"bullish", "text": ...}"""
+    n = len(bars)
+    if n < 12:
+        return None
+    third = n // 3
+    prev, rec = bars[:third], bars[2 * third:]
+    if not prev or not rec:
+        return None
+    cvd_rng = (max(b["cvd_line"] for b in bars) - min(b["cvd_line"] for b in bars)) or 1.0
+    # 약세 다이버전스: 가격은 신고가인데 고점 시점 CVD는 하락 (노이즈 방지: CVD 차가 전체 레인지의 3% 초과)
+    ph_prev = max(prev, key=lambda b: b["h"])
+    ph_rec = max(rec, key=lambda b: b["h"])
+    if ph_rec["h"] > ph_prev["h"] and (ph_prev["cvd_line"] - ph_rec["cvd_line"]) > cvd_rng * 0.03:
+        return {"type": "bearish",
+                "text": f"약세 다이버전스 (가격 고점↑ {ph_prev['h']:,.1f}→{ph_rec['h']:,.1f}, CVD↓) — 매수 압력 약화"}
+    # 강세 다이버전스: 가격은 신저가인데 저점 시점 CVD는 상승
+    pl_prev = min(prev, key=lambda b: b["l"])
+    pl_rec = min(rec, key=lambda b: b["l"])
+    if pl_rec["l"] < pl_prev["l"] and (pl_rec["cvd_line"] - pl_prev["cvd_line"]) > cvd_rng * 0.03:
+        return {"type": "bullish",
+                "text": f"강세 다이버전스 (가격 저점↓ {pl_prev['l']:,.1f}→{pl_rec['l']:,.1f}, CVD↑) — 매도 압력 약화"}
+    return None
+
+
+def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None, vol_unit="shares", session="rth"):
+    """CVD 계산. session="overnight"이면 전일 18:00~당일 09:30 야간 세션.
+    vol_unit: "shares" 또는 "contracts"(ES 선물)."""
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
     if now_et is None:
         now_et = datetime.now(ET)
-    bars, is_prior, sess_date = get_rth_session(candles, now_et)
+    if session == "overnight":
+        bars, is_prior, sess_date = get_overnight_session(candles, now_et)
+    else:
+        bars, is_prior, sess_date = get_rth_session(candles, now_et)
     if not bars:
         return None
 
+    unit_label = "계약" if vol_unit == "contracts" else "주"
     buy = sell = running = 0.0
     out = []
     for c in bars:
         v = c["v"]
-        # 1분봉에서 누적된 매수/매도 볼륨(추정치)을 그대로 합산
+        # 1분봉에서 누적된 매수/매도 볼륨(BVC 추정치)을 그대로 합산
         if "buy_v" in c and "sell_v" in c and (c["buy_v"] + c["sell_v"]) > 0:
             b_v, s_v = c["buy_v"], c["sell_v"]
         else:
@@ -1365,7 +1451,9 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
         buy += b_v
         sell += s_v
         running += delta
-        out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": delta >= 0, "cvd_line": round(running / 1000.0, 2)})
+        out.append({"t": c["t"], "vol": round(v / 1000.0, 2), "is_bull": delta >= 0,
+                    "cvd_line": round(running / 1000.0, 2),
+                    "h": c["h"], "l": c["l"], "c": c["c"]})
 
     total = buy + sell
     if total <= 0:
@@ -1374,9 +1462,23 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
     sell_pct = 100 - buy_pct
     status, tone = ("Buying Pressure", "bull") if buy_pct >= 53 else (("Selling Pressure", "bear") if buy_pct <= 47 else ("Balanced", "flat"))
 
+    # 다이버전스 + 모멘텀 (최근 6봉 CVD 변화)
+    divergence = detect_cvd_divergence(out)
+    m_n = min(6, len(out))
+    mom_val = out[-1]["cvd_line"] - out[-m_n]["cvd_line"]  # 천 단위
+    mom_dir = "up" if mom_val > 0 else ("down" if mom_val < 0 else "flat")
+    mom_txt = {"up": "가속↑", "down": "감속↓", "flat": "정체→"}[mom_dir]
+    momentum = {"dir": mom_dir, "val": round(mom_val, 2),
+                "text": f"CVD 모멘텀 {mom_txt} ({m_n}봉간 {mom_val:+.1f}K {unit_label})"}
+
     end_ts = bars[-1]["t"]
-    aggregate_range = f"{sess_date} {'전일' if is_prior else ''}정규장 (09:30 ~ {datetime.fromtimestamp(end_ts, ET).strftime('%H:%M:%S ET')}) · {len(bars)}개 {tf_label} 봉"
-    prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
+    if session == "overnight":
+        aggregate_range = f"야간 ({sess_date} ET) · {len(bars)}개 {tf_label} 봉"
+        prefix, sess_label = "", "야간"
+    else:
+        aggregate_range = f"{sess_date} {'전일' if is_prior else ''}정규장 (09:30 ~ {datetime.fromtimestamp(end_ts, ET).strftime('%H:%M:%S ET')}) · {len(bars)}개 {tf_label} 봉"
+        prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
+        sess_label = "정규장"
 
     def fmt_v(v):
         return f"{v/1e6:.2f}M" if v >= 1e6 else (f"{v/1e3:.1f}K" if v >= 1e3 else f"{v:.0f}")
@@ -1388,10 +1490,12 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
         "is_prior": is_prior, "session_date": sess_date,
         "status": f"{status}{' (전일)' if is_prior else ''}", "tone": tone,
         "aggregate_range": aggregate_range,
-        "data_desc": f"{symbol} {prefix}정규장 · {source} · 체결 압력 CVD (BVC 추정치)",
+        "data_desc": f"{symbol} {prefix}{sess_label} · {source} · 체결 압력 CVD (BVC 추정치) · 단위: {unit_label}",
         "buy_pct": buy_pct, "sell_pct": sell_pct, "buy_vol": fmt_v(buy), "sell_vol": fmt_v(sell),
         "recent_vol": fmt_v(bars[-1]["v"]), "total_vol": fmt_v(total),
-        "vol_scale": 1000,  # bars[].vol / cvd_line 단위: 천 주 → 실주식수 환산 배율
+        "vol_scale": 1000,  # bars[].vol / cvd_line 단위: 천 단위 → 실제 수량 환산 배율
+        "vol_unit": vol_unit, "vol_unit_label": unit_label,
+        "divergence": divergence, "momentum": momentum,
         "bars": out, "summary_text": f"CVD Flow: Buy {buy_pct}% / Sell {sell_pct}% in session.",
     }
 
@@ -1985,6 +2089,16 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
         score += 1.0 if vwap_diff > 1.0 else (-1.5 if vwap_diff < -1.0 else 0)
     if cvd_data:
         score += 1.0 if cvd_data.get("tone") == "bull" else (-1.5 if cvd_data.get("tone") == "bear" else 0)
+        div = cvd_data.get("divergence") or {}
+        if div.get("type") == "bearish":
+            score -= 1.0
+        elif div.get("type") == "bullish":
+            score += 1.0
+        mom = cvd_data.get("momentum") or {}
+        if mom.get("dir") == "up":
+            score += 0.5
+        elif mom.get("dir") == "down":
+            score -= 0.5
 
     score = max(-6.0, min(6.0, score))
     label, tone = (
@@ -2015,6 +2129,24 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
                 "text": f"{cvd_data['status']} (Buy {cvd_data['buy_pct']}% / Sell {cvd_data['sell_pct']}%)",
             }
         )
+        div = cvd_data.get("divergence") or {}
+        if div.get("type"):
+            evidence.append(
+                {
+                    "title": "CVD 다이버전스",
+                    "signal": "bear" if div["type"] == "bearish" else "bull",
+                    "text": div.get("text", ""),
+                }
+            )
+        mom = cvd_data.get("momentum") or {}
+        if mom.get("dir") in ("up", "down"):
+            evidence.append(
+                {
+                    "title": "CVD 모멘텀",
+                    "signal": "bull" if mom["dir"] == "up" else "bear",
+                    "text": mom.get("text", ""),
+                }
+            )
 
     return {
         "available": True,
@@ -2026,7 +2158,7 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
         "summary": f"단기 모멘텀과 체결 압력이 {'상승' if tone=='bull' else ('하락' if tone=='bear' else '중립')} 쪽입니다. {match_pct}% 일치.",
         "tfs": {k: ({**avail[k], "source": tf_sources.get(k)} if k in avail else None) for k in ("1h", "15m", "5m", "1m")},
         "evidence": evidence,
-        "source": "Charles Schwab (SPY) · 0DTE EMA(5/13/21)·VWAP·CVD 결합",
+        "source": "Charles Schwab (SPY) · 0DTE EMA(5/13/21)·VWAP·ES CVD 결합",
     }
 
 
@@ -2074,6 +2206,7 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
 
     with ThreadPoolExecutor(max_workers=10) as ex:
         f_spy_all = {k: ex.submit(get_candles, token, "spy", k) for k in spy_tf_set}
+        f_es_all = {k: ex.submit(get_es_candles, token, k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
         f_poly = ex.submit(get_polymarket_spx, spx_p, (q_spy["price"] if q_spy else None))
@@ -2081,8 +2214,10 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
         f_news = ex.submit(fetch_flash_market_news)
 
     spy_all_c = {k: f.result() for k, f in f_spy_all.items()}
+    es_all_c = {k: f.result() for k, f in f_es_all.items()}
     spx_r = f_spx_r.result()
     spy_c = spy_all_c.get(c_key)
+    es_c = es_all_c.get(c_key)
     gex = f_gex.result() or {"available": False, "source": "N/A"}
     polymarket = f_poly.result()
     _ = f_cal.result()
@@ -2096,7 +2231,9 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
 
     vwap_calc = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m else None
     vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
-    cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et) if spy_c else None
+    # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약)
+    cvd = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts") if es_c else None
+    cvd_overnight = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="overnight") if es_c else None
 
     rsi = None
     if spx_r and spx_r.get("candles"):
@@ -2154,6 +2291,7 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
         "gex": gex,
         "rsi": rsi,
         "cvd": cvd,
+        "cvd_overnight": cvd_overnight,
         "direction": direction,
     }
 
