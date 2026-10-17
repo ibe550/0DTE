@@ -1,10 +1,4 @@
 {
-  "builds": [
-    {
-      "src": "main.py",
-      "use": "@vercel/python"
-    }
-  ],
   "routes": [
     {
       "src": "/api/callback",
@@ -20,7 +14,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "main.py"
+      "destination": "main.py"
     }
   ],
   "crons": [
