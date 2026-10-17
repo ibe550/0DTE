@@ -86,7 +86,7 @@
                 SPX 0DTE DEFENDER
             </span>
             <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v17.0 Modular</span>
-            <span id="global-source-badge" class="text-[9px] lg:text-xs bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
+            <span id="global-source-badge" class="text-[9px] lg:text-xs bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Schwab API Connected</span>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] lg:text-xs text-slate-400">
             <span id="header-rsi-badge" class="hidden text-[9px] lg:text-xs font-mono px-1.5 py-0.5 rounded font-bold border transition-colors">RSI --</span>
@@ -119,7 +119,7 @@
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">SPX</span>
-                <span id="spx-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                <span id="spx-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">Schwab ($SPX)</span>
             </div>
             <div id="spx-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
             <div id="spx-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
@@ -130,18 +130,18 @@
                 <span id="vix1d-price" class="text-[10px] sm:text-sm lg:text-base font-bold text-slate-500">--</span>
             </div>
             <div id="vix1d-change" class="text-[8px] sm:text-[10px] lg:text-xs text-slate-500 text-right -mt-0.5">--</div>
-            <div id="vix1d-source" class="text-[7px] lg:text-[9px] text-slate-500 text-right truncate">--</div>
+            <div id="vix1d-source" class="text-[7px] lg:text-[9px] text-slate-500 text-right truncate">Schwab ($VIX1D)</div>
             <div class="border-t border-slate-800 pt-1 mt-0.5 flex justify-between items-center">
                 <span class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 font-medium">VIX (30D)</span>
                 <span id="vix-price" class="text-[9px] sm:text-xs lg:text-sm font-bold text-slate-500">--</span>
             </div>
             <div id="vix-change" class="text-[8px] sm:text-[10px] lg:text-xs text-slate-500 text-right">--</div>
-            <div id="vix-source" class="text-[7px] lg:text-[9px] text-slate-500 text-right truncate">--</div>
+            <div id="vix-source" class="text-[7px] lg:text-[9px] text-slate-500 text-right truncate">Schwab ($VIX)</div>
         </div>
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">ES FUTURES</span>
-                <span id="es-source" class="text-[7px] sm:text-[9px] lg:text-[10px] px-1 py-0.5 rounded font-bold bg-indigo-950 text-indigo-300 border border-indigo-800/60 leading-none truncate">--</span>
+                <span id="es-source" class="text-[7px] sm:text-[9px] lg:text-[10px] px-1 py-0.5 rounded font-bold bg-indigo-950 text-indigo-300 border border-indigo-800/60 leading-none truncate">Schwab (/ES)</span>
             </div>
             <div id="es-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
             <div id="es-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
@@ -149,7 +149,7 @@
         <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
             <div class="flex justify-between items-start">
                 <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">MAG7</span>
-                <span id="mag7-source" class="text-[7px] sm:text-[8px] lg:text-[10px] text-slate-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                <span id="mag7-source" class="text-[7px] sm:text-[8px] lg:text-[10px] text-slate-400 bg-slate-800/80 px-1 rounded truncate">Schwab (MAG7)</span>
             </div>
             <div id="mag7-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
             <div id="mag7-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
@@ -175,19 +175,19 @@
             <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 font-medium">3M T-BILL (IRX)</div>
             <div id="yield-3m" class="text-xs sm:text-sm md:text-base lg:text-lg font-bold text-slate-200 truncate">--</div>
             <div id="yield-3m-chg" class="text-[8px] sm:text-[10px] lg:text-xs font-semibold text-slate-500 truncate">--</div>
-            <div id="yield-3m-src" class="text-[7px] sm:text-[8px] lg:text-[9px] text-slate-500 mt-0.5 truncate">--</div>
+            <div id="yield-3m-src" class="text-[7px] sm:text-[8px] lg:text-[9px] text-slate-500 mt-0.5 truncate">Schwab</div>
         </div>
         <div class="card p-1.5 sm:p-2.5 lg:p-3">
             <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 font-medium">10Y YIELD (^TNX)</div>
             <div id="yield-10y" class="text-xs sm:text-sm md:text-base lg:text-lg font-bold text-slate-200 truncate">--</div>
             <div id="yield-10y-chg" class="text-[8px] sm:text-[10px] lg:text-xs font-semibold text-slate-500 truncate">--</div>
-            <div id="yield-10y-src" class="text-[7px] sm:text-[8px] lg:text-[9px] text-slate-500 mt-0.5 truncate">--</div>
+            <div id="yield-10y-src" class="text-[7px] sm:text-[8px] lg:text-[9px] text-slate-500 mt-0.5 truncate">Schwab</div>
         </div>
         <div class="card p-1.5 sm:p-2.5 lg:p-3">
             <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 font-medium">30Y YIELD (^TYX)</div>
             <div id="yield-30y" class="text-xs sm:text-sm md:text-base lg:text-lg font-bold text-slate-200 truncate">--</div>
             <div id="yield-30y-chg" class="text-[8px] sm:text-[10px] lg:text-xs font-semibold text-slate-500 truncate">--</div>
-            <div id="yield-30y-src" class="text-[7px] sm:text-[8px] lg:text-[9px] text-slate-500 mt-0.5 truncate">--</div>
+            <div id="yield-30y-src" class="text-[7px] sm:text-[8px] lg:text-[9px] text-slate-500 mt-0.5 truncate">Schwab</div>
         </div>
         <div class="card p-1.5 sm:p-2.5 lg:p-3">
             <div class="text-[8px] sm:text-[10px] lg:text-xs text-slate-400 font-medium">10Y-3M SPREAD</div>
@@ -202,7 +202,7 @@
             <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
                 <div class="flex justify-between items-start">
                     <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">WTI CRUDE (CL)</span>
-                    <span id="wti-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                    <span id="wti-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">Schwab (/CL)</span>
                 </div>
                 <div id="wti-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
                 <div id="wti-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
@@ -212,7 +212,7 @@
             <div class="card p-1.5 sm:p-2.5 lg:p-3.5 flex flex-col justify-between">
                 <div class="flex justify-between items-start">
                     <span class="text-[9px] sm:text-[11px] lg:text-xs text-slate-400 font-medium">BRENT (BZ)</span>
-                    <span id="brent-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">--</span>
+                    <span id="brent-source" class="text-[7px] sm:text-[9px] lg:text-[10px] text-indigo-400 bg-slate-800/80 px-1 rounded truncate">Schwab (/BZ)</span>
                 </div>
                 <div id="brent-price" class="text-sm sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-500 tracking-tight my-0.5 truncate">--</div>
                 <div id="brent-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
@@ -228,43 +228,36 @@
                 <div id="uso-change" class="text-[8px] sm:text-xs lg:text-sm font-semibold text-slate-500 truncate">--</div>
             </div>
         </div>
+
         <script>
         (function() {
-            function renderUso(cur, prev) {
-                var pEl = document.getElementById('uso-price');
-                var cEl = document.getElementById('uso-change');
-                var sEl = document.getElementById('uso-source');
-                if (!pEl || !cEl || !cur) return;
-                var chg = cur - (prev || cur);
-                var pct = prev ? (chg / prev) * 100 : 0;
-                var sign = chg > 0 ? '+' : '';
-                var col = chg > 0 ? 'text-emerald-400' : (chg < 0 ? 'text-rose-400' : 'text-slate-200');
-                pEl.textContent = cur.toFixed(2);
-                cEl.textContent = sign + chg.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
-                pEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + col + ' tracking-tight my-0.5 truncate';
-                cEl.className = 'text-[8px] sm:text-xs lg:text-sm font-semibold ' + col + ' truncate';
-                if (sEl) sEl.textContent = 'Schwab (USO)';
-            }
-            function loadUso() {
-                var yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/USO?interval=1d&range=5d';
-                fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(yUrl))
-                    .then(function(r) { return r.json(); })
-                    .then(function(d) {
-                        var parsed = JSON.parse(d.contents);
-                        var m = parsed.chart.result[0].meta;
-                        renderUso(m.regularMarketPrice, m.chartPreviousClose || m.previousClose);
-                    })
-                    .catch(function() {
-                        fetch('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(yUrl))
-                            .then(function(r) { return r.json(); })
-                            .then(function(d) {
-                                var m = d.chart.result[0].meta;
-                                renderUso(m.regularMarketPrice, m.chartPreviousClose || m.previousClose);
-                            });
-                    });
-            }
-            loadUso();
-            setInterval(loadUso, 30000);
+            // --- 기존 야후 파이낸스/무료 프록시(allorigins) 로직 완전 제거 완료 ---
+            // 백엔드(main.py)에서 넘겨받은 통합 Schwab 데이터를 화면에 적용하는 렌더러 함수
+            window.renderSchwabQuotes = function(data) {
+                function updateCard(idPrefix, item, sourceLabel) {
+                    var pEl = document.getElementById(idPrefix + '-price');
+                    var cEl = document.getElementById(idPrefix + '-change');
+                    var sEl = document.getElementById(idPrefix + '-source');
+                    if (!pEl || !cEl || !item || !item.price) return;
+                    
+                    var chg = item.change || 0;
+                    var pct = item.pct || 0;
+                    var sign = chg > 0 ? '+' : '';
+                    var col = chg > 0 ? 'text-emerald-400' : (chg < 0 ? 'text-rose-400' : 'text-slate-200');
+                    
+                    pEl.textContent = item.price.toFixed(2);
+                    cEl.textContent = sign + chg.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
+                    pEl.className = 'text-sm sm:text-lg md:text-xl lg:text-2xl font-bold ' + col + ' tracking-tight my-0.5 truncate';
+                    cEl.className = 'text-[8px] sm:text-xs lg:text-sm font-semibold ' + col + ' truncate';
+                    if (sEl) sEl.textContent = sourceLabel;
+                }
+
+                if (data.uso) updateCard('uso', data.uso, 'Schwab (USO)');
+                if (data.wti) updateCard('wti', data.wti, 'Schwab (/CL)');
+                if (data.brent) updateCard('brent', data.brent, 'Schwab (/BZ)');
+                if (data.es) updateCard('es', data.es, 'Schwab (/ES)');
+                if (data.mag7) updateCard('mag7', data.mag7, 'Schwab (MAG7)');
+            };
         })();
         </script>
 
@@ -287,7 +280,7 @@
         <div class="flex justify-between items-start mb-1.5 gap-2">
             <h2 class="text-[10px] sm:text-xs lg:text-sm font-bold text-emerald-400 tracking-wide">VOLUME PROFILE · SPX</h2>
             <div class="text-[9px] sm:text-[10px] lg:text-xs text-slate-400 text-right max-w-[65%]">
-                <span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="vp-source">--</span><br>
+                <span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="vp-source">Schwab</span><br>
                 <span class="text-slate-500 font-mono text-[8px] lg:text-[10px]" id="vp-timestamp">--</span>
             </div>
         </div>
@@ -312,7 +305,7 @@
         <div class="flex justify-between items-start mb-2 gap-2">
             <h2 class="text-[11px] sm:text-xs lg:text-base font-bold text-slate-200">⚡ GEX · 옵션 체인 감마 레벨</h2>
             <div class="text-right max-w-[65%]">
-                <span class="text-[9px] sm:text-[10px] lg:text-xs bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="gex-source" class="text-[9px] sm:text-[10px] lg:text-xs text-slate-400">--</span>
+                <span class="text-[9px] sm:text-[10px] lg:text-xs bg-slate-800 px-1 py-0.5 rounded text-slate-300">Source</span> <span id="gex-source" class="text-[9px] sm:text-[10px] lg:text-xs text-slate-400">Schwab</span>
                 <div class="text-[8px] sm:text-[9px] lg:text-xs text-slate-500 font-mono mt-0.5" id="gex-meta"></div>
             </div>
         </div>
@@ -493,7 +486,7 @@
                 <span class="text-xs sm:text-sm lg:text-base font-bold text-slate-200">📊 SPY VOLUME + CVD — <span id="cvd-title-tf">10M</span></span>
             </div>
             <div class="text-right max-w-[60%]">
-                <div class="text-[9px] sm:text-[10px] lg:text-xs text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">--</span></div>
+                <div class="text-[9px] sm:text-[10px] lg:text-xs text-slate-400"><span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">Source</span> <span id="cvd-source">Schwab</span></div>
                 <div class="text-[9px] sm:text-[10px] lg:text-xs text-slate-500 font-mono mt-0.5" id="cvd-data-time">Data as of --</div>
             </div>
         </div>
@@ -614,7 +607,7 @@
             </div>
         </div>
         <div class="flex justify-between text-[9px] sm:text-xs text-slate-500 mb-2 font-mono gap-2">
-            <span id="dir-source" class="truncate">Source --</span>
+            <span id="dir-source" class="truncate">Source Schwab</span>
             <span class="whitespace-nowrap">시간봉 일치도 <span id="tf-match-pct">--</span>%</span>
         </div>
 <!-- 방향성 근거 상시 노출 헤더 -->
@@ -632,10 +625,10 @@
 <!-- 모듈 스크립트 순차 로드 (모바일 강제 새로고침 캐시 버스팅 적용) -->
     <script src="js/auth.js?v=1.1"></script>
     <script src="js/utils.js?v=1.1"></script>
-    <script src="js/quotes.js?v=2.5"></script>
+    <script src="js/quotes.js?v=2.6"></script>
     <script src="js/gex.js?v=2.2"></script>
     <script src="js/cvd.js?v=2.1"></script>
     <script src="js/events.js?v=1.1"></script>
-    <script src="js/app.js?v=1.1"></script>
+    <script src="js/app.js?v=1.2"></script>
 </body>
 </html>
