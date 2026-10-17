@@ -1,9 +1,7 @@
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)"""
-from fastapi import FastAPI
-
-app = FastAPI()
-handler = app
-application = app
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 import math
 import os
 import time
@@ -13,15 +11,15 @@ from datetime import datetime, timedelta
 import html as html_lib
 from typing import Optional
 import xml.etree.ElementTree as ET_xml
-
 import pytz
 import requests
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 
+# FastAPI 엔트리포인트 명시 (Vercel 필수 인식 조건)
+app = FastAPI()
+handler = app
+application = app
 
-# 기존 코드에 MAGS(MAG7 ETF)와 국채 금리 지표($IRX, $TNX, $TYX)를 추가합니다.
+# MAGS(MAG7 ETF) 및 국채 금리 지표($IRX, $TNX, $TYX) 포함 스와브 쿼터 설정
 SCHWAB_QUOTES = OrderedDict([
     ("spx", "$SPX"), ("vix1d", "$VIX1D"), ("vix", "$VIX"), ("spy", "SPY"),
     ("es", "/ES"), ("wti", "/CL"), ("brent", "/BZ"), ("uso", "USO"),
