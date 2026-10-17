@@ -793,7 +793,7 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
     return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None}
 
 
-def fetch_polymarket_spx_data(spx_price):
+def fetch_polymarket_spx_data(spx_price, spy_price=None):
     import json as _json
     import re
     from urllib.parse import quote
@@ -816,7 +816,94 @@ def fetch_polymarket_spx_data(spx_price):
     month_short = target_date.strftime("%b")       # 예: Oct
     day_num = str(target_date.day)                 # 예: 19
 
-    # SPY 완전 제외, 순수 S&P 500 / SPX 일일 마켓만 검색
+    # ─────────────────────────────────────────────────────────
+    # 1순위: 일일 'closes above $X' 래더 마켓 → 50% 확률(중앙값) 마감가 추정
+    #        (Up/Down 확률이 아니라 "마감 시 어느 정도"를 직접 표시)
+    # ─────────────────────────────────────────────────────────
+    def _ladder_events():
+        queries = [
+            quote(f"closes above {month_full} {day_num}"),
+            quote(f"closes above {month_short} {day_num}"),
+            quote("SPY closes above"),
+        ]
+        for q in queries:
+            try:
+                r = requests.get(
+                    f"https://gamma-api.polymarket.com/public-search?q={q}&events_status=active&limit_per_type=20",
+                    headers=HEADERS, timeout=4.0)
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                evs = data.get("events", []) if isinstance(data, dict) else []
+                for ev in evs:
+                    if ev.get("closed"):
+                        continue
+                    t = (ev.get("title") or "").lower()
+                    if "closes above" not in t or "week of" in t:
+                        continue
+                    if not (f"{month_full.lower()} {day_num}" in t
+                            or f"{month_short.lower()} {day_num}" in t
+                            or f"{target_date.month}/{day_num}" in t):
+                        continue
+                    end_str = str(ev.get("endDate") or "")[:10]
+                    try:
+                        dd = (datetime.strptime(end_str, "%Y-%m-%d").date() - today).days
+                        if dd < 0 or dd > 5:
+                            continue
+                    except Exception:
+                        pass
+                    yield ev
+            except Exception:
+                continue
+
+    def _implied_median_spy(ev):
+        """래더 마켓들의 Yes 가격으로 50% 확률(중앙값) 마감가 추정 (SPY 기준)"""
+        pts = []
+        for m in (ev.get("markets") or []):
+            if m.get("closed") or m.get("active") is False:
+                continue
+            qs = (m.get("question") or m.get("groupItemTitle") or "")
+            mt = re.search(r"above\s*\$?\s*([\d,]+(?:\.\d+)?)", qs)
+            if not mt:
+                continue
+            strike = float(mt.group(1).replace(",", ""))
+            raw = m.get("outcomePrices")
+            try:
+                pr = _json.loads(raw) if isinstance(raw, str) else raw
+                p = float(pr[0])
+            except Exception:
+                continue
+            if 0.02 <= p <= 0.98:
+                pts.append((strike, p))
+        if len(pts) < 2:
+            return None
+        pts.sort()
+        for (s_lo, p_lo), (s_hi, p_hi) in zip(pts, pts[1:]):
+            if p_lo >= 0.5 >= p_hi and p_lo != p_hi:
+                frac = (p_lo - 0.5) / (p_lo - p_hi)
+                return s_lo + frac * (s_hi - s_lo)
+        return None
+
+    for _ev in _ladder_events():
+        med_spy = _implied_median_spy(_ev)
+        if med_spy is None:
+            continue
+        ratio_est = (spx_price / spy_price) if (spx_price and spy_price) else 10.0
+        implied_spx = med_spy * ratio_est
+        date_tag = target_date.strftime("%m/%d")
+        diff_str = f" ({implied_spx - spx_price:+.0f}pt)" if spx_price else ""
+        vol = sum(float(m.get("volume") or 0) for m in (_ev.get("markets") or []))
+        vol_str = f" · 거래량 ${int(vol):,}" if vol > 0 else ""
+        return {
+            "available": True,
+            "title": f"[{date_tag}] SPX 마감 예상가 (Polymarket)",
+            "yes_pct": 50,
+            "no_pct": 50,
+            "summary": f"예상 마감 {implied_spx:,.0f}{diff_str} · 중앙값 50%",
+            "source": f"Polymarket SPX{vol_str}",
+        }
+
+    # SPY 완전 제외, 순수 S&P 500 / SPX 일일 마켓만 검색 (래더 탐색 실패 시 폴백)
     search_queries = [
         quote(f"S&P 500 {month_full} {day_num}"),
         quote(f"SPX {month_full} {day_num}"),
@@ -958,8 +1045,8 @@ def fetch_polymarket_spx_data(spx_price):
     }
 
 
-def get_polymarket_spx(spx_price):
-    return cached("polymarket_spx_only", 60, lambda: fetch_polymarket_spx_data(spx_price)) or {
+def get_polymarket_spx(spx_price, spy_price=None):
+    return cached("polymarket_spx_only", 60, lambda: fetch_polymarket_spx_data(spx_price, spy_price)) or {
         "available": False,
         "title": "당일 SPX 일일 폴리마켓 개장 대기",
         "yes_pct": 0,
@@ -1950,7 +2037,7 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
         f_spy_all = {k: ex.submit(get_candles, token, "spy", k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
-        f_poly = ex.submit(get_polymarket_spx, spx_p)
+        f_poly = ex.submit(get_polymarket_spx, spx_p, (q_spy["price"] if q_spy else None))
         f_cal = ex.submit(cached, "econ_events_data", 15, fetch_global_econ_calendar)
         f_news = ex.submit(fetch_flash_market_news)
 
