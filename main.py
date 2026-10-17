@@ -1388,9 +1388,10 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None):
         "is_prior": is_prior, "session_date": sess_date,
         "status": f"{status}{' (전일)' if is_prior else ''}", "tone": tone,
         "aggregate_range": aggregate_range,
-        "data_desc": f"{symbol} {prefix}정규장 · {source} · 체결 압력 CVD",
+        "data_desc": f"{symbol} {prefix}정규장 · {source} · 체결 압력 CVD (BVC 추정치)",
         "buy_pct": buy_pct, "sell_pct": sell_pct, "buy_vol": fmt_v(buy), "sell_vol": fmt_v(sell),
         "recent_vol": fmt_v(bars[-1]["v"]), "total_vol": fmt_v(total),
+        "vol_scale": 1000,  # bars[].vol / cvd_line 단위: 천 주 → 실주식수 환산 배율
         "bars": out, "summary_text": f"CVD Flow: Buy {buy_pct}% / Sell {sell_pct}% in session.",
     }
 
