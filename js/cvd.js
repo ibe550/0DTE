@@ -119,6 +119,7 @@ function renderCvdDirect(cvd) {
     var tfLabel = (currentCvdTf === '1h' ? '1H' : currentCvdTf);
     var srcLabel = cvd.source || ('Charles Schwab (ES ' + tfLabel + ')');
 
+    safeSet('cvd-title-sym', (cvd.source || '').indexOf('ES ') !== -1 ? 'ES' : 'SPY');
     safeSet('cvd-title-tf', tfLabel.toUpperCase());
     safeSet('cvd-source', srcLabel);
     safeSet('cvd-data-time', 'Data as of ' + (cvd.data_time || '--'));
