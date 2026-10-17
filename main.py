@@ -1146,37 +1146,78 @@ def aggregate_candles(candles, minutes):
     return list(groups.values())
 
 
+def _norm_cdf(z):
+    """표준정규분포 누적분포함수 (math.erf 기반)"""
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def apply_bvc(candles, window=60):
+    """Bulk Volume Classification (Easley / Lopez de Prado / O'Hara):
+    틱 데이터 없이 1분봉 단위로 매수/매도 체결량을 추정하는 학계 표준 방식.
+    V_buy = V * Phi(dP / sigma) — dP는 봉간 종가 변화, sigma는 직전 window개 봉의 표준편차.
+    sigma를 구할 수 없는 구간은 종가 위치(CLV) 방식으로 폴백. (여전히 추정치임)"""
+    n = len(candles)
+    if n == 0:
+        return candles
+
+    closes = [c.get("c") for c in candles]
+    opens = [c.get("o") for c in candles]
+    deltas = []
+    for i, cl in enumerate(closes):
+        if cl is None:
+            deltas.append(None)
+        elif i == 0:
+            o = opens[0]
+            deltas.append(cl - o if o is not None else 0.0)
+        else:
+            pc = closes[i - 1]
+            deltas.append(cl - pc if pc is not None else 0.0)
+
+    for i, c in enumerate(candles):
+        v = c.get("v") or 0.0
+        if v <= 0:
+            c["buy_v"], c["sell_v"] = 0.0, 0.0
+            continue
+
+        ratio = None
+        d = deltas[i]
+        if d is not None:
+            win = [x for x in deltas[max(0, i - window + 1):i + 1] if x is not None]
+            if len(win) >= 10:
+                mean = sum(win) / len(win)
+                var = sum((x - mean) ** 2 for x in win) / len(win)
+                if var > 0:
+                    ratio = _norm_cdf(d / math.sqrt(var))
+
+        if ratio is None:
+            # 폴백: 종가 위치(CLV) — 종가가 고가에 가까울수록 매수 우세
+            o, h, l, cl = c.get("o"), c.get("h"), c.get("l"), c.get("c")
+            if None not in (o, h, l, cl) and (h - l) > 1e-9:
+                clv = ((cl - l) - (h - cl)) / (h - l)
+                ratio = 0.5 + 0.5 * max(-1.0, min(1.0, clv))
+            elif cl is not None and o is not None:
+                ratio = 0.6 if cl >= o else 0.4
+
+        if ratio is None:
+            ratio = 0.5
+        ratio = max(0.05, min(0.95, ratio))
+        c["buy_v"] = v * ratio
+        c["sell_v"] = v * (1.0 - ratio)
+
+    return candles
+
+
 def split_bar_volume(c):
-    """틱 데이터 부재를 보완하기 위한 위크-바디(Wick-Body) 볼륨 분배 추정 (실제 체결 데이터 아님)"""
+    """단일봉 폴백용 BVC 간소형: 종가 위치(CLV) 기반 매수/매도 분할 (추정치)"""
     v, o, h, l, cl = c["v"], c["o"], c["h"], c["l"], c["c"]
     if v <= 0:
         return 0.0, 0.0
-
     rng = h - l
     if rng <= 1e-9:
-        return (v * 0.5, v * 0.5)
-
-    body_top = max(o, cl)
-    body_bot = min(o, cl)
-    body_size = body_top - body_bot
-    upper_wick = h - body_top
-    lower_wick = body_bot - l
-
-    if cl >= o:
-        buy_power = lower_wick + body_size + (upper_wick * 0.2)
-        sell_power = upper_wick * 0.8
-    else:
-        buy_power = lower_wick * 0.8
-        sell_power = upper_wick + body_size + (lower_wick * 0.2)
-
-    total_power = buy_power + sell_power
-    if total_power <= 0:
-        buy_ratio = 0.5
-    else:
-        buy_ratio = buy_power / total_power
-
+        return (v * 0.6, v * 0.4) if cl >= o else (v * 0.4, v * 0.6)
+    clv = ((cl - l) - (h - cl)) / rng
+    buy_ratio = 0.5 + 0.5 * max(-1.0, min(1.0, clv))
     buy_ratio = max(0.05, min(0.95, buy_ratio))
-
     return v * buy_ratio, v * (1.0 - buy_ratio)
 
 
@@ -1187,10 +1228,7 @@ def get_base_candles(token, ssym, freq, days):
         cs = schwab_candles(token, ssym, freq, days)
         if not cs:
             return None
-        for c in cs:
-            bv, sv = split_bar_volume(c)
-            c["buy_v"] = bv
-            c["sell_v"] = sv
+        apply_bvc(cs)  # BVC 매수/매도 분류 (기존 위크-바디 휴리스틱 대체)
         return cs
 
     return cached(f"base_candles:{ssym}:{freq}:{days}", 5, load)
