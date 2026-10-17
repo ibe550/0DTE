@@ -15,6 +15,44 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+SCHWAB_QUOTES = OrderedDict([
+    ("spx", "$SPX"), ("vix1d", "$VIX1D"), ("vix", "$VIX"), ("spy", "SPY"),
+    ("es", "/ES"), ("wti", "/CL"), ("brent", "/BZ"), ("uso", "USO"),
+])
+
+def _find_quote(data, sym):
+    """응답 키가 요청 심볼과 다를 수 있는 선물 대응 (/ES -> /ESZ26)"""
+    info = data.get(sym)
+    if isinstance(info, dict) and isinstance(info.get("quote"), dict):
+        return info
+    for v in data.values():
+        if isinstance(v, dict) and (v.get("reference") or {}).get("product") == sym:
+            return v
+    return None
+
+def fetch_schwab_quotes(token, symbols):
+    if not token:
+        return {}
+    out = {}
+    data = schwab_get(token, "/quotes", {"symbols": ",".join(symbols), "fields": "quote,reference"})
+    if not isinstance(data, dict):
+        return out
+    bad = (data.get("errors") or {}).get("invalidSymbols")
+    if bad:
+        print(f"[schwab] invalid symbols: {bad}")   # 로깅으로 교체
+    for sym in symbols:
+        info = _find_quote(data, sym)
+        q = info.get("quote") if info else None
+        if not q:
+            continue
+        p = q.get("lastPrice") or q.get("mark")
+        if not p:                      # 0 또는 None이면 건너뜀
+            continue
+        item = make_quote(p, q.get("closePrice"), q.get("netChange"), f"{SRC_SCHWAB} ({sym})")
+        if item:
+            out[sym] = item
+    return out
+
 app = FastAPI()
 handler = app
 application = app
