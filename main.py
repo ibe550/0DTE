@@ -404,7 +404,7 @@ def fetch_flash_market_news():
         except Exception:
             return []
 
-    return cached("flash_market_news", 60, _fetch) or []
+    return cached("flash_market_news", 180, _fetch) or []
 
 
 # ─────────────────────────────────────────────────────────────
@@ -626,7 +626,7 @@ def fetch_global_econ_calendar():
         return None
 
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
-    events = cached("econ_events_data", 15, fetch_global_econ_calendar)
+    events = cached("econ_events_data", 60, fetch_global_econ_calendar)
     flash_news = fetch_flash_market_news()
     now_ts = now_et.timestamp()
     if not events:
