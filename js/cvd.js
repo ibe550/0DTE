@@ -26,13 +26,19 @@ function fmtYAxisVol(shares) {
 }
 
 function formatEtTime(unixSec) {
+
     if (!unixSec) return '--';
-    var d = new Date(unixSec * 1000);
-    var utc = d.getTime() + (d.getTimezoneOffset() * 60000);
-    var et = new Date(utc - (4 * 3600000));
-    var hh = String(et.getHours()).padStart(2, '0');
-    var mm = String(et.getMinutes()).padStart(2, '0');
-    return hh + ':' + mm;
+
+    return new Date(unixSec * 1000)
+        .toLocaleTimeString(
+            'en-US',
+            {
+                timeZone: 'America/New_York',
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit'
+            }
+        );
 }
 
 // Qabduun 1m / 5m / 10m / 15m / 30m / 1H yeroo cuqaasamu kallattiin tf sirrii waama
