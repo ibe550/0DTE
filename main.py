@@ -2510,7 +2510,12 @@ async def api_login(request: Request):
     device_id = str(body.get("device_id", "")).strip()
     users = _dashboard_users()
     if not users:
-        return JSONResponse({"ok": False, "error": "서버 설정 필요: DASHBOARD_USERS 미설정"}, status_code=503)
+        raw = (os.environ.get("DASHBOARD_USERS", "") or "").strip().lstrip("﻿")
+        if not raw:
+            err = "서버 설정 필요: DASHBOARD_USERS 값이 비어있음 (환경변수 추가 후 재배포 필요)"
+        else:
+            err = "서버 설정 필요: DASHBOARD_USERS JSON 형식 오류 (예: {\"james\": \"pw\"})"
+        return JSONResponse({"ok": False, "error": err}, status_code=503)
     if not user or not device_id or len(device_id) > 128 or len(user) > 64:
         return JSONResponse({"ok": False, "error": "잘못된 요청"}, status_code=400)
     # 브루트포스 방어: 5회 실패 시 5분 잠금
