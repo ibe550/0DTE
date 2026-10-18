@@ -60,10 +60,10 @@ function renderVpHist(vp) {
         const isPoc = b.p === poc;
         const inVA = b.p >= val && b.p <= vah;
         const barCls = isPoc ? 'bg-emerald-400' : (inVA ? 'bg-sky-500' : 'bg-slate-600');
-        const lblCls = isPoc ? 'text-emerald-300 font-bold' : 'text-slate-400';
+        const lblCls = isPoc ? 'text-emerald-300 font-black' : 'text-slate-100 font-bold';
         const pocTag = isPoc ? '<span class="ml-1 text-[8px] sm:text-[9px] font-black text-emerald-300 bg-emerald-950 border border-emerald-700 px-1 rounded">POC</span>' : '';
         return `<div class="flex items-center gap-1.5 py-[2px]">
-            <span class="w-12 shrink-0 text-right font-mono text-[8px] sm:text-[10px] ${lblCls}">${b.p.toFixed(0)}</span>
+            <span class="w-14 shrink-0 text-right font-mono text-[10px] sm:text-xs ${lblCls}">${b.p.toFixed(0)}</span>
             <div class="flex-1 h-[12px] bg-slate-900 rounded-sm overflow-hidden">
                 <div class="${barCls} h-full rounded-sm" style="width:${w}%"></div>
             </div>${pocTag}
