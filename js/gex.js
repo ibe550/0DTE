@@ -361,6 +361,17 @@ function renderGex(g) {
         setText('gex-abs-pin', NA);
         if (note) { note.classList.remove('hidden'); note.innerText = (g && g.reason) || 'GEX 데이터를 불러올 수 없습니다.'; }
         renderSpreadOptimizer(null, null);
+        // stale 방지: 이전 세션의 차트·마커·배너를 모두 초기화 (어제의 월을 오늘로 오판 방지)
+        currentGexData = null;
+        currentSpotPrice = null;
+        chartBars = [];
+        const _cv = $('gex-chart-canvas');
+        if (_cv) { const _cx = _cv.getContext('2d'); if (_cx) _cx.clearRect(0, 0, _cv.width, _cv.height); }
+        const _rg = $('gex-regime'); if (_rg) _rg.classList.add('hidden');
+        const _em = $('em-range-bar'); if (_em) _em.style.width = '0%';
+        ['marker-current', 'marker-put-line', 'marker-call-line', 'marker-flip-line'].forEach(id => {
+            const _m = $(id); if (_m) _m.style.display = 'none';
+        });
         return;
     }
     if (note) note.classList.add('hidden');
