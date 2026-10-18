@@ -99,6 +99,8 @@ function clearCvdStale(reason) {
     if (vg) vg.innerHTML = '';
     var lp = document.getElementById('cvd-line-path');
     if (lp) lp.setAttribute('d', '');
+    var pp = document.getElementById('cvd-price-path');
+    if (pp) pp.setAttribute('d', '');
     var pb = document.getElementById('cvd-prior-badge');
     if (pb) pb.classList.add('hidden');
     safeSet('cvd-source', 'N/A');
@@ -351,6 +353,35 @@ function renderCvdDirect(cvd) {
         linePath.setAttribute('stroke', '#fbbf24');
         linePath.setAttribute('stroke-width', '2');
         linePath.setAttribute('fill', 'none');
+    }
+
+    // (D) 가격 오버레이 — 다이버전스를 눈으로 확인 (백엔드 bars의 h/l/c 활용)
+    var pricePath = document.getElementById('cvd-price-path');
+    if (!pricePath && svg) {
+        pricePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pricePath.setAttribute('id', 'cvd-price-path');
+        svg.appendChild(pricePath);
+    }
+    if (pricePath) {
+        var closes = [];
+        bars.forEach(function(b) { var v = Number(b.c); if (isFinite(v)) closes.push(v); });
+        if (closes.length > 1) {
+            var pMin = Math.min.apply(null, closes), pMax = Math.max.apply(null, closes);
+            var pSpan = (pMax - pMin) || 1;
+            var pD = '';
+            bars.forEach(function(b, i) {
+                var v = Number(b.c); if (!isFinite(v)) return;
+                var px = xStart + (i + 0.5) * stepX;
+                var py = yZero - (((v - pMin) / pSpan) * (chartH * 0.62) + chartH * 0.12);
+                pD += (pD === '' ? 'M ' : ' L ') + px.toFixed(1) + ' ' + py.toFixed(1);
+            });
+            pricePath.setAttribute('d', pD);
+            pricePath.setAttribute('stroke', 'rgba(226, 232, 240, 0.85)');
+            pricePath.setAttribute('stroke-width', '1.4');
+            pricePath.setAttribute('fill', 'none');
+        } else {
+            pricePath.setAttribute('d', '');
+        }
     }
 
     cvdBarsCache = { bars: bars, unitMult: unitMult, xStart: xStart, xEnd: xEnd, sDate: sDate, tEndFull: tEndFull, lastBarShares: lastBarShares };
