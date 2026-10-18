@@ -44,6 +44,32 @@ function renderDirection(d) {
     list.innerHTML = (d.evidence || []).map(e => `<div class="bg-slate-950 p-2 sm:p-2.5 rounded border border-slate-800 space-y-0.5"><div class="flex items-center space-x-1 font-bold ${txt[e.signal] || txt.na}"><span class="w-1.5 h-1.5 rounded-full ${dot[e.signal] || dot.na} inline-block"></span><span>${e.title}</span></div><div class="text-slate-300 pl-3">${e.text}</div></div>`).join('');
 }
 
+// Volume Profile 히스토그램 (7) — 가로 막대, POC 하이라이트, VA 구간 표시
+function renderVpHist(vp) {
+    const box = document.getElementById('vp-hist');
+    if (!box) return;
+    const bins = vp && vp.bins ? vp.bins : [];
+    if (!bins.length) { box.innerHTML = ''; return; }
+    const maxV = Math.max.apply(null, bins.map(b => b.v));
+    const poc = vp.poc, val = vp.val, vah = vp.vah;
+    // 너무 많으면 5pt→10pt로 솎아내기 (최대 30행)
+    let rows = bins.slice().reverse(); // 고가 → 저가
+    if (rows.length > 30) rows = rows.filter((_, i) => i % 2 === 0);
+    box.innerHTML = rows.map(b => {
+        const w = Math.max(2, Math.round(b.v / maxV * 100));
+        const isPoc = b.p === poc;
+        const inVA = b.p >= val && b.p <= vah;
+        const barCls = isPoc ? 'bg-emerald-400' : (inVA ? 'bg-sky-600/70' : 'bg-slate-700/60');
+        const lblCls = isPoc ? 'text-emerald-300 font-bold' : 'text-slate-500';
+        return `<div class="flex items-center gap-1.5 py-[1px]">
+            <span class="w-12 shrink-0 text-right font-mono text-[8px] sm:text-[9px] ${lblCls}">${b.p.toFixed(0)}</span>
+            <div class="flex-1 h-[7px] bg-slate-900 rounded-sm overflow-hidden">
+                <div class="${barCls} h-full rounded-sm" style="width:${w}%"></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
 async function fetchRealMarketData(force = false) {
     if (inFlight && !force) return;
     inFlight = true;
@@ -65,7 +91,7 @@ async function fetchRealMarketData(force = false) {
             () => renderRsi(data.rsi),
             () => renderQuote('spx', data.spx, { pct: true }),
             () => renderQuote('es', data.es, { pct: true }),
-            () => { renderQuote('vix1d', data.vix1d, { invert: true }); renderQuote('vix', data.vix, { invert: true }); },
+            () => { renderQuote('vix1d', data.vix1d, { invert: true }); renderQuote('vix', data.vix, { invert: true }); renderIvRank(data.iv_rank); },
             () => renderQuote('mag7', data.mag7, { pct: true }),
             () => renderQuote('wti', data.wti, { pct: true }),
             () => renderQuote('brent', data.brent, { pct: true }),
@@ -75,6 +101,7 @@ async function fetchRealMarketData(force = false) {
                 const vp = data.volume_profile;
                 setText('val-price', vp ? vp.val : null); setText('poc-price', vp ? vp.poc : null); setText('vah-price', vp ? vp.vah : null);
                 setText('vp-source', vp ? vp.source : NA); setText('vp-timestamp', data.timestamp);
+                renderVpHist(vp);
             },
             () => renderGex(data.gex, data.spx ? data.spx.price : null),
             () => renderCvd(data.cvd),
