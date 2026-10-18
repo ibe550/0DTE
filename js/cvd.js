@@ -224,6 +224,9 @@ function renderCvdDirect(cvd) {
     if (sellFill) sellFill.style.width = sellPctRound + '%';
 
     var extraTxt = '';
+    if (cvd.fallback_note) {
+        extraTxt += ' · ⚠️ ' + cvd.fallback_note;
+    }
     if (cvd.divergence && cvd.divergence.text) {
         extraTxt += ' · ' + (cvd.divergence.type === 'bearish' ? '🔻' : '🔺') + cvd.divergence.text;
     }
