@@ -52,7 +52,8 @@ async function fetchRealMarketData(force = false) {
     const timer = setTimeout(() => ctrl.abort(), 30000); // 30초 여유 확보
 
     try {
-        const res = await fetch(`${API_URL}?cvd_tf=${currentCvdTf}`, { signal: ctrl.signal });
+        const w = (typeof optWidth !== 'undefined' && optWidth) ? optWidth : 10;
+        const res = await fetch(`${API_URL}?cvd_tf=${currentCvdTf}&opt_width=${w}`, { signal: ctrl.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
         const data = await res.json();
         if (mySeq !== reqSeq || data.status !== 'success') return;
