@@ -11,7 +11,7 @@ from typing import Optional
 
 import pytz
 import requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -843,7 +843,7 @@ def fetch_polymarket_spx_data(spx_price, spy_price=None):
             try:
                 r = requests.get(
                     f"https://gamma-api.polymarket.com/public-search?q={q}&events_status=active&limit_per_type=20",
-                    headers=HEADERS, timeout=4.0)
+                    headers=HEADERS, timeout=3.0)
                 if r.status_code != 200:
                     continue
                 data = r.json()
@@ -937,7 +937,7 @@ def fetch_polymarket_spx_data(spx_price, spy_price=None):
     for q in search_queries:
         try:
             url = f"https://gamma-api.polymarket.com/public-search?q={q}&events_status=active&limit_per_type=20"
-            r = requests.get(url, headers=HEADERS, timeout=4.0)
+            r = requests.get(url, headers=HEADERS, timeout=3.0)
             if r.status_code != 200:
                 continue
 
@@ -2328,8 +2328,15 @@ def check_shock(request: Request):
         except Exception:
             gex = None
 
+        # CVD (Wall 접근 사전경보용 — 없으면 사전경보가 동작하지 않음)
+        try:
+            es_c = get_es_candles(token, "10m")
+            cvd_cron = compute_cvd(es_c["candles"], "10m", es_c["source"], "ES", now_et, vol_unit="contracts", session="auto") if es_c else None
+        except Exception:
+            cvd_cron = None
+
         vix_target = quotes.get("vix1d") or quotes.get("vix")
-        shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, None, vix_target, now_et)
+        shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd_cron, vix_target, now_et)
         if shock_alert and shock_alert.get("active"):
             tg = send_telegram_shock_alert(shock_alert, spx_p)
             return {"status": "checked", "alert": shock_alert.get("title"), "telegram": tg,
@@ -2348,7 +2355,18 @@ def refresh_token_cron(request: Request):
 
 
 @app.get("/api/market-data")
-def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: float = 10.0):
+def get_market_data(background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10"):
+    t0 = time.time()
+    # Vercel Hobby 함수 제한 10초 대비 응답 데드라인 (초과 시 느린 섹션은 폴백으로 대체)
+    RESP_BUDGET = 8.5
+
+    def _safe_result(fut, fallback=None):
+        try:
+            remain = RESP_BUDGET - (time.time() - t0)
+            return fut.result(timeout=max(0.5, remain))
+        except Exception:
+            return fallback
+
     now_et = datetime.now(ET)
     now_str = now_et.strftime("%m/%d %H:%M:%S ET")
 
@@ -2361,7 +2379,8 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: float = 
     r_key, c_key = normalize_tf(rsi_tf), normalize_tf(cvd_tf)
     spy_tf_set = {"1h", "15m", "5m", "1m", c_key}
 
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    ex = ThreadPoolExecutor(max_workers=10)
+    try:
         f_spy_all = {k: ex.submit(get_candles, token, "spy", k) for k in spy_tf_set}
         f_es_all = {k: ex.submit(get_es_candles, token, k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
@@ -2370,15 +2389,19 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: float = 
         f_cal = ex.submit(cached, "econ_events_data", 15, fetch_global_econ_calendar)
         f_news = ex.submit(fetch_flash_market_news)
 
-    spy_all_c = {k: f.result() for k, f in f_spy_all.items()}
-    es_all_c = {k: f.result() for k, f in f_es_all.items()}
-    spx_r = f_spx_r.result()
-    spy_c = spy_all_c.get(c_key)
-    es_c = es_all_c.get(c_key)
-    gex = f_gex.result() or {"available": False, "source": "N/A"}
-    polymarket = f_poly.result()
-    _ = f_cal.result()
-    _ = f_news.result()
+        # 데드라인 기반 수집: 느린 섹션은 폴백으로 대체하고 전체 응답을 보호
+        # (미완료 작업은 백그라운드에서 계속되어 캐시를 채움 — 다음 폴링에서 반영)
+        spy_all_c = {k: _safe_result(f) for k, f in f_spy_all.items()}
+        es_all_c = {k: _safe_result(f) for k, f in f_es_all.items()}
+        spx_r = _safe_result(f_spx_r)
+        spy_c = spy_all_c.get(c_key)
+        es_c = es_all_c.get(c_key)
+        gex = _safe_result(f_gex) or {"available": False, "source": "timeout"}
+        polymarket = _safe_result(f_poly) or {"available": False, "title": "Polymarket 일시 지연", "yes_pct": 0, "no_pct": 0, "summary": "", "source": "Polymarket"}
+        _ = _safe_result(f_cal)
+        _ = _safe_result(f_news)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
     spy_5m = spy_all_c.get("5m")
     ratio = ratio_q or ((spx_p / spy_5m["candles"][-1]["c"]) if (spx_p and spy_5m and spy_5m.get("candles")) else None)
@@ -2421,7 +2444,8 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: float = 
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
     if shock_alert and shock_alert.get("active"):
-        send_telegram_shock_alert(shock_alert, spx_p)
+        # 응답 지연 방지: 텔레그램 발송은 응답 전송 후 백그라운드에서 실행
+        background_tasks.add_task(send_telegram_shock_alert, shock_alert, spx_p)
 
     def slim(q):
         return {"price": q["price"], "change": q["change"], "change_pct": q.get("change_pct"), "source": q["source"]} if q else None
