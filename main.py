@@ -1338,6 +1338,39 @@ def get_overnight_session(candles, now_et=None):
     return sess, False, label
 
 
+def get_es_session(candles, now_et=None):
+    """ES 세션 자동 선택 (주말/야간 대응).
+    반환: (bars, mode, sess_date)
+    mode: rth_live(평일 정규장) | rth_closed(정규장 마감 직후) | overnight_live(야간 실시간) | prior_rth(주말·휴장 → 최근 정규장)"""
+    if not candles:
+        return [], "prior_rth", None
+    if now_et is None:
+        now_et = datetime.now(ET)
+    wd = now_et.weekday()
+    mins = now_et.hour * 60 + now_et.minute
+
+    # 평일 정규장 09:30~16:00
+    if wd < 5 and 570 <= mins < 960:
+        bars, _, sess_date = get_rth_session(candles, now_et)
+        return bars, "rth_live", sess_date
+
+    # 야간 라이브: 평일 18:00~24:00 / 평일 00:00~09:30 / 일요일 18:00~24:00
+    # (금요일 18:00 이후는 주말 휴장이므로 제외)
+    overnight_now = (wd < 5 and mins >= 1080) or (wd < 5 and mins < 570) or (wd == 6 and mins >= 1080)
+    if overnight_now and not (wd == 4 and mins >= 1080):
+        # 야간 세션 시작일: 일요일 저녁·평일 저녁이면 당일 18:00, 심야(00:00~09:30)면 전일 18:00
+        d = now_et.date() if (wd == 6 or mins >= 1080) else (now_et - timedelta(days=1)).date()
+        start_ts = int(ET.localize(datetime(d.year, d.month, d.day, 18, 0, 0)).timestamp())
+        now_ts = int(now_et.timestamp())
+        bars = [c for c in candles if start_ts <= c["t"] <= now_ts]
+        return bars, "overnight_live", f"{d.strftime('%m/%d')} 18:00"
+
+    # 그 외: 토요일, 일요일 18:00 이전, 평일 16:00~18:00(휴장), 금요일 18:00~ → 최근 정규장
+    bars, is_prior, sess_date = get_rth_session(candles, now_et)
+    mode = "rth_closed" if (wd < 5 and 960 <= mins < 1080) else "prior_rth"
+    return bars, mode, sess_date
+
+
 def compute_vwap(spy_candles, ratio, now_et=None):
     sess, _, _ = get_rth_session(spy_candles, now_et)
     if not sess or not ratio:
@@ -1425,17 +1458,23 @@ def detect_cvd_divergence(bars):
 
 
 def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None, vol_unit="shares", session="rth"):
-    """CVD 계산. session="overnight"이면 전일 18:00~당일 09:30 야간 세션.
+    """CVD 계산. session="overnight"이면 전일 18:00~당일 09:30 야간 세션,
+    session="auto"이면 현재 시각 기준 세션 자동 선택 (정규장/야간LIVE/휴장).
     vol_unit: "shares" 또는 "contracts"(ES 선물)."""
     if not candles:
         return None
     tf_label = TF_LABEL.get(tf_key, tf_key)
     if now_et is None:
         now_et = datetime.now(ET)
-    if session == "overnight":
+    if session == "auto":
+        bars, mode, sess_date = get_es_session(candles, now_et)
+        is_prior = (mode == "prior_rth")
+    elif session == "overnight":
         bars, is_prior, sess_date = get_overnight_session(candles, now_et)
+        mode = "overnight_done"
     else:
         bars, is_prior, sess_date = get_rth_session(candles, now_et)
+        mode = "prior_rth" if is_prior else "rth_live"
     if not bars:
         return None
 
@@ -1475,9 +1514,15 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None, vol_unit="sh
                 "text": f"CVD 모멘텀 {mom_txt} ({m_n}봉간 {mom_val:+.1f}K {unit_label})"}
 
     end_ts = bars[-1]["t"]
-    if session == "overnight":
+    if mode == "overnight_live":
+        aggregate_range = f"야간 LIVE ({sess_date} → {now_et.strftime('%m/%d %H:%M')} ET) · {len(bars)}개 {tf_label} 봉"
+        prefix, sess_label = "", "야간 LIVE"
+    elif mode == "overnight_done":
         aggregate_range = f"야간 ({sess_date} ET) · {len(bars)}개 {tf_label} 봉"
         prefix, sess_label = "", "야간"
+    elif mode == "rth_closed":
+        aggregate_range = f"{sess_date} 정규장 마감 (09:30 ~ 16:00 ET) · {len(bars)}개 {tf_label} 봉"
+        prefix, sess_label = "", "정규장"
     else:
         aggregate_range = f"{sess_date} {'전일' if is_prior else ''}정규장 (09:30 ~ {datetime.fromtimestamp(end_ts, ET).strftime('%H:%M:%S ET')}) · {len(bars)}개 {tf_label} 봉"
         prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
@@ -1490,7 +1535,7 @@ def compute_cvd(candles, tf_key, source, symbol="SPY", now_et=None, vol_unit="sh
         "source": f"{source} {'· [전일 마감]' if is_prior else ''}",
         "data_time": datetime.fromtimestamp(end_ts, ET).strftime("%m/%d %H:%M:%S ET"),
         "last_bar_time": datetime.fromtimestamp(end_ts, ET).strftime("%H:%M:%S ET"),
-        "is_prior": is_prior, "session_date": sess_date,
+        "is_prior": is_prior, "session_date": sess_date, "session_mode": mode,
         "status": f"{status}{' (전일)' if is_prior else ''}", "tone": tone,
         "aggregate_range": aggregate_range,
         "data_desc": f"{symbol} {prefix}{sess_label} · {source} · 체결 압력 CVD (BVC 추정치) · 단위: {unit_label}",
@@ -2234,8 +2279,9 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
 
     vwap_calc = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m else None
     vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
-    # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약). ES 실패 시 SPY로 폴백 (카드가 비지 않도록).
-    cvd = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts") if es_c else None
+    # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약). 세션 자동 선택 (정규장/야간LIVE/휴장).
+    # ES 실패 시 SPY로 폴백 (카드가 비지 않도록).
+    cvd = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="auto") if es_c else None
     cvd_overnight = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="overnight") if es_c else None
     if cvd is None and spy_c:
         cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et)
