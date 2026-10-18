@@ -1,0 +1,22 @@
+name: SPX Shock Monitor
+
+# Vercel Hobby 플랜은 cron을 하루 1회로 제한하므로,
+# 5분 간격 쇼크 감시는 GitHub Actions 스케줄러로 수행한다.
+# /api/check-shock은 RTH가 아니면 즉시 종료하므로 장 외 시간 비용 없음.
+
+on:
+  schedule:
+    # 평일 5분 간격 (UTC 13-21시 = ET 08-17시, EST/EDT 양쪽 커버)
+    - cron: '*/5 13-21 * * 1-5'
+  workflow_dispatch:  # 수동 실행 허용 (Actions 탭에서 "Run workflow")
+
+jobs:
+  check-shock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call shock check endpoint
+        run: |
+          curl -sS --max-time 90 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://0-dte-seven.vercel.app/api/check-shock"
