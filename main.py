@@ -285,8 +285,17 @@ def get_schwab_token(force_refresh=False):
     return None, "Schwab 토큰 갱신 실패"
 
 
+_SCHWAB_429_UNTIL = 0.0
+_SCHWAB_429_COUNT = 0
+
+
 def schwab_get(token, path, params=None, timeout=4):
+    global _SCHWAB_429_UNTIL, _SCHWAB_429_COUNT
     if not token:
+        return None
+    # 429 백오프 중이면 호출 자체를 생략 (프론트는 캐시/CNBC 폴백으로 표시)
+    now = time.time()
+    if now < _SCHWAB_429_UNTIL:
         return None
     try:
         r = requests.get(
@@ -296,8 +305,15 @@ def schwab_get(token, path, params=None, timeout=4):
             timeout=timeout,
         )
         if r.status_code == 200:
+            _SCHWAB_429_COUNT = 0
             return r.json()
-        print(f"[schwab] GET {path} -> HTTP {r.status_code}")
+        if r.status_code == 429:
+            _SCHWAB_429_COUNT += 1
+            backoff = min(60.0, 5.0 * (2 ** (_SCHWAB_429_COUNT - 1)))
+            _SCHWAB_429_UNTIL = now + backoff
+            print(f"[schwab] 429 rate-limited on {path} — backing off {backoff:.0f}s")
+        else:
+            print(f"[schwab] GET {path} -> HTTP {r.status_code}")
     except Exception as e:
         print(f"[schwab] GET {path} error: {e}")
     return None
@@ -533,15 +549,19 @@ def fetch_flash_market_news():
 # 연준 위원 발언 & 경제 캘린더
 # ─────────────────────────────────────────────────────────────
 FED_SPEAKERS = {
+    # 2026-10 기준 현직 (분기별 점검 필요)
+    "warsh": {"name": "워시 의장", "stance": "매파(Hawkish)", "note": "2026.5월 취임 · 인플레 억제 우선, 백악관 인하 압박에도 인상 단행"},
+    "jefferson": {"name": "제퍼슨 부의장", "stance": "중립(Centrist)", "note": "연준 핵심 지도부 컨센서스 대변"},
     "bowman": {"name": "보우만 이사", "stance": "매파(Hawkish)", "note": "추가 인상 희박/완화 발언 시 강력한 숏스퀴즈 호재"},
+    "powell": {"name": "파월 이사(전 의장)", "stance": "중립(Centrist)", "note": "의장직 종료(2026.5) 후 이사 잔류 · 발언 영향력 여전"},
     "waller": {"name": "월러 이사", "stance": "매파/실세(Hawkish)", "note": "금리 경로 선행 지표 위원"},
-    "powell": {"name": "파월 의장", "stance": "중립/의장(Centrist)", "note": "0DTE 양방향 변동성 극대화 주의"},
-    "williams": {"name": "윌리엄스 총재", "stance": "중립/부의장(Centrist)", "note": "연준 핵심 지도부 컨센서스 대변"},
+    "cook": {"name": "쿡 이사", "stance": "비둘기파(Dovish)", "note": "해임 소송 중 · 법적으론 현직 유지"},
+    "barr": {"name": "바 이사", "stance": "중립(Centrist)", "note": "전 감독 부의장"},
+    "williams": {"name": "윌리엄스 총재", "stance": "중립/부의장(Centrist)", "note": "NY연은 · FOMC 부의장"},
     "goolsbee": {"name": "굴스비 총재", "stance": "비둘기파(Dovish)", "note": "선제적 금리 인하 지지파"},
     "kashkari": {"name": "카시카리 총재", "stance": "매파(Hawkish)", "note": "고금리 장기화 선호 위원"},
     "bostic": {"name": "보스틱 총재", "stance": "중립/신중(Centrist)", "note": "완만한 완화 속도 선호"},
     "daly": {"name": "데일리 총재", "stance": "비둘기파(Dovish)", "note": "고용 냉각 경계 및 완화 지지"},
-    "kugler": {"name": "쿠글러 이사", "stance": "비둘기파(Dovish)", "note": "노동시장 안정 및 완화 지지"},
 }
 
 
@@ -756,9 +776,23 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
         return {"items": [], "flash_news": flash_news, "source": "N/A", "error": "경제 캘린더 조회 실패"}
 
     today = now_et.date()
-    # 금요일 16:00 이후면 월요일(+3), 평일이면 익일(+1)
-    days_ahead = 3 if today.weekday() == 4 else (2 if today.weekday() == 5 else 1)
-    tomorrow = today + timedelta(days=days_ahead)
+    # 미국 증시 휴장일 (NYSE) — 공휴일 다음날 지표 놓침 방지
+    US_HOLIDAYS = {
+        "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+        "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+        "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+        "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+    }
+
+    def _next_trading_day(d):
+        nxt = d + timedelta(days=1)
+        while nxt.weekday() >= 5 or nxt.isoformat() in US_HOLIDAYS:
+            nxt += timedelta(days=1)
+        return nxt
+
+    # 다음 거래일 (주말·공휴일 건너뛰기) — 금요일 16:00 이후면 월요일이 아닌 다음 거래일
+    tomorrow = _next_trading_day(today)
+    days_ahead = (tomorrow - today).days
 
     is_tomorrow = False
     target_items = []
@@ -1136,7 +1170,13 @@ def aggregate_candles(candles, minutes):
             slot_min = (total_min // minutes) * minutes
 
         slot_h, slot_m = divmod(slot_min, 60)
-        slot_ts = int(ET.localize(datetime(dt.year, dt.month, dt.day, slot_h, slot_m, 0)).timestamp())
+        # DST 해제일(매년 11월 첫 일요일) 01:00~02:00은 두 번 존재 (EDT→EST).
+        # 원본 봉(dt)의 DST 오프셋으로 모호시각을 구분해 슬롯 병합 방지.
+        _naive = datetime(dt.year, dt.month, dt.day, slot_h, slot_m, 0)
+        try:
+            slot_ts = int(ET.localize(_naive, is_dst=bool(dt.dst())).timestamp())
+        except Exception:
+            slot_ts = int(ET.localize(_naive).timestamp())
         key = (dt.date(), slot_ts)
 
         if key not in groups:
@@ -1448,6 +1488,7 @@ def compute_volume_profile(spy_candles, ratio, source, now_et=None):
     prefix = f"[전일({sess_date}) 마감 · 09:30 ET 리셋] " if is_prior else ""
     return {
         "val": float(keys[lo_i]), "poc": float(poc), "vah": float(keys[hi_i]),
+        "bins": [{"p": float(k), "v": round(v, 1)} for k, v in sorted(bins.items())],
         "source": f"{source} x SPX/SPY 환산 · {prefix}{sess_date} 정규장 · 5pt 구간 POC",
     }
 
@@ -2405,6 +2446,38 @@ def refresh_token_cron(request: Request):
     return {"status": "ok" if token else "error", "message": msg}
 
 
+def _get_iv_rank(vix_q, now_et):
+    """IV Rank = (현재 VIX - 1년 최저) / (1년 최고 - 1년 최저) * 100.
+    KV에 일별 VIX를 적립. KV 없으면 None."""
+    try:
+        if not KV_AVAILABLE:
+            return None
+        vix = (vix_q or {}).get("price")
+        if not vix or vix <= 0:
+            return None
+        today = now_et.strftime("%Y-%m-%d")
+        # 오늘 값 저장 (당일 갱신)
+        kv_set(f"ivrank:vix:{today}", f"{vix:.2f}", ex_seconds=400 * 86400)
+        # 최근 365일 수집
+        vals = []
+        for i in range(365):
+            d = (now_et - timedelta(days=i)).strftime("%Y-%m-%d")
+            v = kv_get(f"ivrank:vix:{d}")
+            try:
+                fv = float(v)
+                if fv > 0:
+                    vals.append(fv)
+            except (TypeError, ValueError):
+                continue
+        if len(vals) < 20:
+            return {"rank": None, "note": f"적립 중 ({len(vals)}/20일)"}
+        lo, hi = min(vals), max(vals)
+        rank = 0.0 if hi <= lo else round((vix - lo) / (hi - lo) * 100.0, 1)
+        return {"rank": rank, "vix": round(vix, 2), "lo": round(lo, 2), "hi": round(hi, 2), "days": len(vals)}
+    except Exception:
+        return None
+
+
 @app.get("/api/market-data")
 def get_market_data(background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10"):
     t0 = time.time()
@@ -2498,6 +2571,9 @@ def get_market_data(background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_t
         # 응답 지연 방지: 텔레그램 발송은 응답 전송 후 백그라운드에서 실행
         background_tasks.add_task(send_telegram_shock_alert, shock_alert, spx_p)
 
+    # IV Rank (6) — VIX 일별 종가를 KV에 적립해 1년 랭크 계산 (크레딧 매도 타이밍 잣대)
+    iv_rank = _get_iv_rank(quotes.get("vix"), now_et)
+
     def slim(q):
         return {"price": q["price"], "change": q["change"], "change_pct": q.get("change_pct"), "source": q["source"]} if q else None
 
@@ -2514,6 +2590,7 @@ def get_market_data(background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_t
         "es": quotes.get("es"),
         "vix1d": slim(quotes.get("vix1d")),
         "vix": slim(quotes.get("vix")),
+        "iv_rank": iv_rank,
         "mag7": quotes.get("mag7"),
         "econ_events": econ_events,
         "wti": quotes.get("wti"),
