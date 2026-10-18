@@ -87,6 +87,7 @@
             </span>
             <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v17.0 Modular</span>
             <span id="global-source-badge" class="text-[9px] lg:text-xs bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
+            <button id="sound-toggle" title="쇼크 소리 알림 켜기/끄기" class="text-[11px] lg:text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-1.5 py-0.5 rounded transition-colors">🔇</button>
         </div>
         <div class="flex items-center space-x-1.5 text-[10px] lg:text-xs text-slate-400">
             <span id="header-rsi-badge" class="hidden text-[9px] lg:text-xs font-mono px-1.5 py-0.5 rounded font-bold border transition-colors">RSI --</span>
@@ -165,6 +166,7 @@
         </div>
         <div class="flex items-center space-x-2 shrink-0 font-mono">
             <span id="vix-ratio-val" class="text-slate-400 font-semibold text-[10px] sm:text-xs">Ratio --</span>
+            <span id="iv-rank-val" class="text-slate-500 text-[9px] sm:text-[10px]" title="IV Rank (1년)">IVR --</span>
             <span id="vix-status-badge" class="px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-slate-800 text-slate-400 border border-slate-700">집계 대기</span>
         </div>
     </div>
@@ -307,6 +309,7 @@
                 <div id="vah-price" class="text-xs sm:text-base lg:text-xl font-bold text-white">--</div>
             </div>
         </div>
+        <div id="vp-hist" class="mt-1"></div>
     </div>
 
     <!-- 6. GEX & EM Range -->
@@ -323,7 +326,7 @@
             <span class="text-[10px] sm:text-xs lg:text-sm font-bold text-slate-300">EXPECTED MOVE (ATM STRADDLE)</span>
             <span id="gex-em" class="text-[10px] sm:text-xs lg:text-sm font-bold text-blue-400">--</span>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 text-center mb-2.5">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-2 text-center mb-2.5">
             <div class="bg-rose-950/20 border border-rose-900/40 p-1.5 sm:p-2 rounded">
                 <div class="text-[8px] sm:text-[10px] lg:text-xs text-rose-400 font-semibold">PUT GAMMA WALL</div>
                 <div id="gex-put-wall" class="text-xs sm:text-base lg:text-xl font-bold text-rose-300">--</div>
@@ -339,6 +342,20 @@
             <div class="bg-indigo-950/20 border border-indigo-900/40 p-1.5 sm:p-2 rounded">
                 <div class="text-[8px] sm:text-[10px] lg:text-xs text-indigo-400 font-semibold">ABS PIN (자석 축)</div>
                 <div id="gex-abs-pin" class="text-xs sm:text-base lg:text-xl font-bold text-indigo-300 font-mono">--</div>
+            </div>
+            <div class="bg-amber-950/20 border border-amber-900/40 p-1.5 sm:p-2 rounded">
+                <div class="text-[8px] sm:text-[10px] lg:text-xs text-amber-400 font-semibold">MAX PAIN</div>
+                <div id="gex-max-pain" class="text-xs sm:text-base lg:text-xl font-bold text-amber-300 font-mono">--</div>
+            </div>
+        </div>
+        <div id="gex-oi-skew" class="mb-2.5 hidden">
+            <div class="flex items-center justify-between text-[9px] sm:text-[10px] text-slate-400 mb-1">
+                <span>OI 포지셔닝 <span id="gex-oi-skew-callpct" class="text-emerald-300 font-bold">--</span> Call / <span id="gex-oi-skew-putpct" class="text-rose-300 font-bold">--</span> Put</span>
+                <span id="gex-oi-skew-label" class="font-mono"></span>
+            </div>
+            <div class="flex h-2 rounded overflow-hidden bg-slate-800">
+                <div id="gex-oi-skew-callbar" class="bg-emerald-500/80 transition-all duration-300" style="width: 50%;"></div>
+                <div id="gex-oi-skew-putbar" class="bg-rose-500/80 transition-all duration-300" style="width: 50%;"></div>
             </div>
         </div>
         <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-2.5 sm:p-3 lg:p-3.5 mb-2">
@@ -642,10 +659,10 @@
 <!-- 모듈 스크립트 순차 로드 (모바일 강제 새로고침 캐시 버스팅 적용) -->
     <script src="js/auth.js?v=1.1"></script>
     <script src="js/utils.js?v=1.1"></script>
-    <script src="js/quotes.js?v=2.6"></script>
+    <script src="js/quotes.js?v=2.7"></script>
     <script src="js/gex.js?v=2.6"></script>
     <script src="js/cvd.js?v=2.2"></script>
-    <script src="js/events.js?v=1.1"></script>
-    <script src="js/app.js?v=1.2"></script>
+    <script src="js/events.js?v=1.2"></script>
+    <script src="js/app.js?v=1.3"></script>
 </body>
 </html>
