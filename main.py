@@ -405,8 +405,9 @@ def _quote_to_item(sym, label_sym, info):
     if not p:  # None 또는 0 이면 건너뜀 (0.00 표시 방지)
         return None
     prev, chg = q.get("closePrice"), q.get("netChange")
-    # 금리 지수가 10배 단위(예: 42.5)로 오면 % 단위로 보정
-    if sym in YIELD_SYMBOLS and num(p) is not None and num(p) > 20:
+    # Schwab 금리 지수($IRX/$TNX/$TYX)는 항상 10배 단위(예: 42.5 = 4.25%)로 옴.
+    # 예전엔 "값 > 20"일 때만 나눠서 금리가 2% 밑으로 내려가면 10배로 표시되는 버그가 있었음.
+    if sym in YIELD_SYMBOLS and num(p) is not None:
         p = num(p) / 10.0
         prev = (num(prev) / 10.0) if num(prev) is not None else None
         chg = (num(chg) / 10.0) if num(chg) is not None else None
@@ -506,7 +507,9 @@ def fetch_flash_market_news():
                 "hurricane", "tornado", "floods", "storm", "crash", "arrested"
             ]
 
-            for it in root.findall(".//item")[:4]:
+            for it in root.findall(".//item"):
+                if len(news_items) >= 4:
+                    break
                 title = it.findtext("title", "")
                 source = title.rsplit(" - ", 1)[1] if " - " in title else "Flash Wire"
                 title = title.rsplit(" - ", 1)[0] if " - " in title else title
