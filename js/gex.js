@@ -364,7 +364,7 @@ function renderGex(g) {
     }
     if (note) note.classList.add('hidden');
     currentGexData = g;
-    currentSpotPrice = isNum(g.gamma_flip) ? g.gamma_flip : null;
+    currentSpotPrice = isNum(g.spot) ? g.spot : (isNum(g.gamma_flip) ? g.gamma_flip : null);
 
     setText('gex-source', srcShort(g.source));
     const dte = (typeof g.dte_days === 'number') ? g.dte_days : (g.is_0dte ? 0 : 1);
