@@ -1624,26 +1624,46 @@ def parse_schwab_chain(data, exp_date):
 
 
 def fetch_schwab_chain(token, today_date):
+    """SPX/SPXW 옵션 체인 조회.
+    주말·공휴일에는 만기가 없으므로, 만기가 존재하는 가장 가까운 거래일로
+    앞으로 롤링해 조회한다 (최대 7일)."""
     if not token:
         return None, {"reason": "토큰 없음"}
-    t_str = today_date.isoformat()
-    data = schwab_get(token, "/chains", {"symbol": "$SPX", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t_str, "toDate": t_str}, timeout=6)
-    used_sym = "$SPX"
-    exps = set()
-    if isinstance(data, dict):
-        for mk in ("callExpDateMap", "putExpDateMap"):
-            for k in (data.get(mk) or {}).keys():
-                exps.add(k.split(":")[0])
-    if t_str not in exps:
-        data_spxw = schwab_get(token, "/chains", {"symbol": "$SPXW", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t_str, "toDate": t_str}, timeout=6)
-        if isinstance(data_spxw, dict):
-            data, used_sym = data_spxw, "$SPXW"
-            exps = {k.split(":")[0] for mk in ("callExpDateMap", "putExpDateMap") for k in (data.get(mk) or {}).keys()}
-    if not exps:
-        return None, {"reason": "만기 없음"}
-    exp = t_str if t_str in exps else sorted(exps)[0]
+
+    def try_date(d):
+        t = d.isoformat()
+        data = schwab_get(token, "/chains", {"symbol": "$SPX", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t, "toDate": t}, timeout=6)
+        used_sym = "$SPX"
+        exps = set()
+        if isinstance(data, dict):
+            for mk in ("callExpDateMap", "putExpDateMap"):
+                for k in (data.get(mk) or {}).keys():
+                    exps.add(k.split(":")[0])
+        if t not in exps:
+            data_spxw = schwab_get(token, "/chains", {"symbol": "$SPXW", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t, "toDate": t}, timeout=6)
+            if isinstance(data_spxw, dict):
+                data, used_sym = data_spxw, "$SPXW"
+                exps = {k.split(":")[0] for mk in ("callExpDateMap", "putExpDateMap") for k in (data.get(mk) or {}).keys()}
+        return data, used_sym, t in exps
+
+    d = today_date
+    data = used_sym = exp = None
+    got_response = False
+    for _ in range(7):
+        if d.weekday() < 5:
+            _data, _sym, ok = try_date(d)
+            if isinstance(_data, dict):
+                got_response = True
+            if ok:
+                data, used_sym, exp = _data, _sym, d.isoformat()
+                break
+        d += timedelta(days=1)
+    if not exp:
+        return None, {"reason": "만기 없음" if got_response else "체인 응답 없음 (토큰·API 확인)"}
+
     contracts = parse_schwab_chain(data, exp)
-    return ((contracts, exp) if contracts else None), {"used_symbol": used_sym, "is_0dte": exp == t_str}
+    dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today_date).days
+    return ((contracts, exp) if contracts else None), {"used_symbol": used_sym, "is_0dte": dte == 0, "dte_days": dte}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1948,8 +1968,9 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
         real_gamma_flip = round((call_wall + put_wall) / 2.0, 1) if (call_wall and put_wall) else round(spot, 1)
         gamma_flip_note = "Wall 중간값 폴백"
 
+    dte_days = (exp_dt.date() - now_et.date()).days
     return {
-        "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session, "spot": round(spot, 1),
+        "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session, "dte_days": dte_days, "spot": round(spot, 1),
         "call_wall": round(call_wall, 1) if call_wall else None, "put_wall": round(put_wall, 1) if put_wall else None,
         "gamma_flip": real_gamma_flip, "gamma_flip_note": gamma_flip_note,
         "em_pt": round(em_pt, 1) if em_pt else None, "expected_move": f"±{em_pt:.1f}pt ({em_pt / spot * 100:.2f}%)" if em_pt else None,
@@ -1978,7 +1999,7 @@ def get_gex(token, spx_p, ratio, now_et):
         r, diag = fetch_schwab_chain(token, start)
         if r:
             return analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag)
-        return {"available": False, "source": "N/A", "reason": "옵션 체인 수집 불가"}
+        return {"available": False, "source": "N/A", "reason": diag.get("reason") or "옵션 체인 수집 불가"}
 
     return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
