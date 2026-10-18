@@ -367,8 +367,9 @@ function renderGex(g) {
     currentSpotPrice = isNum(g.gamma_flip) ? g.gamma_flip : null;
 
     setText('gex-source', srcShort(g.source));
-    const is0dte = g.is_0dte ? '0DTE 당일 만기' : '익일 만기';
-    setText('gex-meta', `${g.expiration || ''} (${is0dte}) · 행사가 ${g.strike_count || 0}개`);
+    const dte = (typeof g.dte_days === 'number') ? g.dte_days : (g.is_0dte ? 0 : 1);
+    const dteLabel = dte <= 0 ? '0DTE 당일 만기' : (dte + 'DTE');
+    setText('gex-meta', `${g.expiration || ''} (${dteLabel}) · 행사가 ${g.strike_count || 0}개`);
     setText('gex-em', g.expected_move || NA);
     setText('gex-put-wall', isNum(g.put_wall) ? fmt(g.put_wall, 1) : NA);
     setText('gex-flip', isNum(g.gamma_flip) ? fmt(g.gamma_flip, 1) : NA);
