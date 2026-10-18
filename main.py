@@ -1682,7 +1682,19 @@ def fetch_schwab_chain(token, today_date):
 # ─────────────────────────────────────────────────────────────
 # 0DTE Credit Spread Optimizer 계산 엔진
 # ─────────────────────────────────────────────────────────────
-def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width=10.0):
+def _bs_delta(S, K, T, sigma, is_call, r=0.04):
+    """Black-Scholes 델타. 0DTE에서는 만기가 짧아 델타가 0/1에 수렴 (핀 리스크 반영)."""
+    try:
+        if not (S and K and T and sigma) or T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+            return None
+        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+        nd1 = 0.5 * (1.0 + math.erf(d1 / math.sqrt(2.0)))
+        return nd1 if is_call else (nd1 - 1.0)
+    except (ValueError, ZeroDivisionError, OverflowError):
+        return None
+
+
+def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width=10.0, T_years=None):
     if not spot:
         return None
 
@@ -1719,12 +1731,27 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width=
                 vol = int(c.get("vol") or c.get("volume") or c.get("totalVolume") or 0)
                 oi = int(c.get("oi") or c.get("open_interest") or c.get("openInterest") or 0)
 
+                iv_raw = num(c.get("iv"))
+                iv = iv_raw if (iv_raw and 0.01 <= iv_raw <= 5.0) else None
                 quote_map[(side, round(k, 1))] = {
                     "bid": bid, "ask": ask, "mid": mid,
-                    "spread": ba_spread, "liq": vol + oi
+                    "spread": ba_spread, "liq": vol + oi, "iv": iv
                 }
             except Exception:
                 continue
+
+    # ATM IV (숏 레그 IV 없을 때 폴백용) — 같은 side에서 스팟에 가장 가까운 행사가
+    _atm_iv = {}
+    for _side in ("C", "P"):
+        _best = None
+        for (_s, _k), _q in quote_map.items():
+            if _s != _side or not _q.get("iv"):
+                continue
+            _d = abs(_k - spot)
+            if _best is None or _d < _best[0]:
+                _best = (_d, _q["iv"])
+        if _best:
+            _atm_iv[_side] = _best[1]
 
     def _eval_spread(side, s_k, l_k, bound_val):
         qs = quote_map.get((side, round(s_k, 1)))
@@ -1785,11 +1812,19 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width=
         ror_score = max(0.0, 20.0 - abs(ror_pct - 15.0) * 0.6)
         score = liq_score + safety_score + ror_score
 
+        # 숏 레그 델타 (BS) + POP 추정치 — 0DTE 표준 행사가 선정 기준
+        # POP ≈ 1 - |Δ| (숏 프리미엄의 만기 OTM 확률 근사, tastytrade 방식)
+        _iv = qs.get("iv") or _atm_iv.get(side) or 0.25
+        _delta = _bs_delta(spot, s_k, T_years, _iv, side == "C")
+        _pop = round(max(5.0, min(95.0, (1.0 - abs(_delta)) * 100.0)), 1) if _delta is not None else None
+
         return {
             "short": s_k, "long": l_k, "credit": fill_cr,
             "nat_credit": nat_cr, "mid_credit": mid_cr,
             "max_loss": max_loss_pt, "max_loss_usd": max_loss_usd,
             "max_profit_usd": max_profit_usd, "bep": bep, "ror_pct": ror_pct,
+            "short_delta": round(_delta, 3) if _delta is not None else None,
+            "pop_pct": _pop,
             "short_bid": qs["bid"], "long_ask": ql["ask"], "ba_spread": leg_spread_sum,
             "dist_spot": dist_spot, "dist_bound": dist_bound,
             "status": fill_status, "badge": badge, "guide": guide,
@@ -1929,6 +1964,21 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
         top_pin = max(by_strike, key=lambda s: s.get("abs_gex_m", 0))
         abs_pin_strike = top_pin["strike"]
         abs_pin_val = top_pin["abs_gex_m"]
+
+    # Max Pain: 옵션 매도자(작성자) 전체 손실이 최소화되는 행사가.
+    # 0DTE 만일에는 핀 효과로 종가가 Max Pain 근처로 끌려가는 경향.
+    _max_pain = None
+    try:
+        if per:
+            _strikes = sorted(per.keys())
+            def _writer_loss(px):
+                tot = 0.0
+                for k, e in per.items():
+                    tot += max(0.0, px - k) * e["call_oi"] + max(0.0, k - px) * e["put_oi"]
+                return tot
+            _max_pain = min(_strikes, key=_writer_loss)
+    except Exception:
+        _max_pain = None
     is_0dte_session = bool((now_et.hour < 16 and exp_date == now_et.date().isoformat()) or (now_et.hour >= 16 and exp_date >= now_et.date().isoformat()))
 
     # --- SPX Gamma Flip (Zero-Gamma 변곡점) 계산 ---
@@ -1998,13 +2048,14 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
         "strike_count": len(per), "by_strike": by_strike,
         "abs_pin_strike": abs_pin_strike,
         "abs_pin_val": abs_pin_val,
+        "max_pain": round(_max_pain, 1) if _max_pain else None,
         "gamma_source_note": f"감마 {gamma_schwab}개 Schwab 제공값, {gamma_calc}개 BS 실시간 계산값",
         "oi_skew": {
             "call_oi_at_or_above_spot": int(sum(e["call_oi"] for k, e in per.items() if k >= S)),
             "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
             "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
             "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
-            "spread_optimizer": compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width),
+            "spread_optimizer": compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width, T),
         },
     }
 
