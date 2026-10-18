@@ -2790,3 +2790,4 @@ def schwab_callback(request: Request, code: Optional[str] = None):
         kv_set(KV_KEY_ACCESS, access_token, ex_seconds=ttl)
         kv_set(KV_KEY_ACCESS_EXP, str(now + ttl), ex_seconds=ttl)
     return HTMLResponse("<h1>✅ Schwab 인증 성공</h1><p>토큰이 저장되었습니다. 이 창을 닫아도 됩니다.</p>")
+
