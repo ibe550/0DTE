@@ -7,6 +7,8 @@
 const AUTH_TOKEN_KEY = "0dte_auth_token_v2";
 const AUTH_USER_KEY = "0dte_auth_user_v2";
 const DEVICE_ID_KEY = "0dte_device_id";
+// AUTH_DISABLED: true면 잠금화면 없이 바로 진입 (임시 테스트용)
+const AUTH_DISABLED = true;
 
 function getDeviceId() {
     let id = null;
@@ -41,6 +43,11 @@ function hideAuthOverlay() {
 
 // 인증 확인: 저장된 토큰이 있으면 폴링 시작 (유효성은 첫 호출에서 검증)
 async function checkAuth() {
+    if (AUTH_DISABLED) {
+        hideAuthOverlay();
+        if (typeof window.startAppPolling === "function") window.startAppPolling();
+        return;
+    }
     let token = null;
     try { token = sessionStorage.getItem(AUTH_TOKEN_KEY); } catch (e) {}
     if (token) {
