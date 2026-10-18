@@ -1,3 +1,13 @@
+function fmtEventCountdown(ts) {
+    if (!ts) return null;
+    const diffMs = ts * 1000 - Date.now();
+    if (diffMs <= 0) return null;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return '곧 발표';
+    if (mins < 60) return mins + '분 후';
+    return Math.floor(mins / 60) + '시간 ' + (mins % 60) + '분 후';
+}
+
 function renderEconEvents(e) {
     const card = $('econ-card');
     card.classList.remove('hidden');
@@ -42,6 +52,8 @@ function renderEconEvents(e) {
 
         const titleCls = (tone === 'bull') ? 'text-emerald-300 font-bold' : ((tone === 'bear') ? 'text-rose-300 font-bold' : (hasActual ? 'text-slate-200 font-bold' : 'text-slate-300'));
         const timeStatus = hasActual ? '발표완료' : (isPassed ? (tone === 'pending' ? '진행/속보' : '완료') : '예정');
+        const cd = (!isPassed && !hasActual) ? fmtEventCountdown(it.ts) : null;
+        const cdBadge = cd ? `<span class="text-[9px] sm:text-[10px] lg:text-xs bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded font-mono font-bold ml-1">⏳ ${escapeHtml(cd)}</span>` : '';
 
         return `<div class="py-1.5 border-b border-slate-800/60 last:border-0">
             <div class="flex items-center justify-between text-[11px] sm:text-xs lg:text-sm gap-2">
@@ -50,7 +62,7 @@ function renderEconEvents(e) {
                     <span class="${titleCls} truncate">${escapeHtml(it.title)}</span>
                     ${statusBadge}
                 </span>
-                <span class="font-mono text-[10px] sm:text-xs text-slate-400 shrink-0">${escapeHtml(it.time)} · ${timeStatus}</span>
+                <span class="font-mono text-[10px] sm:text-xs text-slate-400 shrink-0">${escapeHtml(it.time)} · ${timeStatus}${cdBadge}</span>
             </div>
             ${it.eval_sentence ? `<div class="text-[10px] sm:text-[11px] lg:text-xs pl-3 mt-0.5 leading-snug break-words ${sentenceColor}">${escapeHtml(it.eval_sentence)}</div>` : ''}
         </div>`;
