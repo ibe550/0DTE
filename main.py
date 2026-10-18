@@ -9,7 +9,9 @@ import time
 
 # DEPLOY_MARKER: 2026-10-18 auth-v2 (배포 확인용)
 # AUTH_DISABLED: True면 비밀번호/토큰 검사 없이 모두 통과 (임시 테스트용)
-AUTH_DISABLED = True
+# 진단 모드: False로 두면 아래 _dashboard_users()가 상세 진단 정보를 반환
+AUTH_DISABLED = False
+AUTH_DIAG_MODE = True  # True면 로그인 실패 시 값의 메타정보(길이·문자코드) 반환 (비밀번호 노출 없음)
 import xml.etree.ElementTree as ET_xml
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -2500,10 +2502,16 @@ def _dashboard_users():
     모바일 키보드 입력 대비: BOM·제로폭 문자 제거, 스마트 따옴표→일반,
     후행 쉼표 제거, 작은따옴표 JSON도 허용."""
     raw = os.environ.get("DASHBOARD_USERS", "") or ""
+    # ── 진단: 메타정보만 수집 (비밀번호 노출 없음) ──
+    diag = ""
+    if AUTH_DIAG_MODE:
+        codes = " ".join(f"U+{ord(c):04X}" for c in raw[:6])
+        codes_tail = " ".join(f"U+{ord(c):04X}" for c in raw[-4:]) if len(raw) > 6 else ""
+        diag = f" [진단: 길이={len(raw)}, 앞6코드={codes}, 뒤4코드={codes_tail}]"
     raw = raw.strip().lstrip("﻿").replace(" ", "").replace("​", "").replace("﻿", "")
     raw = raw.replace(""", '"').replace(""", '"').replace("'", "'").replace("'", "'")
     if not raw:
-        return {}, "값이 비어있음 (환경변수 추가 후 재배포 필요)"
+        return {}, "값이 비어있음 (환경변수 추가 후 재배포 필요)" + diag
     raw = re_lib.sub(r",\s*([}\]])", r"\1", raw)
     try:
         d = json.loads(raw)
@@ -2513,11 +2521,11 @@ def _dashboard_users():
         except Exception:
             pos = getattr(e, "pos", None)
             hint = f" (오류 위치: {pos}번째 문자)" if pos is not None else ""
-            return {}, f"JSON 형식 오류{hint} (예: {{\"james\": \"pw\"}})"
+            return {}, f"JSON 형식 오류{hint} (예: {{\"james\": \"pw\"}}){diag} [예외:{type(e).__name__}]"
     if not isinstance(d, dict):
-        return {}, "JSON이 객체 형식이 아님"
+        return {}, "JSON이 객체 형식이 아님" + diag
     if not d:
-        return {}, "사용자가 비어있음"
+        return {}, "사용자가 비어있음" + diag
     return d, None
 
 
