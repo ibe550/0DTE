@@ -77,7 +77,7 @@ async function fetchRealMarketData(force = false) {
             },
             () => renderGex(data.gex, data.spx ? data.spx.price : null),
             () => renderCvd(data.cvd),
-            () => renderCvdOvernight(data.cvd_overnight),
+            () => renderCvdOvernight(data.cvd_overnight, data.cvd ? data.cvd.session_mode : null),
             () => renderDirection(data.direction),
         ].forEach(fn => { try { fn(); } catch (e) { console.error('렌더링 에러:', e); } });
     } catch (err) {
