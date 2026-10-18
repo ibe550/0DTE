@@ -1250,42 +1250,50 @@ def get_candles(token, inst, tf):
     return cached(f"candles:{inst}:{key}", 4, load)
 
 
-def resolve_futures_front(token, root):
-    """선물 캔들용 근월물 심볼 결정 (pricehistory는 개별 월물 필요).
-    후보 월물 중 최근 5일 거래량 최대인 것을 선택, 24시간 캐시 (만기 롤오버 자동 대응).
-    5일 윈도우라 주말에도 금요일 데이터가 포함됨. 전부 실패 시 첫 후보 반환 (None 금지)."""
-    def load():
+def es_front_month_local(now=None):
+    """ES 근월물 로컬 계산 (API 프로브 불필요 → 콜드스타트에서도 안정).
+    만기: 3,6,9,12월 세 번째 금요일. 만기주 목요일부터 다음 월물로 롤오버."""
+    if now is None:
         now = datetime.now(ET)
-        cands = _futures_candidates(root, now)
-        best, best_vol = None, 0.0
-        for cand in cands:
-            cs = schwab_candles(token, cand, 1, 5)
-            if not cs:
-                continue
-            v = sum(c["v"] for c in cs)
-            if v > best_vol:
-                best, best_vol = cand, v
-            elif best and v < best_vol * 0.5:
-                break  # 이후 월물은 거래량이 더 작으므로 중단
-        return best or (cands[0] if cands else None)
-
-    return cached(f"futures_front:{root}", 86400, load)
+    quarters = [(3, "H"), (6, "M"), (9, "U"), (12, "Z")]
+    y = now.year
+    cands = []
+    for yy in (y, y + 1):
+        for mm, code in quarters:
+            d1 = datetime(yy, mm, 1)
+            first_fri = d1 + timedelta(days=(4 - d1.weekday()) % 7)
+            exp = first_fri + timedelta(days=14)
+            roll = (exp - timedelta(days=1)).date()  # 만기주 목요일
+            cands.append((roll, yy, code))
+    cands.sort(key=lambda x: x[0])
+    today = now.date()
+    for roll, yy, code in cands:
+        if today < roll:
+            return f"/ES{code}{str(yy)[-2:]}"
+    return f"/ESZ{str(y + 1)[-2:]}"
 
 
 def get_es_candles(token, tf):
-    """ES 선물 캔들 (근월물 자동 결정, BVC 매수/매도 분류 포함)"""
+    """ES 선물 캔들 (근월물 자동 결정: 로컬 캘린더 우선, 후보 순차 시도, BVC 분류 포함)"""
     key = normalize_tf(tf)
 
     def load():
         s_freq, s_days, agg = TF_SPEC[key]
-        ssym = resolve_futures_front(token, "/ES")
-        if not ssym:
-            return None
-        base = get_base_candles(token, ssym, s_freq, s_days)
+        now = datetime.now(ET)
+        cands = [es_front_month_local(now)]
+        for c in _futures_candidates("/ES", now):
+            if c not in cands:
+                cands.append(c)
+        base, used = None, None
+        for ssym in cands:
+            b = get_base_candles(token, ssym, s_freq, s_days)
+            if b:
+                base, used = b, ssym
+                break
         if not base:
             return None
         cs = aggregate_candles(base, agg) if agg else [dict(c) for c in base]
-        return {"candles": cs, "source": f"{SRC_SCHWAB} (ES {TF_LABEL[key]})"}
+        return {"candles": cs, "source": f"{SRC_SCHWAB} (ES {TF_LABEL[key]})", "es_symbol": used}
 
     return cached(f"candles:es:{key}", 4, load)
 
@@ -2280,11 +2288,14 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
     vwap_calc = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m else None
     vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
     # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약). 세션 자동 선택 (정규장/야간LIVE/휴장).
-    # ES 실패 시 SPY로 폴백 (카드가 비지 않도록).
+    # ES 실패 시 SPY로 폴백 (카드가 비지 않도록). 사유를 기록해 UI에 표시.
     cvd = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="auto") if es_c else None
     cvd_overnight = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="overnight") if es_c else None
     if cvd is None and spy_c:
+        es_reason = "ES 캔들 수신 실패" if not es_c else "ES 거래량 없음"
         cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et)
+        if cvd:
+            cvd["fallback_note"] = f"SPY 대체 표시 ({es_reason} — ES 복구 시 자동 전환)"
 
     rsi = None
     if spx_r and spx_r.get("candles"):
