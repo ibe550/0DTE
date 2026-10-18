@@ -159,9 +159,13 @@ REFRESH_TOKEN_TTL = 8 * 24 * 3600
 
 
 # ─────────────────────────────────────────────────────────────
-# 텔레그램 실시간 알림 시스템 (절대 쿨다운 10분)
+# 텔레그램 실시간 알림 시스템
+#  - 방향별 쿨다운 10분 (DROP/SURGE 각각 — 반전 시그널이 묻히지 않음)
+#  - 메모리 + Upstash KV 이중 기록 (Vercel 멀티인스턴스 중복 방지)
+#  - 테스트 발송(force_test)은 쿨다운을 오염시키지 않음
+#  - 전송 실패 시 1회 재시도
 # ─────────────────────────────────────────────────────────────
-_LAST_TELEGRAM_SHOCK = {"ts": 0.0, "type": None}
+_LAST_TELEGRAM_SHOCK = {}  # {type: ts}
 TELEGRAM_COOLDOWN_SEC = 600
 
 
@@ -174,18 +178,14 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
         return {"status": "error", "reason": "환경변수 누락"}
 
     now_ts = time.time()
-    s_type = shock_alert.get("type")
+    s_type = shock_alert.get("type") or "GENERAL"
+    kv_key = f"alert:telegram:last_ts:{s_type}"
 
     if not force_test:
-        kv_last_ts = num(kv_get("alert:telegram:last_ts")) if KV_AVAILABLE else None
-        last_ts = max(_LAST_TELEGRAM_SHOCK["ts"], kv_last_ts or 0.0)
+        kv_last_ts = num(kv_get(kv_key)) if KV_AVAILABLE else None
+        last_ts = max(_LAST_TELEGRAM_SHOCK.get(s_type, 0.0), kv_last_ts or 0.0)
         if now_ts - last_ts < TELEGRAM_COOLDOWN_SEC:
-            return {"status": "skipped", "reason": "쿨다운 침묵 중"}
-
-    _LAST_TELEGRAM_SHOCK["ts"] = now_ts
-    _LAST_TELEGRAM_SHOCK["type"] = s_type
-    if KV_AVAILABLE:
-        kv_set("alert:telegram:last_ts", str(now_ts), ex_seconds=TELEGRAM_COOLDOWN_SEC)
+            return {"status": "skipped", "reason": f"쿨다운 침묵 중 ({s_type})"}
 
     title = shock_alert.get("title", "⚡ [변동성 쇼크]")
     time_info = shock_alert.get("elapsed_text") or shock_alert.get("timestamp") or ""
@@ -206,15 +206,28 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
     results = []
     for cid in chat_ids:
-        try:
-            r = requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": cid, "text": msg},
-                timeout=4,
-            )
-            results.append({"chat_id": cid, "ok": r.status_code == 200})
-        except Exception as e:
-            results.append({"chat_id": cid, "error": str(e)})
+        ok, err = False, None
+        for _ in range(2):  # 1회 재시도 (일시적 네트워크 오류 대응)
+            try:
+                r = requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": cid, "text": msg},
+                    timeout=4,
+                )
+                if r.status_code == 200:
+                    ok = True
+                    break
+                err = f"HTTP {r.status_code}"
+            except Exception as e:
+                err = str(e)[:120]
+            time.sleep(1)
+        results.append({"chat_id": cid, "ok": ok, **({} if ok else {"error": err})})
+
+    # 테스트 발송은 쿨다운을 건드리지 않음 (실제 알람 억제 방지)
+    if not force_test:
+        _LAST_TELEGRAM_SHOCK[s_type] = now_ts
+        if KV_AVAILABLE:
+            kv_set(kv_key, str(now_ts), ex_seconds=TELEGRAM_COOLDOWN_SEC)
 
     return {"status": "sent", "results": results}
 
@@ -2268,6 +2281,62 @@ def test_telegram_alert(request: Request):
         "details": ["환경변수 연동 성공", "실시간 급변동 감지 시 이와 동일하게 자동 전송됩니다."],
     }
     return {"status": "ok", "result": send_telegram_shock_alert(mock, 5750.0, force_test=True)}
+
+
+def _cron_ok(request: Request):
+    """Vercel cron 인증: CRON_SECRET 환경변수와 Authorization 헤더 대조.
+    수동 테스트용으로 기존 admin key(?key=)도 허용."""
+    cron_secret = os.environ.get("CRON_SECRET")
+    if cron_secret and request.headers.get("authorization", "") == f"Bearer {cron_secret}":
+        return True
+    return _admin_ok(request)
+
+
+@app.get("/api/check-shock")
+def check_shock(request: Request):
+    """Vercel cron용 경량 쇼크 체크 — 브라우저가 꺼져 있어도 텔레그램 알람 발송.
+    5분 간격 평일 실행 권장 (vercel.json). RTH가 아니면 Schwab API 호출 없이 즉시 종료.
+    브라우저 폴링 경로와 동일한 방향별 쿨다운(KV)을 공유하므로 중복 발송 없음."""
+    if not _cron_ok(request):
+        return JSONResponse({"status": "unauthorized"}, status_code=401)
+
+    now_et = datetime.now(ET)
+    is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
+    if not is_rth:
+        return {"status": "skipped", "reason": "RTH 아님", "now_et": now_et.strftime("%m/%d %H:%M ET")}
+
+    token, _ = get_schwab_token()
+    if not token:
+        return {"status": "error", "reason": "Schwab 토큰 없음"}
+
+    try:
+        quotes = get_all_quotes(token) or {}
+        q_spx, q_spy = quotes.get("spx"), quotes.get("spy")
+        spx_p = q_spx["price"] if q_spx else None
+        if not spx_p:
+            return {"status": "error", "reason": "SPX 호가 없음"}
+        ratio = (spx_p / q_spy["price"]) if (q_spy and q_spy.get("price")) else None
+
+        spy_5m = get_candles(token, "spy", "5m")
+        spy_5m_bars = spy_5m.get("candles") if spy_5m else []
+        if ratio is None and spy_5m_bars:
+            ratio = spx_p / spy_5m_bars[-1]["c"]
+
+        # GEX (월 브레이크 감지용) — 실패해도 가격 기반 감지는 계속 진행
+        try:
+            gex = get_gex(token, spx_p, ratio, now_et)
+        except Exception:
+            gex = None
+
+        vix_target = quotes.get("vix1d") or quotes.get("vix")
+        shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, None, vix_target, now_et)
+        if shock_alert and shock_alert.get("active"):
+            tg = send_telegram_shock_alert(shock_alert, spx_p)
+            return {"status": "checked", "alert": shock_alert.get("title"), "telegram": tg,
+                    "now_et": now_et.strftime("%m/%d %H:%M ET")}
+        return {"status": "checked", "alert": None, "now_et": now_et.strftime("%m/%d %H:%M ET")}
+    except Exception as e:
+        return {"status": "error", "reason": str(e)[:200]}
 
 
 @app.get("/api/refresh-token")
