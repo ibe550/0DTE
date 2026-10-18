@@ -1,6 +1,7 @@
 let currentGexData = null;
 let currentSpotPrice = null;
 let chartBars = [];
+var optWidth = 10; // 스프레드 폭 (pt) — 백엔드 opt_width 파라미터와 연동
 
 // ─────────────────────────────────────────────────────────────
 // 0DTE GEX 대칭 막대 그래프 렌더링 엔진
@@ -416,3 +417,38 @@ function renderGex(g) {
     // 옵티마이저 바인딩 (백엔드는 oi_skew 안에 중첩해서 전달)
     renderSpreadOptimizer((g.oi_skew && g.oi_skew.spread_optimizer) || null, g);
 }
+
+// ─────────────────────────────────────────────────────────────
+// 스프레드 폭 선택 (5/10/15/20pt) — 백엔드 opt_width 파라미터 연동
+// ─────────────────────────────────────────────────────────────
+function setOptWidth(w) {
+    w = parseInt(w, 10);
+    if ([5, 10, 15, 20].indexOf(w) === -1) return;
+    optWidth = w;
+    window.optWidth = w;
+
+    // 버튼 스타일 토글 (반응형 클래스 유지 — className 덮어쓰기 금지)
+    var btns = document.querySelectorAll('.opt-w-btn');
+    btns.forEach(function(btn) {
+        var active = (parseInt(btn.getAttribute('data-w'), 10) === w);
+        btn.classList.toggle('bg-teal-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('font-bold', active);
+        btn.classList.toggle('shadow', active);
+        btn.classList.toggle('bg-slate-800/80', !active);
+        btn.classList.toggle('text-slate-300', !active);
+        btn.classList.toggle('hover:bg-slate-700', !active);
+    });
+
+    // 새 폭으로 옵티마이저 다시 조회 (CVD TF 전환 패턴과 동일)
+    var apiBase = (typeof API_URL !== 'undefined') ? API_URL : '';
+    if (!apiBase) return;
+    var tf = (typeof window.currentCvdTf !== 'undefined' && window.currentCvdTf) ? window.currentCvdTf : '10m';
+    fetch(apiBase + '?cvd_tf=' + encodeURIComponent(tf) + '&opt_width=' + w + '&_t=' + Date.now())
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d && d.gex) renderGex(d.gex);
+        })
+        .catch(function() {});
+}
+window.setOptWidth = setOptWidth;
