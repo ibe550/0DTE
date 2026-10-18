@@ -72,6 +72,8 @@ function renderVpHist(vp) {
 }
 
 async function fetchRealMarketData(force = false) {
+    // 인증 전에는 데이터 요청 차단 (잠금화면이 장식이던 문제 해결)
+    if (!window.__AUTH_VERIFIED__) return;
     if (inFlight && !force) return;
     inFlight = true;
     const mySeq = ++reqSeq;
@@ -80,7 +82,12 @@ async function fetchRealMarketData(force = false) {
 
     try {
         const w = (typeof optWidth !== 'undefined' && optWidth) ? optWidth : 10;
-        const res = await fetch(`${API_URL}?cvd_tf=${currentCvdTf}&opt_width=${w}`, { signal: ctrl.signal });
+        const headers = (typeof authHeaders === 'function') ? authHeaders() : {};
+        const res = await fetch(`${API_URL}?cvd_tf=${currentCvdTf}&opt_width=${w}`, { signal: ctrl.signal, headers: headers });
+        if (res.status === 401) {
+            if (mySeq === reqSeq && typeof handleAuthExpired === 'function') handleAuthExpired();
+            return;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
         const data = await res.json();
         if (mySeq !== reqSeq || data.status !== 'success') return;
@@ -118,5 +125,11 @@ async function fetchRealMarketData(force = false) {
     }
 }
 
-fetchRealMarketData(true);
-setInterval(() => fetchRealMarketData(false), POLL_MS);
+// 폴링 시작점 (auth.js의 로그인 성공/토큰 확인 후에 호출됨)
+let _pollStarted = false;
+window.startAppPolling = function () {
+    if (_pollStarted) { fetchRealMarketData(true); return; }
+    _pollStarted = true;
+    fetchRealMarketData(true);
+    setInterval(() => fetchRealMarketData(false), POLL_MS);
+};
