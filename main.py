@@ -2448,7 +2448,8 @@ def refresh_token_cron(request: Request):
 
 def _get_iv_rank(vix_q, now_et):
     """IV Rank = (현재 VIX - 1년 최저) / (1년 최고 - 1년 최저) * 100.
-    KV에 일별 VIX를 적립. KV 없으면 None."""
+    히스토리는 JSON blob 1개로 관리해 KV 호출을 1~2회로 제한 (365회 순차 조회 금지).
+    KV 없으면 None."""
     try:
         if not KV_AVAILABLE:
             return None
@@ -2456,19 +2457,18 @@ def _get_iv_rank(vix_q, now_et):
         if not vix or vix <= 0:
             return None
         today = now_et.strftime("%Y-%m-%d")
-        # 오늘 값 저장 (당일 갱신)
-        kv_set(f"ivrank:vix:{today}", f"{vix:.2f}", ex_seconds=400 * 86400)
-        # 최근 365일 수집
-        vals = []
-        for i in range(365):
-            d = (now_et - timedelta(days=i)).strftime("%Y-%m-%d")
-            v = kv_get(f"ivrank:vix:{d}")
-            try:
-                fv = float(v)
-                if fv > 0:
-                    vals.append(fv)
-            except (TypeError, ValueError):
-                continue
+        hist = []
+        try:
+            raw = kv_get("ivrank:hist:v1")
+            if raw:
+                hist = json.loads(raw)
+        except Exception:
+            hist = []
+        if not hist or hist[-1][0] != today:
+            hist.append([today, round(vix, 2)])
+            hist = hist[-400:]
+            kv_set("ivrank:hist:v1", json.dumps(hist), ex_seconds=400 * 86400)
+        vals = [v for _, v in hist if isinstance(v, (int, float)) and v > 0]
         if len(vals) < 20:
             return {"rank": None, "note": f"적립 중 ({len(vals)}/20일)"}
         lo, hi = min(vals), max(vals)
