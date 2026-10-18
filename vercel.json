@@ -27,10 +27,6 @@
     {
       "path": "/api/refresh-token",
       "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/check-shock",
-      "schedule": "*/5 13-21 * * 1-5"
     }
   ]
 }
