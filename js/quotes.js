@@ -43,6 +43,22 @@ function refreshSourceNotice() {
 //       · VIX ≥ 25      : 고변동성 체제 (신규 매도 금지) — 25는 휴리스틱
 //   ※ 토/일(ET)에는 금요일 종가 기준 stale 데이터임을 표시
 // ─────────────────────────────────────────────────────────────
+// IV Rank 표시 (6) — 크레딧 매도 타이밍 잣대 (높을수록 프리미엄 비쌈)
+function renderIvRank(iv) {
+    const el = document.getElementById('iv-rank-val');
+    if (!el) return;
+    if (!iv || iv.rank == null) {
+        el.innerText = iv && iv.note ? iv.note : 'IVR --';
+        el.className = 'text-slate-500 text-[9px] sm:text-[10px]';
+        el.title = 'IV Rank (1년) — 데이터 적립 중';
+        return;
+    }
+    const r = iv.rank;
+    el.innerText = `IVR ${r}%`;
+    el.title = `IV Rank (1년) ${r}% · VIX ${iv.vix} (범위 ${iv.lo}~${iv.hi}, ${iv.days}일)`;
+    el.className = 'text-[9px] sm:text-[10px] font-bold ' + (r >= 50 ? 'text-amber-300' : (r >= 25 ? 'text-slate-300' : 'text-slate-500'));
+}
+
 function updateVixRatio() {
     const card = $('vix-ratio-card');
     const badge = $('vix-status-badge');
@@ -185,11 +201,52 @@ function renderRsi(r) {
     badge.innerText = `RSI ${val} (${statusText})`;
 }
 
+// ─────────────────────────────────────────────────────────────
+// 장중 쇼크 소리 알림 (Web Audio API, 외부 파일 불필요)
+// 브라우저 정책상 사용자 제스처 후에만 동작 → 헤더 🔊 토글로 활성화
+// ─────────────────────────────────────────────────────────────
+let soundOn = false;
+let lastShockId = null;
+function _beep(freq, dur, delay) {
+    try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq; o.type = 'sine';
+        const t = ctx.currentTime + (delay || 0);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) {}
+}
+function shockBeep() { _beep(880, 0.22, 0); _beep(880, 0.22, 0.28); _beep(1318, 0.4, 0.56); }
+function initSoundToggle() {
+    const btn = document.getElementById('sound-toggle');
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+        soundOn = !soundOn;
+        btn.innerText = soundOn ? '🔊' : '🔇';
+        btn.title = soundOn ? '쇼크 소리 알림 끄기' : '쇼크 소리 알림 켜기';
+        if (soundOn) _beep(880, 0.15, 0); // 활성화 확인음
+    });
+}
+document.addEventListener('DOMContentLoaded', initSoundToggle);
+
 function renderShockAlert(alert) {
     const banner = $('shock-alert-banner');
     if (!banner || !alert || !alert.active) {
         if (banner) banner.classList.add('hidden');
         return;
+    }
+    // 새 쇼크 발생 시 소리 알림 (같은 쇼크 반복 재생 방지)
+    const alertId = alert.timestamp || alert.title || '';
+    if (soundOn && alertId && alertId !== lastShockId) {
+        lastShockId = alertId;
+        shockBeep();
     }
     banner.classList.remove('hidden');
     setText('shock-alert-title', alert.title || '⚡ [변동성 쇼크]');
