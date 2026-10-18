@@ -1,7 +1,9 @@
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)"""
 import html as html_lib
+import hmac as hmac_lib
 import math
 import os
+import secrets as secrets_lib
 import time
 import xml.etree.ElementTree as ET_xml
 from collections import OrderedDict
@@ -2481,8 +2483,135 @@ def _get_iv_rank(vix_q, now_et):
         return None
 
 
+# ─────────────────────────────────────────────────────────────
+# 대시보드 사용자 인증 (1인 1비밀번호 + 1비밀번호 1기기 바인딩)
+#  - Vercel 환경변수 DASHBOARD_USERS = JSON {"james": "pw1", "a": "pw2"}
+#  - /api/login → 토큰 발급 (KV, 7일) → 이후 /api/market-data는 Bearer 토큰 필수
+#  - 기기 바인딩: 같은 계정의 다른 device_id 로그인은 403 차단
+#  - 관리자(/api/admin/unbind): 기기 바인딩 해제 + 해당 사용자 토큰 전부 무효화
+# ─────────────────────────────────────────────────────────────
+def _dashboard_users():
+    try:
+        raw = os.environ.get("DASHBOARD_USERS", "")
+        d = json.loads(raw) if raw else {}
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+@app.post("/api/login")
+async def api_login(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "잘못된 요청"}, status_code=400)
+    user = str(body.get("user", "")).strip()
+    password = str(body.get("password", ""))
+    device_id = str(body.get("device_id", "")).strip()
+    users = _dashboard_users()
+    if not users:
+        return JSONResponse({"ok": False, "error": "서버 설정 필요: DASHBOARD_USERS 미설정"}, status_code=503)
+    if not user or not device_id or len(device_id) > 128 or len(user) > 64:
+        return JSONResponse({"ok": False, "error": "잘못된 요청"}, status_code=400)
+    # 브루트포스 방어: 5회 실패 시 5분 잠금
+    try:
+        fails = int(kv_get(f"auth:fail:{user}") or 0)
+    except Exception:
+        fails = 0
+    if fails >= 5:
+        return JSONResponse({"ok": False, "error": "5회 실패로 5분간 잠김"}, status_code=429)
+    expected = users.get(user)
+    if not expected or not hmac_lib.compare_digest(str(expected), password):
+        try:
+            kv_set(f"auth:fail:{user}", str(fails + 1), ex_seconds=300)
+        except Exception:
+            pass
+        return JSONResponse({"ok": False, "error": "아이디 또는 비밀번호가 일치하지 않습니다"}, status_code=401)
+    try:
+        rev = int(kv_get(f"auth:rev:{user}") or 0)
+    except Exception:
+        rev = 0
+    # 1비밀번호 1기기: 이미 다른 기기에 바인딩되어 있으면 차단
+    dev_raw = kv_get(f"auth:dev:{user}")
+    if dev_raw:
+        try:
+            bound = json.loads(dev_raw)
+        except Exception:
+            bound = {}
+        if bound.get("device_id") and bound.get("device_id") != device_id:
+            return JSONResponse({"ok": False, "error": "다른 기기에서 이미 사용 중입니다"}, status_code=403)
+    token = secrets_lib.token_urlsafe(32)
+    kv_set(f"auth:tok:{token}", json.dumps({"user": user, "device_id": device_id, "rev": rev}), ex_seconds=7 * 86400)
+    kv_set(f"auth:dev:{user}", json.dumps({"device_id": device_id, "rev": rev}))
+    try:
+        kv_set(f"auth:fail:{user}", "0", ex_seconds=300)
+        kv_set(f"auth:last:{user}", datetime.now(ET).strftime("%Y-%m-%d %H:%M"))
+    except Exception:
+        pass
+    return {"ok": True, "token": token, "user": user}
+
+
+def _require_auth(request: Request):
+    """Bearer 토큰 검증 → 사용자명 반환 (실패 시 None)"""
+    try:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return None
+        token = auth[7:].strip()
+        if not token or len(token) > 128:
+            return None
+        raw = kv_get(f"auth:tok:{token}")
+        if not raw:
+            return None
+        info = json.loads(raw)
+        user = info.get("user")
+        if not user:
+            return None
+        try:
+            rev = int(kv_get(f"auth:rev:{user}") or 0)
+        except Exception:
+            rev = 0
+        if info.get("rev", 0) != rev:
+            return None  # unbind로 무효화된 토큰
+        dev_raw = kv_get(f"auth:dev:{user}")
+        if dev_raw:
+            try:
+                bound = json.loads(dev_raw)
+                if bound.get("device_id") != info.get("device_id"):
+                    return None
+            except Exception:
+                return None
+        return user
+    except Exception:
+        return None
+
+
+@app.post("/api/admin/unbind")
+async def api_admin_unbind(request: Request):
+    """관리자: 특정 사용자의 기기 바인딩 해제 + 토큰 전부 무효화 (비밀번호 변경 없이 재로그인 가능)"""
+    if not _admin_ok(request):
+        return JSONResponse({"ok": False}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    user = str(body.get("user", "")).strip()
+    if not user:
+        return JSONResponse({"ok": False, "error": "user 필요"}, status_code=400)
+    kv_cmd("DEL", f"auth:dev:{user}")
+    try:
+        cur = int(kv_get(f"auth:rev:{user}") or 0)
+    except Exception:
+        cur = 0
+    kv_set(f"auth:rev:{user}", str(cur + 1))
+    return {"ok": True, "user": user}
+
+
 @app.get("/api/market-data")
-def get_market_data(background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10"):
+def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10"):
+    # 대시보드 인증: 토큰 없으면 데이터 차단 (잠금화면 장식 문제 해결)
+    if not _require_auth(request):
+        return JSONResponse({"status": "unauthorized", "error": "로그인이 필요합니다"}, status_code=401)
     t0 = time.time()
     # Vercel Hobby 함수 제한 10초 대비 응답 데드라인 (초과 시 느린 섹션은 폴백으로 대체)
     RESP_BUDGET = 8.5
