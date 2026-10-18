@@ -125,10 +125,19 @@ function renderCvdDirect(cvd) {
     safeSet('cvd-data-time', 'Data as of ' + (cvd.data_time || '--'));
     safeSet('cvd-x-caption', 'Time (Eastern Time, ET) · ' + tfLabel + ' Intervals');
 
+    var sessMode = cvd.session_mode || (cvd.is_prior ? 'prior_rth' : 'rth_live');
+    var isOvernightSess = sessMode.indexOf('overnight') === 0;
     var priorBadge = document.getElementById('cvd-prior-badge');
     if (priorBadge) {
         priorBadge.classList.remove('hidden');
-        priorBadge.innerHTML = cvd.is_prior ? '🟡 전일 정규장 마감' : '🟢 당일 정규장 실시간';
+        var badgeTxt = {
+            'rth_live': '🟢 당일 정규장 실시간',
+            'rth_closed': '🟡 당일 정규장 마감',
+            'prior_rth': '🟡 전일 정규장 마감',
+            'overnight_live': '🌙 야간 세션 LIVE',
+            'overnight_done': '🌙 야간 마감'
+        }[sessMode] || '🟢 당일 정규장 실시간';
+        priorBadge.innerHTML = badgeTxt;
     }
 
     // 백엔드가 명시한 단위 배율 사용 (휴리스틱 추측 제거)
@@ -272,7 +281,7 @@ function renderCvdDirect(cvd) {
             }
         });
         var lastTimeStr = formatEtTime(lastBar.t);
-        if (lastTimeStr !== '16:00') {
+        if (!isOvernightSess && lastTimeStr !== '16:00') {
             gridHtml += '<line x1="' + xEnd.toFixed(1) + '" y1="' + yTop.toFixed(1) + '" x2="' + xEnd.toFixed(1) + '" y2="' + yZero.toFixed(1) + '" stroke="rgba(71, 85, 105, 0.35)" stroke-width="1" stroke-dasharray="2,3" />';
             gridHtml += '<text x="' + xEnd.toFixed(1) + '" y="' + (yZero + 13).toFixed(1) + '" fill="#94a3b8" font-size="9" font-family="monospace" text-anchor="middle">16:00</text>';
         }
@@ -369,10 +378,11 @@ function initCvdInteraction() {
 document.addEventListener('DOMContentLoaded', initCvdInteraction);
 
 // 야간 ES CVD 한 줄 표시 (전일 18:00 → 당일 09:30 ET)
-function renderCvdOvernight(cvdOn) {
+// 메인 차트가 야간 LIVE를 표시 중이면 중복이므로 숨김
+function renderCvdOvernight(cvdOn, mainMode) {
     var el = document.getElementById('cvd-overnight-line');
     if (!el) return;
-    if (!cvdOn || !cvdOn.bars || !cvdOn.bars.length) {
+    if (!cvdOn || !cvdOn.bars || !cvdOn.bars.length || mainMode === 'overnight_live') {
         el.style.display = 'none';
         return;
     }
