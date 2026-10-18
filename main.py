@@ -3,6 +3,7 @@ import html as html_lib
 import hmac as hmac_lib
 import math
 import os
+import re as re_lib
 import secrets as secrets_lib
 import time
 import xml.etree.ElementTree as ET_xml
@@ -2491,12 +2492,29 @@ def _get_iv_rank(vix_q, now_et):
 #  - 관리자(/api/admin/unbind): 기기 바인딩 해제 + 해당 사용자 토큰 전부 무효화
 # ─────────────────────────────────────────────────────────────
 def _dashboard_users():
+    """DASHBOARD_USERS 파싱 → (users_dict, error_detail).
+    모바일 키보드 입력 대비: BOM·제로폭 문자 제거, 스마트 따옴표→일반,
+    후행 쉼표 제거, 작은따옴표 JSON도 허용."""
+    raw = os.environ.get("DASHBOARD_USERS", "") or ""
+    raw = raw.strip().lstrip("﻿").replace(" ", "").replace("​", "").replace("﻿", "")
+    raw = raw.replace(""", '"').replace(""", '"').replace("'", "'").replace("'", "'")
+    if not raw:
+        return {}, "값이 비어있음 (환경변수 추가 후 재배포 필요)"
+    raw = re_lib.sub(r",\s*([}\]])", r"\1", raw)
     try:
-        raw = os.environ.get("DASHBOARD_USERS", "")
-        d = json.loads(raw) if raw else {}
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
+        d = json.loads(raw)
+    except Exception as e:
+        try:
+            d = json.loads(raw.replace("'", '"'))
+        except Exception:
+            pos = getattr(e, "pos", None)
+            hint = f" (오류 위치: {pos}번째 문자)" if pos is not None else ""
+            return {}, f"JSON 형식 오류{hint} (예: {{\"james\": \"pw\"}})"
+    if not isinstance(d, dict):
+        return {}, "JSON이 객체 형식이 아님"
+    if not d:
+        return {}, "사용자가 비어있음"
+    return d, None
 
 
 @app.post("/api/login")
@@ -2508,14 +2526,9 @@ async def api_login(request: Request):
     user = str(body.get("user", "")).strip()
     password = str(body.get("password", ""))
     device_id = str(body.get("device_id", "")).strip()
-    users = _dashboard_users()
+    users, uerr = _dashboard_users()
     if not users:
-        raw = (os.environ.get("DASHBOARD_USERS", "") or "").strip().lstrip("﻿")
-        if not raw:
-            err = "서버 설정 필요: DASHBOARD_USERS 값이 비어있음 (환경변수 추가 후 재배포 필요)"
-        else:
-            err = "서버 설정 필요: DASHBOARD_USERS JSON 형식 오류 (예: {\"james\": \"pw\"})"
-        return JSONResponse({"ok": False, "error": err}, status_code=503)
+        return JSONResponse({"ok": False, "error": f"서버 설정 필요: DASHBOARD_USERS {uerr}"}, status_code=503)
     if not user or not device_id or len(device_id) > 128 or len(user) > 64:
         return JSONResponse({"ok": False, "error": "잘못된 요청"}, status_code=400)
     # 브루트포스 방어: 5회 실패 시 5분 잠금
