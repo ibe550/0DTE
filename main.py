@@ -1,6 +1,7 @@
 """SPX 0DTE DEFENDER - market-data API (FastAPI on Vercel)"""
 import html as html_lib
 import hmac as hmac_lib
+import json
 import math
 import os
 import re as re_lib
