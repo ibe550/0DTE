@@ -1115,7 +1115,8 @@ def aggregate_candles(candles, minutes):
         total_min = dt.hour * 60 + dt.minute
 
         # 정규장(09:30 = 570분) 기준으로 시간 슬롯 정렬 (09:30~10:29 -> 09:30 봉으로 생성되어 누락 원천 방지)
-        if total_min >= 570:
+        # 단, 16:00 이후 봉은 정규 슬롯에 포함시키지 않음 (1H처럼 큰 봉에서 16:00~ 시간외 거래량이 15:30 봉에 섞이는 것 방지)
+        if 570 <= total_min < 960:
             idx = (total_min - 570) // minutes
             slot_min = 570 + idx * minutes
         else:
