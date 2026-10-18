@@ -1669,7 +1669,7 @@ def fetch_schwab_chain(token, today_date):
 # ─────────────────────────────────────────────────────────────
 # 0DTE Credit Spread Optimizer 계산 엔진
 # ─────────────────────────────────────────────────────────────
-def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
+def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width=10.0):
     if not spot:
         return None
 
@@ -1677,9 +1677,15 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
     pw = float(put_wall) if put_wall else (spot - 30.0)
     em = float(em_pt) if em_pt else 25.0
 
+    # 스프레드 폭 파라미터 (5pt 단위, 5~50pt). 기본 10pt.
+    try:
+        width = float(width)
+    except (TypeError, ValueError):
+        width = 10.0
+    width = min(50.0, max(5.0, round(width / 5.0) * 5.0))
+
     c_bound = max(cw, spot + em)
     p_bound = min(pw, spot - em)
-    width = 10.0
 
     # 1. 행사가별 실제 매수(Bid)·매도(Ask) 호가 및 유동성 맵 구성
     #    parse_schwab_chain 이 만드는 키: K, side, bid, ask, last, oi, vol
@@ -1830,7 +1836,7 @@ def compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt):
     }
 
 
-def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
+def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, width=10.0):
     S = spot / scale
     y, m, d = (int(x) for x in exp_date.split("-"))
     exp_dt = ET.localize(datetime(y, m, d, 16, 0))
@@ -1985,23 +1991,28 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None):
             "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
             "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
             "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
-            "spread_optimizer": compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt),
+            "spread_optimizer": compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width),
         },
     }
 
 
-def get_gex(token, spx_p, ratio, now_et):
+def get_gex(token, spx_p, ratio, now_et, width=10.0):
     if spx_p is None:
         return {"available": False, "source": "N/A", "reason": "SPX 현재가 없음"}
+    try:
+        width = float(width)
+    except (TypeError, ValueError):
+        width = 10.0
+    width = min(50.0, max(5.0, round(width / 5.0) * 5.0))
     start = now_et.date() if now_et.hour < 16 else now_et.date() + timedelta(days=1)
 
     def load():
         r, diag = fetch_schwab_chain(token, start)
         if r:
-            return analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag)
+            return analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag, width)
         return {"available": False, "source": "N/A", "reason": diag.get("reason") or "옵션 체인 수집 불가"}
 
-    return cached("gex", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
+    return cached(f"gex:w{width:g}", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
 
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
@@ -2268,7 +2279,7 @@ def refresh_token_cron(request: Request):
 
 
 @app.get("/api/market-data")
-def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
+def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: float = 10.0):
     now_et = datetime.now(ET)
     now_str = now_et.strftime("%m/%d %H:%M:%S ET")
 
@@ -2285,7 +2296,7 @@ def get_market_data(rsi_tf: str = "1H", cvd_tf: str = "10m"):
         f_spy_all = {k: ex.submit(get_candles, token, "spy", k) for k in spy_tf_set}
         f_es_all = {k: ex.submit(get_es_candles, token, k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
-        f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et)
+        f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et, opt_width)
         f_poly = ex.submit(get_polymarket_spx, spx_p, (q_spy["price"] if q_spy else None))
         f_cal = ex.submit(cached, "econ_events_data", 15, fetch_global_econ_calendar)
         f_news = ex.submit(fetch_flash_market_news)
