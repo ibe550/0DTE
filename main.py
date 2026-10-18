@@ -8,6 +8,8 @@ import secrets as secrets_lib
 import time
 
 # DEPLOY_MARKER: 2026-10-18 auth-v2 (배포 확인용)
+# AUTH_DISABLED: True면 비밀번호/토큰 검사 없이 모두 통과 (임시 테스트용)
+AUTH_DISABLED = True
 import xml.etree.ElementTree as ET_xml
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -2573,6 +2575,8 @@ async def api_login(request: Request):
 
 def _require_auth(request: Request):
     """Bearer 토큰 검증 → 사용자명 반환 (실패 시 None)"""
+    if AUTH_DISABLED:
+        return "guest"
     try:
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
