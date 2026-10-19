@@ -1,5 +1,5 @@
 const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
-const POLL_MS = 5000;
+const POLL_MS = 10000;
 let inFlight = false;
 let reqSeq = 0;
 
