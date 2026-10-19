@@ -271,8 +271,8 @@ function renderSpreadOptimizer(opt, gexData) {
             rawCallCredit = Math.round(rawCallCredit * 20) / 20;
 
             let callStatus = 'SWEET_SPOT';
-            let callBadge = '✅ 진입 적격';
-            let callGuide = `방어선 바깥 +${(callShort - callBound).toFixed(1)}pt`;
+            let callBadge = '✅ 진입 적격 (추정)';
+            let callGuide = `방어선 바깥 +${(callShort - callBound).toFixed(1)}pt · 크레딧 추정치`;
 
             if (callDist < 10) {
                 callStatus = 'DANGER';
@@ -289,8 +289,8 @@ function renderSpreadOptimizer(opt, gexData) {
             rawPutCredit = Math.round(rawPutCredit * 20) / 20;
 
             let putStatus = 'SWEET_SPOT';
-            let putBadge = '✅ 진입 적격';
-            let putGuide = `방어선 바깥 -${(putBound - putShort).toFixed(1)}pt`;
+            let putBadge = '✅ 진입 적격 (추정)';
+            let putGuide = `방어선 바깥 -${(putBound - putShort).toFixed(1)}pt · 크레딧 추정치`;
 
             if (putDist < 10) {
                 putStatus = 'DANGER';
@@ -401,7 +401,7 @@ function renderGex(g) {
     setText('gex-source', srcShort(g.source));
     const dte = (typeof g.dte_days === 'number') ? g.dte_days : (g.is_0dte ? 0 : 1);
     const dteLabel = dte <= 0 ? '0DTE 당일 만기' : (dte + 'DTE');
-    setText('gex-meta', `${g.expiration || ''} (${dteLabel}) · 행사가 ${g.strike_count || 0}개 · ${expiryCountdownText()}`);
+    setText('gex-meta', `${g.expiration || ''} (${dteLabel}) · 행사가 ${g.strike_count || 0}개 · ${expiryCountdownText()}` + (g.gamma_source_note ? ` · ${g.gamma_source_note}` : ''));
     setText('gex-em', g.expected_move || NA);
     // 월까지 거리 (현재가 대비 ±Npt) — 트레이더 암산 제거
     const wallDist = (w) => {
