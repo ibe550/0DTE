@@ -2539,6 +2539,7 @@ async def api_login(request: Request):
     user = str(body.get("user", "")).strip()
     password = str(body.get("password", ""))
     device_id = str(body.get("device_id", "")).strip()
+    force = bool(body.get("force", False))
     users, uerr = _dashboard_users()
     if not users:
         return JSONResponse({"ok": False, "error": f"서버 설정 필요: DASHBOARD_USERS {uerr}"}, status_code=503)
@@ -2562,7 +2563,8 @@ async def api_login(request: Request):
         rev = int(kv_get(f"auth:rev:{user}") or 0)
     except Exception:
         rev = 0
-    # 1비밀번호 1기기: 이미 다른 기기에 바인딩되어 있으면 차단
+    # 1비밀번호 1기기: 이미 다른 기기에 바인딩되어 있으면 전환 확인 필요
+    # force=True면 기존 바인딩 해제 후 새 기기로 전환 (기존 토큰 무효화)
     dev_raw = kv_get(f"auth:dev:{user}")
     if dev_raw:
         try:
@@ -2570,7 +2572,15 @@ async def api_login(request: Request):
         except Exception:
             bound = {}
         if bound.get("device_id") and bound.get("device_id") != device_id:
-            return JSONResponse({"ok": False, "error": "다른 기기에서 이미 사용 중입니다"}, status_code=403)
+            if not force:
+                return JSONResponse({"ok": False, "error": "TAKEOVER_REQUIRED",
+                                     "message": "다른 기기에서 이미 사용 중입니다. 이 기기로 전환하시겠습니까?"}, status_code=403)
+            # 강제 전환: rev 증가로 기존 토큰 무효화
+            try:
+                rev = int(kv_get(f"auth:rev:{user}") or 0) + 1
+                kv_set(f"auth:rev:{user}", str(rev))
+            except Exception:
+                pass
     token = secrets_lib.token_urlsafe(32)
     kv_set(f"auth:tok:{token}", json.dumps({"user": user, "device_id": device_id, "rev": rev}), ex_seconds=7 * 86400)
     kv_set(f"auth:dev:{user}", json.dumps({"device_id": device_id, "rev": rev}))
@@ -2638,6 +2648,27 @@ async def api_admin_unbind(request: Request):
         cur = 0
     kv_set(f"auth:rev:{user}", str(cur + 1))
     return {"ok": True, "user": user}
+
+
+@app.post("/api/logout")
+async def api_logout(request: Request):
+    """사용자 로그아웃: 기기 바인딩 해제 + 현재 토큰 무효화 (다른 기기에서 로그인 가능)"""
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:].strip() if auth.startswith("Bearer ") else ""
+    user = None
+    if token:
+        try:
+            raw = kv_get(f"auth:tok:{token}")
+            if raw:
+                info = json.loads(raw)
+                user = info.get("user")
+        except Exception:
+            pass
+    if token:
+        kv_cmd("DEL", f"auth:tok:{token}")
+    if user:
+        kv_cmd("DEL", f"auth:dev:{user}")
+    return {"ok": True}
 
 
 @app.get("/api/market-data")
