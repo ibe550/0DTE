@@ -1702,7 +1702,7 @@ def fetch_schwab_chain(token, today_date):
 
     def try_date(d):
         t = d.isoformat()
-        data = schwab_get(token, "/chains", {"symbol": "$SPX", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t, "toDate": t}, timeout=6)
+        data = schwab_get(token, "/chains", {"symbol": "$SPX", "contractType": "ALL", "strikeCount": 80, "includeUnderlyingQuote": "false", "fromDate": t, "toDate": t}, timeout=6)
         used_sym = "$SPX"
         exps = set()
         if isinstance(data, dict):
@@ -1710,7 +1710,7 @@ def fetch_schwab_chain(token, today_date):
                 for k in (data.get(mk) or {}).keys():
                     exps.add(k.split(":")[0])
         if t not in exps:
-            data_spxw = schwab_get(token, "/chains", {"symbol": "$SPXW", "contractType": "ALL", "strikeCount": 160, "includeUnderlyingQuote": "false", "fromDate": t, "toDate": t}, timeout=6)
+            data_spxw = schwab_get(token, "/chains", {"symbol": "$SPXW", "contractType": "ALL", "strikeCount": 80, "includeUnderlyingQuote": "false", "fromDate": t, "toDate": t}, timeout=6)
             if isinstance(data_spxw, dict):
                 data, used_sym = data_spxw, "$SPXW"
                 exps = {k.split(":")[0] for mk in ("callExpDateMap", "putExpDateMap") for k in (data.get(mk) or {}).keys()}
@@ -2139,7 +2139,7 @@ def get_gex(token, spx_p, ratio, now_et, width=10.0):
             return analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag, width)
         return {"available": False, "source": "N/A", "reason": diag.get("reason") or "옵션 체인 수집 불가"}
 
-    return cached(f"gex:w{width:g}", 30, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
+    return cached(f"gex:w{width:g}", 60, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
 
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
