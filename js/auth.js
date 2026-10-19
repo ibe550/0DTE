@@ -8,7 +8,7 @@ const AUTH_TOKEN_KEY = "0dte_auth_token_v2";
 const AUTH_USER_KEY = "0dte_auth_user_v2";
 const DEVICE_ID_KEY = "0dte_device_id";
 // AUTH_DISABLED: true면 잠금화면 없이 바로 진입 (임시 테스트용)
-const AUTH_DISABLED = true;
+const AUTH_DISABLED = false;
 
 function getDeviceId() {
     let id = null;
@@ -32,7 +32,7 @@ function showAuthOverlay(msg) {
     if (overlay) overlay.classList.remove("hidden");
     window.__AUTH_VERIFIED__ = false;
     window.__AUTH_TOKEN__ = null;
-    try { sessionStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
+    try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
 }
 
 function hideAuthOverlay() {
@@ -49,7 +49,13 @@ async function checkAuth() {
         return;
     }
     let token = null;
-    try { token = sessionStorage.getItem(AUTH_TOKEN_KEY); } catch (e) {}
+    try {
+        token = localStorage.getItem(AUTH_TOKEN_KEY);
+        if (!token) { // 구버전 sessionStorage에서 마이그레이션
+            token = sessionStorage.getItem(AUTH_TOKEN_KEY);
+            if (token) { localStorage.setItem(AUTH_TOKEN_KEY, token); sessionStorage.removeItem(AUTH_TOKEN_KEY); }
+        }
+    } catch (e) {}
     if (token) {
         window.__AUTH_TOKEN__ = token;
         hideAuthOverlay();
@@ -75,8 +81,8 @@ async function doLogout() {
     window.__AUTH_TOKEN__ = null;
     window.__AUTH_VERIFIED__ = false;
     try {
-        sessionStorage.removeItem(AUTH_TOKEN_KEY);
-        sessionStorage.removeItem(AUTH_USER_KEY);
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_USER_KEY);
     } catch (e) {}
     showAuthOverlay();
 }
@@ -128,8 +134,8 @@ async function handleAuthSubmit(e) {
         if (res.ok && data.ok && data.token) {
             window.__AUTH_TOKEN__ = data.token;
             try {
-                sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
-                sessionStorage.setItem(AUTH_USER_KEY, data.user || user);
+                localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+                localStorage.setItem(AUTH_USER_KEY, data.user || user);
             } catch (e) {}
             input.value = "";
             hideAuthOverlay();
