@@ -1954,9 +1954,13 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
 
     per = {}
     gamma_schwab = gamma_calc = 0
+    # 진단용: 콜/풋별 감마 출처 집계 (11:00 콜 GEX 실종 진단용)
+    gex_side_diag = {"C": {"schwab": 0, "bs": 0, "none": 0}, "P": {"schwab": 0, "bs": 0, "none": 0}}
     for c in use:
         raw_g = c["gamma"]
         g = raw_g or (bs_gamma(S, c["K"], T, c["iv"]) if c["iv"] else None)
+        _gsrc = "schwab" if raw_g else ("bs" if c["iv"] else "none")
+        gex_side_diag[c["side"]][_gsrc] += 1
         if g:
             gamma_schwab += 1 if raw_g else 0
             gamma_calc += 0 if raw_g else 1
@@ -2106,7 +2110,9 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
         "abs_pin_strike": abs_pin_strike,
         "abs_pin_val": abs_pin_val,
         "max_pain": round(_max_pain, 1) if _max_pain else None,
-        "gamma_source_note": f"감마 {gamma_schwab}개 Schwab 제공값, {gamma_calc}개 BS 실시간 계산값",
+        "gamma_source_note": (f"감마 {gamma_schwab}개 Schwab 제공값, {gamma_calc}개 BS 실시간 계산값"
+            f" | 콜 Schwab {gex_side_diag['C']['schwab']}/BS {gex_side_diag['C']['bs']}/없음 {gex_side_diag['C']['none']}"
+            f" · 풋 Schwab {gex_side_diag['P']['schwab']}/BS {gex_side_diag['P']['bs']}/없음 {gex_side_diag['P']['none']}"),
         "oi_skew": {
             "call_oi_at_or_above_spot": int(sum(e["call_oi"] for k, e in per.items() if k >= S)),
             "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
@@ -2133,7 +2139,7 @@ def get_gex(token, spx_p, ratio, now_et, width=10.0):
             return analyze_gex(r[0], spx_p, 1.0, r[1], now_et, f"{SRC_SCHWAB} {diag.get('used_symbol','$SPX')} 체인 (실시간 Volume+OI 결합 GEX)", diag, width)
         return {"available": False, "source": "N/A", "reason": diag.get("reason") or "옵션 체인 수집 불가"}
 
-    return cached(f"gex:w{width:g}", 15, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
+    return cached(f"gex:w{width:g}", 30, load) or {"available": False, "source": "N/A", "reason": "GEX 조회 실패"}
 
 
 def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_et):
