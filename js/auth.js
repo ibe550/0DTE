@@ -61,6 +61,26 @@ async function checkAuth() {
     if (input) input.focus();
 }
 
+// 로그아웃: 서버 바인딩 해제 + 로컬 토큰 삭제 → 잠금화면
+async function doLogout() {
+    const apiBase = (typeof API_URL !== "undefined" && API_URL)
+        ? API_URL.replace(/\/api\/market-data.*$/, "")
+        : "";
+    try {
+        await fetch(apiBase + "/api/logout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+        });
+    } catch (e) {}
+    window.__AUTH_TOKEN__ = null;
+    window.__AUTH_VERIFIED__ = false;
+    try {
+        sessionStorage.removeItem(AUTH_TOKEN_KEY);
+        sessionStorage.removeItem(AUTH_USER_KEY);
+    } catch (e) {}
+    showAuthOverlay();
+}
+
 // 만료/무효 토큰 → 잠금화면으로
 function handleAuthExpired(msg) {
     showAuthOverlay(msg || "세션이 만료되었습니다. 다시 로그인하세요.");
@@ -85,12 +105,26 @@ async function handleAuthSubmit(e) {
         const apiBase = (typeof API_URL !== "undefined" && API_URL)
             ? API_URL.replace(/\/api\/market-data.*$/, "")
             : "";
-        const res = await fetch(apiBase + "/api/login", {
+        const doLoginFetch = (force) => fetch(apiBase + "/api/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user: user, password: pw, device_id: getDeviceId() }),
+            body: JSON.stringify({ user: user, password: pw, device_id: getDeviceId(), force: !!force }),
         });
-        const data = await res.json().catch(() => ({}));
+        let res = await doLoginFetch(false);
+        let data = await res.json().catch(() => ({}));
+        // 기기 전환 확인
+        if (!res.ok && data && data.error === "TAKEOVER_REQUIRED") {
+            const msg = data.message || "다른 기기에서 사용 중입니다. 전환하시겠습니까?";
+            if (confirm(msg)) {
+                res = await doLoginFetch(true);
+                data = await res.json().catch(() => ({}));
+            } else {
+                if (err) { err.innerText = "취소되었습니다."; err.classList.remove("hidden"); }
+                input.value = "";
+                if (btn) { btn.disabled = false; btn.innerHTML = "대시보드 잠금 해제"; }
+                return;
+            }
+        }
         if (res.ok && data.ok && data.token) {
             window.__AUTH_TOKEN__ = data.token;
             try {
@@ -122,4 +156,8 @@ function handleLogout() {
     showAuthOverlay();
 }
 
-document.addEventListener("DOMContentLoaded", checkAuth);
+document.addEventListener("DOMContentLoaded", () => {
+    checkAuth();
+    const lb = document.getElementById("logout-btn");
+    if (lb) lb.addEventListener("click", () => { if (confirm("로그아웃하시겠습니까? (다른 기기에서 로그인 가능해집니다)")) doLogout(); });
+});
