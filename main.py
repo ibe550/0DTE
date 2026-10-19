@@ -12,7 +12,7 @@ import time
 # AUTH_DISABLED: True면 비밀번호/토큰 검사 없이 모두 통과 (임시 테스트용)
 # 진단 모드: False로 두면 아래 _dashboard_users()가 상세 진단 정보를 반환
 AUTH_DISABLED = False
-AUTH_DIAG_MODE = True  # True면 로그인 실패 시 값의 메타정보(길이·문자코드) 반환 (비밀번호 노출 없음)
+AUTH_DIAG_MODE = False  # True면 로그인 실패 시 값의 메타정보(길이·문자코드) 반환 (비밀번호 노출 없음)
 import xml.etree.ElementTree as ET_xml
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -950,6 +950,9 @@ def fetch_polymarket_spx_data(spx_price, spy_price=None):
             continue
         ratio_est = (spx_price / spy_price) if (spx_price and spy_price) else 10.0
         implied_spx = med_spy * ratio_est
+        # 검증: 현재가 대비 ±20% 벗어나면 잘못된 마켓 → 스킵
+        if spx_price and abs(implied_spx - spx_price) / spx_price > 0.20:
+            continue
         date_tag = target_date.strftime("%m/%d")
         diff_str = f" ({implied_spx - spx_price:+.0f}pt)" if spx_price else ""
         vol = sum(float(m.get("volume") or 0) for m in (_ev.get("markets") or []))
