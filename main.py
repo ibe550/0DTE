@@ -1364,7 +1364,7 @@ def get_es_candles(token, tf):
         cs = aggregate_candles(base, agg) if agg else [dict(c) for c in base]
         return {"candles": cs, "source": f"{SRC_SCHWAB} (ES {TF_LABEL[key]})", "es_symbol": used}
 
-    return cached(f"candles:es:{key}", 4, load)
+    return cached(f"candles:es:{key}", 30, load)
 
 
 def get_rth_session(candles, now_et=None):
@@ -2742,8 +2742,13 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
     # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약). 세션 자동 선택 (정규장/야간LIVE/휴장).
     # ES 실패 시 SPY로 폴백 (카드가 비지 않도록). 사유를 기록해 UI에 표시.
-    cvd = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="auto") if es_c else None
-    cvd_overnight = compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session="overnight") if es_c else None
+    def _cvd_es(_sess):
+        if not es_c or not es_c.get("candles"):
+            return None
+        _lt = es_c["candles"][-1].get("t", 0)
+        return cached(f"cvd:es:{c_key}:{_sess}:{_lt}", 20, lambda: compute_cvd(es_c["candles"], c_key, es_c["source"], "ES", now_et, vol_unit="contracts", session=_sess))
+    cvd = _cvd_es("auto")
+    cvd_overnight = _cvd_es("overnight")
     if cvd is None and spy_c:
         es_reason = "ES 캔들 수신 실패" if not es_c else "ES 거래량 없음"
         cvd = compute_cvd(spy_c["candles"], c_key, spy_c["source"], "SPY", now_et)
