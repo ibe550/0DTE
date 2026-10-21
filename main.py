@@ -476,6 +476,25 @@ def fetch_yahoo_realtime_future(ysym):
     return None
 
 
+def _yahoo_prev_ref(ysym):
+    """선물 기준가(정산가) 조회.
+    Schwab 선물 quote의 closePrice가 부정확해(2026-10-21 야간 ES: 실제 -30인데 +16 표시)
+    Yahoo 메타의 전일 정산가를 기준가로 쓴다. CNBC도 같은 기준이라 등락 부호가 일치한다."""
+
+    def load():
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}?interval=1m&range=1d"
+            res = requests.get(url, headers=HEADERS, timeout=3.5)
+            if res.status_code == 200:
+                meta = ((res.json().get("chart", {}).get("result") or [{}])[0] or {}).get("meta") or {}
+                return num(meta.get("chartPreviousClose") or meta.get("previousClose"))
+        except Exception:
+            pass
+        return None
+
+    return cached(f"yahoo-prev:{ysym}", 300, load)
+
+
 def get_all_quotes(token):
     def load():
         result = {}
@@ -493,6 +512,20 @@ def get_all_quotes(token):
                     result[k] = f.result()
                 except Exception:
                     result[k] = None
+
+        # 선물 3종: 가격은 Schwab 유지, 등락 기준가만 Yahoo 정산가로 교체
+        # (Schwab closePrice가 틀려서 야간에 등락 부호가 뒤집히는 문제)
+        fut_keys = [k for k in YAHOO_FUTURES if result.get(k)]
+        if fut_keys:
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                refs = {k: ex.submit(_yahoo_prev_ref, YAHOO_FUTURES[k]) for k in fut_keys}
+            for k, f in refs.items():
+                try:
+                    prev = f.result()
+                except Exception:
+                    prev = None
+                if prev:
+                    result[k] = make_quote(result[k]["price"], prev, None, result[k]["source"]) or result[k]
 
         return result if any(result.values()) else None
 
