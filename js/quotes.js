@@ -172,18 +172,6 @@ function renderYields(y) {
     return;
 }
 
-function renderPolymarket(p) {
-    if (!p || !p.available) {
-        setText('poly-title', 'SPX 마켓 집계 대기 중...');
-        setText('poly-summary', '--');
-        return;
-    }
-    setText('poly-title', p.title);
-    setText('poly-summary', p.summary);
-    const srcEl = $('poly-source');
-    if (srcEl && p.source) srcEl.innerText = p.source;
-}
-
 function renderRsi(r) {
     const badge = $('header-rsi-badge');
     if (!badge || !r || !isNum(r.val)) {
