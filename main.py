@@ -3243,7 +3243,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         f_es_all = {k: ex.submit(get_es_candles, token, k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et, opt_width)
-        f_poly = ex.submit(get_polymarket_spx, spx_p, (q_spy["price"] if q_spy else None))
         f_cal = ex.submit(cached, "econ_events_data", 15, fetch_global_econ_calendar)
         f_news = ex.submit(fetch_flash_market_news)
 
@@ -3255,7 +3254,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         spy_c = spy_all_c.get(c_key)
         es_c = es_all_c.get(c_key)
         gex = _safe_result(f_gex) or {"available": False, "source": "timeout"}
-        polymarket = _safe_result(f_poly) or {"available": False, "title": "Polymarket 일시 지연", "yes_pct": 0, "no_pct": 0, "summary": "", "source": "Polymarket"}
         _ = _safe_result(f_cal)
         _ = _safe_result(f_news)
     finally:
@@ -3272,12 +3270,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         _spx_sess, _, _sd_spx = get_rth_session(spx_r["candles"], now_et)
         if _spy_sess and _spx_sess and _sd_spy == _sd_spx and _spy_sess[-1]["c"]:
             ratio = _spx_sess[-1]["c"] / _spy_sess[-1]["c"]
-    # 폴리마켓 래더(SPY 단위) 환산도 확정한 비율로 재계산 — 장외 왜곡 비율로 계산된 값 교정
-    if ratio and polymarket and polymarket.get("available") and polymarket.get("median_spy"):
-        _imp = polymarket["median_spy"] * ratio
-        if spx_p and abs(_imp - spx_p) / spx_p <= 0.20:
-            polymarket = dict(polymarket)
-            polymarket["summary"] = f"예상 마감 {_imp:,.0f} ({_imp - spx_p:+.0f}pt) · 중앙값 50%"
 
     spy_5m_bars = spy_5m.get("candles") if spy_5m else []
     econ_events = get_today_econ_events(now_et, spy_5m_bars, ratio)
@@ -3384,7 +3376,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
             "10y": quotes.get("yield-10y"),
             "30y": quotes.get("yield-30y"),
         },
-        "polymarket": polymarket,
         "volume_profile": vp,
         "gex": gex,
         "rsi": rsi,
