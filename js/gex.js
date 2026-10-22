@@ -1,7 +1,6 @@
 let currentGexData = null;
 let currentSpotPrice = null;
 let chartBars = [];
-var optWidth = 10; // 스프레드 폭 (pt) — 백엔드 opt_width 파라미터와 연동
 
 // ─────────────────────────────────────────────────────────────
 // 0DTE GEX 대칭 막대 그래프 렌더링 엔진
@@ -229,131 +228,6 @@ function initChartInteraction() {
 document.addEventListener('DOMContentLoaded', initChartInteraction);
 
 // ─────────────────────────────────────────────────────────────
-// 0DTE CREDIT SPREAD OPTIMIZER
-// ─────────────────────────────────────────────────────────────
-// 스프레드 체결 상태 4단계 색상
-function optStatusClass(status) {
-    switch (status) {
-        case 'SWEET_SPOT': return 'bg-emerald-950 text-emerald-300 border-emerald-500';
-        case 'LIMIT_OK': return 'bg-amber-950 text-amber-300 border-amber-500';
-        case 'WIDE_SPREAD': return 'bg-orange-950 text-orange-300 border-orange-500';
-        case 'LOW_LIQ':
-        case 'DANGER': return 'bg-rose-950 text-rose-300 border-rose-500';
-        default: return 'bg-slate-800 text-slate-300 border-slate-600'; // WAITING
-    }
-}
-
-function renderSpreadOptimizer(opt, gexData) {
-    const card = $('spread-optimizer-card');
-    if (!card) return;
-
-    if (!opt || !opt.available) {
-        if (gexData && gexData.available && currentSpotPrice) {
-            const spot = currentSpotPrice;
-            const em = isNum(gexData.em_pt) ? gexData.em_pt : 25.0;
-            const cWall = isNum(gexData.call_wall) ? gexData.call_wall : (spot + em);
-            const pWall = isNum(gexData.put_wall) ? gexData.put_wall : (spot - em);
-
-            // ET 기준 현재 시각 (서머타임 자동 반영)
-            const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-            const currentMins = nowET.getHours() * 60 + nowET.getMinutes();
-            const closeMins = 16 * 60;
-            const remainMins = Math.max(10, Math.min(390, closeMins - currentMins));
-            const timeDecayFactor = Math.sqrt(remainMins / 390);
-
-            // Bear Call Spread
-            const callBound = Math.max(cWall, spot + em);
-            const callShort = Math.ceil((callBound + 5) / 5) * 5;
-            const callLong = callShort + 10;
-            const callDist = callShort - spot;
-            
-            let rawCallCredit = Math.max(0.05, (3.2 / (1 + (callDist / 12) * 1.8)) * timeDecayFactor);
-            rawCallCredit = Math.round(rawCallCredit * 20) / 20;
-
-            let callStatus = 'SWEET_SPOT';
-            let callBadge = '✅ 진입 적격 (추정)';
-            let callGuide = `방어선 바깥 +${(callShort - callBound).toFixed(1)}pt · 크레딧 추정치`;
-
-            if (callDist < 10) {
-                callStatus = 'DANGER';
-                callBadge = '⛔ 진입 금지 (근접 위험)';
-            }
-
-            // Bull Put Spread
-            const putBound = Math.min(pWall, spot - em);
-            const putShort = Math.floor((putBound - 5) / 5) * 5;
-            const putLong = putShort - 10;
-            const putDist = spot - putShort;
-
-            let rawPutCredit = Math.max(0.05, (3.4 / (1 + (putDist / 12) * 1.8)) * timeDecayFactor);
-            rawPutCredit = Math.round(rawPutCredit * 20) / 20;
-
-            let putStatus = 'SWEET_SPOT';
-            let putBadge = '✅ 진입 적격 (추정)';
-            let putGuide = `방어선 바깥 -${(putBound - putShort).toFixed(1)}pt · 크레딧 추정치`;
-
-            if (putDist < 10) {
-                putStatus = 'DANGER';
-                putBadge = '⛔ 진입 금지 (근접 위험)';
-            }
-
-            opt = {
-                available: true,
-                width: 10,
-                call_spread: {
-                    short: callShort,
-                    long: callLong,
-                    credit: rawCallCredit,
-                    boundary: callBound.toFixed(1),
-                    status: callStatus,
-                    badge: callBadge,
-                    guide: callGuide
-                },
-                put_spread: {
-                    short: putShort,
-                    long: putLong,
-                    credit: rawPutCredit,
-                    boundary: putBound.toFixed(1),
-                    status: putStatus,
-                    badge: putBadge,
-                    guide: putGuide
-                }
-            };
-        } else {
-            setText('opt-call-status', '대기');
-            setText('opt-put-status', '대기');
-            return;
-        }
-    }
-
-    const c = opt.call_spread;
-    if (c) {
-        setText('opt-call-strikes', `Short ${c.short} / Long ${c.long}`);
-        setText('opt-call-bound', `${c.boundary}`);
-        const cExtra = (c.short_delta != null ? ` · Δ ${c.short_delta}` : '') + (c.pop_pct != null ? ` · POP ${c.pop_pct}%` : '');
-        setText('opt-call-guide', (c.guide || '') + cExtra);
-
-        const stEl = $('opt-call-status');
-        if (stEl) {
-            stEl.innerText = c.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${optStatusClass(c.status)}`;
-        }
-    }
-
-    const p = opt.put_spread;
-    if (p) {
-        setText('opt-put-strikes', `Short ${p.short} / Long ${p.long}`);
-        setText('opt-put-bound', `${p.boundary}`);
-        const pExtra = (p.short_delta != null ? ` · Δ ${p.short_delta}` : '') + (p.pop_pct != null ? ` · POP ${p.pop_pct}%` : '');
-        setText('opt-put-guide', (p.guide || '') + pExtra);
-
-        const stEl = $('opt-put-status');
-        if (stEl) {
-            stEl.innerText = p.badge || '대기';
-            stEl.className = `text-xs font-bold px-2.5 py-1 rounded-md border ${optStatusClass(p.status)}`;
-        }
-    }
-}
 
 // 만기까지 카운트다운 (8) — ET 기준 당일 16:00, 마감 후/주말이면 다음 거래일
 function expiryCountdownText() {
@@ -380,7 +254,6 @@ function renderGex(g) {
         setText('gex-abs-pin', NA); setText('gex-max-pain', NA);
         const _sk = $('gex-oi-skew'); if (_sk) _sk.classList.add('hidden');
         if (note) { note.classList.remove('hidden'); note.innerText = (g && g.reason) || 'GEX 데이터를 불러올 수 없습니다.'; }
-        renderSpreadOptimizer(null, null);
         // stale 방지: 이전 세션의 차트·마커·배너를 모두 초기화 (어제의 월을 오늘로 오판 방지)
         currentGexData = null;
         currentSpotPrice = null;
@@ -475,41 +348,7 @@ function renderGex(g) {
         drawGexBarChart();
     }
 
-    // 옵티마이저 바인딩 (백엔드는 oi_skew 안에 중첩해서 전달)
-    renderSpreadOptimizer((g.oi_skew && g.oi_skew.spread_optimizer) || null, g);
 }
 
 // ─────────────────────────────────────────────────────────────
-// 스프레드 폭 선택 (5/10/15/20pt) — 백엔드 opt_width 파라미터 연동
-// ─────────────────────────────────────────────────────────────
-function setOptWidth(w) {
-    w = parseInt(w, 10);
-    if ([5, 10, 15, 20].indexOf(w) === -1) return;
-    optWidth = w;
-    window.optWidth = w;
 
-    // 버튼 스타일 토글 (반응형 클래스 유지 — className 덮어쓰기 금지)
-    var btns = document.querySelectorAll('.opt-w-btn');
-    btns.forEach(function(btn) {
-        var active = (parseInt(btn.getAttribute('data-w'), 10) === w);
-        btn.classList.toggle('bg-teal-600', active);
-        btn.classList.toggle('text-white', active);
-        btn.classList.toggle('font-bold', active);
-        btn.classList.toggle('shadow', active);
-        btn.classList.toggle('bg-slate-800/80', !active);
-        btn.classList.toggle('text-slate-300', !active);
-        btn.classList.toggle('hover:bg-slate-700', !active);
-    });
-
-    // 새 폭으로 옵티마이저 다시 조회 (CVD TF 전환 패턴과 동일)
-    var apiBase = (typeof API_URL !== 'undefined') ? API_URL : '';
-    if (!apiBase) return;
-    var tf = (typeof window.currentCvdTf !== 'undefined' && window.currentCvdTf) ? window.currentCvdTf : '10m';
-    fetch(apiBase + '?cvd_tf=' + encodeURIComponent(tf) + '&opt_width=' + w + '&_t=' + Date.now())
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-            if (d && d.gex) renderGex(d.gex);
-        })
-        .catch(function() {});
-}
-window.setOptWidth = setOptWidth;
