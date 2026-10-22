@@ -57,7 +57,9 @@ function renderReversal(r) {
     const flips = r.flips || [];
     const lf = flips.length ? flips[flips.length - 1] : null;
     const flipTxt = lf ? ` · 최근 전환 ${lf.at} ${lf.from === 'up' ? '상승' : '하락'}→${lf.to === 'up' ? '상승' : '하락'}` : '';
-    setText('rev-line1', r.state === 'flat' || r.state === 'forming' ? (r.note || segTxt) : `${segTxt}${defTxt}${flipTxt}`);
+    const base = (r.state === 'flat' || r.state === 'forming') ? (r.note || segTxt)
+        : ((r.note || '').includes('무효') ? `${r.note} · ${segTxt}${defTxt}` : `${segTxt}${defTxt}`);
+    setText('rev-line1', base + flipTxt);
     const B = {
         flat: ['횡보 · 감지 대기', 'bg-slate-800 text-slate-400'],
         forming: ['추세 형성 중', 'bg-sky-950 text-sky-300 border border-sky-800'],
