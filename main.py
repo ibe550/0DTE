@@ -309,6 +309,69 @@ def send_telegram_reversal_alert(flip, spx_price):
     return {"status": "sent", "results": results}
 
 
+_LAST_WARN_TG = {}  # {warn_key: ts} — 인스턴스 내 중복 발송 방지
+
+
+def send_telegram_warn_alert(warn, spx_price):
+    """추세 전환 경보(신호 2/3 충족) 텔레그램. 같은 세그먼트에서는 1회만 (KV + 메모리 이중 가드)."""
+    if not warn or not warn.get("seg_from"):
+        return {"status": "skipped", "reason": "경보 정보 없음"}
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_ids_raw:
+        return {"status": "error", "reason": "환경변수 누락"}
+
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+    gkey = f"{today}:{warn.get('seg_from')}:{warn.get('seg_dir')}"
+    kv_key = f"rev-warn-tg:{gkey}"
+    if gkey in _LAST_WARN_TG:
+        return {"status": "skipped", "reason": "이미 발송됨 (메모리)"}
+    if KV_AVAILABLE and kv_get(kv_key):
+        _LAST_WARN_TG[gkey] = time.time()
+        return {"status": "skipped", "reason": "이미 발송됨 (KV)"}
+    _LAST_WARN_TG[gkey] = time.time()
+    if KV_AVAILABLE:
+        try:
+            kv_set(kv_key, "1", ex_seconds=36 * 3600)
+        except Exception:
+            pass
+
+    cur_dir = "상승" if warn.get("seg_dir") == "up" else "하락"
+    new_dir = "하락" if warn.get("seg_dir") == "up" else "상승"
+    arrow = "📉" if warn.get("seg_dir") == "up" else "📈"
+    price_str = f"{spx_price:,.2f}" if spx_price else "N/A"
+    msg = (
+        f"⚠️ [추세 전환 경보]\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"{arrow} {cur_dir} 추세 → {new_dir} 전환 신호 {warn.get('sig_count')}/{warn.get('sig_total')} 충족\n"
+        f"📍 SPX 현재가: {price_str}\n"
+        f"⏱ {warn.get('at')} ET 완성봉 기준\n\n"
+        f"아직 확정 아님 — 다음 봉에서 확정 또는 소멸합니다.\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"SPX 0DTE DEFENDER Realtime Alert"
+    )
+    chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
+    results = []
+    for cid in chat_ids:
+        ok, err = False, None
+        for _ in range(2):
+            try:
+                r = requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": cid, "text": msg},
+                    timeout=4,
+                )
+                if r.status_code == 200:
+                    ok = True
+                    break
+                err = f"HTTP {r.status_code}"
+            except Exception as e:
+                err = str(e)[:120]
+            time.sleep(1)
+        results.append({"chat_id": cid, "ok": ok, **({} if ok else {"error": err})})
+    return {"status": "sent", "results": results}
+
+
 # ─────────────────────────────────────────────────────────────
 # Schwab 토큰 인증 관리
 # ─────────────────────────────────────────────────────────────
@@ -2404,7 +2467,7 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
            "seg_change": None, "defense": None,
            "signals": {"vwap": None, "orr": None, "cvd": None},
            "sig_count": 0, "sig_total": 0, "new_dir": None, "confirmed_at": None,
-           "flips": [], "next_event": None, "new_flip": None, "note": ""}
+           "flips": [], "next_event": None, "new_flip": None, "new_warn": None, "note": ""}
     if not spy_5m_bars or not ratio or now_et is None:
         return out
     sess, is_prior, sess_date = get_rth_session(spy_5m_bars, now_et)
@@ -2558,7 +2621,8 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
                 nd = -seg["dir"]
                 flips.append({"at": _hm(b["m"] + 10), "end_min": b["m"] + 10,
                               "from": "up" if seg["dir"] > 0 else "down",
-                              "to": "up" if nd > 0 else "down"})
+                              "to": "up" if nd > 0 else "down",
+                              "px": round(b["c"], 1)})  # 확정가 (전환 봉 종가) — 무효화 판정 기준
                 seg = _fresh_seg(i, nd, b["c"], cvd_i)
                 seg["hi"] = seg["lo"] = b["c"]
                 continue
@@ -2591,12 +2655,19 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
         stored = []
     merged = list(stored)
     known = {(f.get("at"), f.get("to")) for f in merged}
+    _dirty = False
     for f in flips:
         if (f["at"], f["to"]) not in known:
-            merged.append({"at": f["at"], "from": f["from"], "to": f["to"]})
+            merged.append({"at": f["at"], "from": f["from"], "to": f["to"], "px": f.get("px")})
             out["new_flip"] = {"at": f["at"], "from": f["from"], "to": f["to"]}
+            _dirty = True
+        elif f.get("px") is not None:
+            for mf in merged:  # 구 기록에 확정가가 없으면 보강 (무효화 판정용)
+                if mf.get("at") == f["at"] and mf.get("to") == f["to"] and mf.get("px") is None:
+                    mf["px"] = f["px"]
+                    _dirty = True
     merged.sort(key=lambda f: f.get("at") or "")
-    if len(merged) != len(stored):
+    if _dirty:
         try:
             kv_set(latch_key, json.dumps(merged), ex_seconds=36 * 3600)
         except Exception:
@@ -2610,11 +2681,19 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
             _em = int(_hh) * 60 + int(_mm)
         except Exception:
             _em = None
-        last_flip = {"at": lf.get("at"), "to": lf.get("to"), "end_min": _em}
+        last_flip = {"at": lf.get("at"), "to": lf.get("to"), "end_min": _em, "px": lf.get("px")}
     now_min = now_et.hour * 60 + now_et.minute
-    recent = bool(last_flip and last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 45)
+    recent = bool(last_flip and last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 20)
+    # 확정 무효화: 현재가가 확정가(전환 봉 종가)에서 반대 방향으로 5pt 이상 이탈하면
+    # 확정 표시는 즉시 해제하고 실시간 상태로 복귀한다 (기록 자체는 flips에 남음)
+    invalidated = False
+    if last_flip and last_flip.get("px") is not None:
+        _ds = 1 if last_flip.get("to") == "up" else -1
+        _cur = spx_p or (bars10[-1]["c"] if bars10 else None)
+        if _cur is not None and (_cur - last_flip["px"]) * _ds < -5:
+            invalidated = True
 
-    if last_flip and recent:
+    if last_flip and recent and not invalidated:
         out["state"] = "confirmed"
         out["confirmed_at"] = last_flip["at"]
         out["new_dir"] = last_flip["to"]
@@ -2631,6 +2710,26 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
     else:
         out["state"] = "hold"
         out["note"] = "추세 유지 중"
+    if invalidated and out["state"] in ("flat", "forming", "hold"):
+        out["note"] = f"{last_flip['at']} 전환 무효 (확정가 이탈)"
+    # 경보 텔레그램 트리거 — 경보(신호 2개 충족) 첫 진입 시 세그먼트당 1회만
+    if out["state"] == "warn" and seg["dir"]:
+        wkey = f"rev-warn:{sess_date}:{seg['from_min']}:{'up' if seg['dir'] > 0 else 'down'}"
+        seen = False
+        try:
+            seen = bool(kv_get(wkey))
+        except Exception:
+            seen = False
+        if not seen:
+            try:
+                kv_set(wkey, "1", ex_seconds=36 * 3600)
+            except Exception:
+                pass
+            out["new_warn"] = {
+                "seg_from": out["seg_from"], "seg_dir": out["seg_dir"],
+                "sig_count": out["sig_count"], "sig_total": out["sig_total"],
+                "at": _hm(bars10[-1]["m"] + 10) if bars10 else "",
+            }
     return out
 
 
@@ -3155,6 +3254,9 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     if reversal.get("new_flip"):
         # 전환 확정 텔레그램 — 응답 지연 방지를 위해 백그라운드 발송 (발송 가드는 함수 내부)
         background_tasks.add_task(send_telegram_reversal_alert, reversal["new_flip"], spx_p)
+    if reversal.get("new_warn"):
+        # 전환 경보 텔레그램 — 확정보다 한 봉 먼저 (발송 가드는 함수 내부)
+        background_tasks.add_task(send_telegram_warn_alert, reversal["new_warn"], spx_p)
 
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
