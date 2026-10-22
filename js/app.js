@@ -44,7 +44,54 @@ function renderDirection(d) {
     list.innerHTML = (d.evidence || []).map(e => `<div class="bg-slate-950 p-2 sm:p-2.5 rounded border border-slate-800 space-y-0.5"><div class="flex items-center space-x-1 font-bold ${txt[e.signal] || txt.na}"><span class="w-1.5 h-1.5 rounded-full ${dot[e.signal] || dot.na} inline-block"></span><span>${e.title}</span></div><div class="text-slate-300 pl-3">${e.text}</div></div>`).join('');
 }
 
-// Volume Profile 히스토그램 (7) — 가로 막대, POC 하이라이트, VA 구간 표시
+let _revPrevConfAt = undefined;
+function renderReversal(r) {
+    const panel = $('rev-panel');
+    if (!panel) return;
+    if (!r || !r.available) { panel.style.display = 'none'; _revPrevConfAt = undefined; return; }
+    panel.style.display = 'block';
+    const badge = $('rev-badge');
+    const segTxt = r.seg_dir === 'up' ? `현재 추세 ▲ 상승 · ${r.seg_from || ''}부터 ${r.seg_change > 0 ? '+' : ''}${r.seg_change}pt`
+        : (r.seg_dir === 'down' ? `현재 추세 ▼ 하락 · ${r.seg_from || ''}부터 ${r.seg_change}pt` : '뚜렷한 추세 없음');
+    const defTxt = (r.defense != null && r.seg_dir) ? ` · 방어선 ${Number(r.defense).toLocaleString()}` : '';
+    const flips = r.flips || [];
+    const lf = flips.length ? flips[flips.length - 1] : null;
+    const flipTxt = lf ? ` · 최근 전환 ${lf.at} ${lf.from === 'up' ? '상승' : '하락'}→${lf.to === 'up' ? '상승' : '하락'}` : '';
+    setText('rev-line1', r.state === 'flat' || r.state === 'forming' ? (r.note || segTxt) : `${segTxt}${defTxt}${flipTxt}`);
+    const B = {
+        flat: ['횡보 · 감지 대기', 'bg-slate-800 text-slate-400'],
+        forming: ['추세 형성 중', 'bg-sky-950 text-sky-300 border border-sky-800'],
+        hold: ['추세 유지', 'bg-slate-800 text-slate-200'],
+        watch: [`⚠️ 전환 조짐 (${r.sig_count}/${r.sig_total})`, 'bg-amber-950 text-amber-300 border border-amber-700'],
+        warn: [`🚨 전환 경보 (${r.sig_count}/${r.sig_total})`, 'bg-orange-950 text-orange-300 border border-orange-700'],
+        confirmed: [`🔄 ${r.new_dir === 'up' ? '상승' : '하락'} 전환 확정${r.confirmed_at ? ' ' + r.confirmed_at : ''}`,
+            r.new_dir === 'up' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'],
+    };
+    const b = B[r.state] || ['--', 'bg-slate-800 text-slate-300'];
+    badge.innerText = b[0]; badge.className = `text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded ${b[1]}`;
+    const chip = (label, v) => {
+        if (v === true) return `<span class="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">✓ ${label}</span>`;
+        if (v === false) return `<span class="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800">✕ ${label}</span>`;
+        return `<span class="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 text-slate-600 border border-dashed border-slate-800">… ${label}</span>`;
+    };
+    const s = r.signals || {};
+    $('rev-sigs').innerHTML = chip('VWAP 반대 마감', s.vwap) + chip('구조 방어선 돌파', s.orr) + chip('CVD 반전', s.cvd);
+    const ev = $('rev-event'), ne = r.next_event;
+    if (ne) {
+        ev.style.display = 'block';
+        ev.innerText = ne.mins > 0 ? `⚠️ ${ne.time} 지표 임박 (${ne.mins}분 전): ${ne.title} — 전환 주의 구간`
+                                   : `⚠️ ${ne.time} 지표 발표 직후: ${ne.title}`;
+    } else ev.style.display = 'none';
+    // 새 확정 발생 시 1회 소리 (기존 🔊 토글 연동, 첫 렌더에서는 울리지 않음)
+    if (_revPrevConfAt !== undefined && r.confirmed_at && r.confirmed_at !== _revPrevConfAt
+        && typeof soundOn !== 'undefined' && soundOn && typeof _beep === 'function') {
+        if (r.new_dir === 'up') { _beep(660, 0.18, 0); _beep(990, 0.3, 0.22); }
+        else { _beep(990, 0.18, 0); _beep(660, 0.3, 0.22); }
+    }
+    if (r.confirmed_at) _revPrevConfAt = r.confirmed_at;
+    else if (_revPrevConfAt === undefined) _revPrevConfAt = null;
+}
+
 function renderVpHist(vp) {
     const box = document.getElementById('vp-hist');
     if (!box) return;
@@ -115,6 +162,7 @@ async function fetchRealMarketData(force = false) {
             () => renderCvd(data.cvd),
             () => renderCvdOvernight(data.cvd_overnight, data.cvd ? data.cvd.session_mode : null),
             () => renderDirection(data.direction),
+            () => renderReversal(data.reversal),
         ].forEach(fn => { try { fn(); } catch (e) { console.error('렌더링 에러:', e); } });
     } catch (err) {
         console.error('API Fetch 오류 상세:', err);
