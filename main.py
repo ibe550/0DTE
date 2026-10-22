@@ -372,6 +372,68 @@ def send_telegram_warn_alert(warn, spx_price):
     return {"status": "sent", "results": results}
 
 
+_LAST_INV_TG = {}  # {inv_key: ts} — 인스턴스 내 중복 발송 방지
+
+
+def send_telegram_invalidation_alert(inv, spx_price):
+    """추세 전환 무효(확정가 이탈) 텔레그램. 같은 전환은 1회만 (KV + 메모리 이중 가드)."""
+    if not inv or not inv.get("at"):
+        return {"status": "skipped", "reason": "무효 정보 없음"}
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_ids_raw:
+        return {"status": "error", "reason": "환경변수 누락"}
+
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+    gkey = f"{today}:{inv.get('at')}:{inv.get('to')}"
+    kv_key = f"rev-inv-tg:{gkey}"
+    if gkey in _LAST_INV_TG:
+        return {"status": "skipped", "reason": "이미 발송됨 (메모리)"}
+    if KV_AVAILABLE and kv_get(kv_key):
+        _LAST_INV_TG[gkey] = time.time()
+        return {"status": "skipped", "reason": "이미 발송됨 (KV)"}
+    _LAST_INV_TG[gkey] = time.time()
+    if KV_AVAILABLE:
+        try:
+            kv_set(kv_key, "1", ex_seconds=36 * 3600)
+        except Exception:
+            pass
+
+    to_dir = "상승" if inv.get("to") == "up" else "하락"
+    arrow = "📈" if inv.get("to") == "up" else "📉"
+    price_str = f"{spx_price:,.2f}" if spx_price else "N/A"
+    px_str = f"{inv['px']:,.1f}" if inv.get("px") else "-"
+    msg = (
+        f"❌ [추세 전환 무효]\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"{arrow} {inv.get('at')} {to_dir} 전환 확정 → 무효 (확정가 이탈)\n"
+        f"📍 SPX 현재가: {price_str}\n"
+        f"🎯 확정가: {px_str} — 반대 방향 5pt 이상 이탈\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"SPX 0DTE DEFENDER Realtime Alert"
+    )
+    chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
+    results = []
+    for cid in chat_ids:
+        ok, err = False, None
+        for _ in range(2):
+            try:
+                r = requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": cid, "text": msg},
+                    timeout=4,
+                )
+                if r.status_code == 200:
+                    ok = True
+                    break
+                err = f"HTTP {r.status_code}"
+            except Exception as e:
+                err = str(e)[:120]
+            time.sleep(1)
+        results.append({"chat_id": cid, "ok": ok, **({} if ok else {"error": err})})
+    return {"status": "sent", "results": results}
+
+
 # ─────────────────────────────────────────────────────────────
 # Schwab 토큰 인증 관리
 # ─────────────────────────────────────────────────────────────
@@ -2467,7 +2529,7 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
            "seg_change": None, "defense": None,
            "signals": {"vwap": None, "orr": None, "cvd": None},
            "sig_count": 0, "sig_total": 0, "new_dir": None, "confirmed_at": None,
-           "flips": [], "next_event": None, "new_flip": None, "new_warn": None, "note": ""}
+           "flips": [], "next_event": None, "new_flip": None, "new_warn": None, "new_invalidation": None, "note": ""}
     if not spy_5m_bars or not ratio or now_et is None:
         return out
     sess, is_prior, sess_date = get_rth_session(spy_5m_bars, now_et)
@@ -2730,6 +2792,22 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
                 "sig_count": out["sig_count"], "sig_total": out["sig_total"],
                 "at": _hm(bars10[-1]["m"] + 10) if bars10 else "",
             }
+    # 무효 텔레그램 트리거 — 확정 60분 내 무효화가 처음 감지될 때 전환당 1회만
+    if invalidated and last_flip and last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 60:
+        ikey = f"rev-inv:{sess_date}:{last_flip['at']}:{last_flip['to']}"
+        seen = False
+        try:
+            seen = bool(kv_get(ikey))
+        except Exception:
+            seen = False
+        if not seen:
+            try:
+                kv_set(ikey, "1", ex_seconds=36 * 3600)
+            except Exception:
+                pass
+            out["new_invalidation"] = {"at": last_flip["at"], "to": last_flip["to"],
+                                       "px": last_flip["px"],
+                                       "cur": round(_cur, 1) if _cur else None}
     return out
 
 
@@ -3257,6 +3335,9 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     if reversal.get("new_warn"):
         # 전환 경보 텔레그램 — 확정보다 한 봉 먼저 (발송 가드는 함수 내부)
         background_tasks.add_task(send_telegram_warn_alert, reversal["new_warn"], spx_p)
+    if reversal.get("new_invalidation"):
+        # 전환 무효 텔레그램 — 확정가가 이탈된 순간 (발송 가드는 함수 내부)
+        background_tasks.add_task(send_telegram_invalidation_alert, reversal["new_invalidation"], spx_p)
 
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
