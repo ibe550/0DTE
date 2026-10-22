@@ -272,8 +272,9 @@ function renderStatus(data) {
 // ES · WTI · BRENT · MAG7 · USO · 미 국채 3종(3M·10Y·30Y) CNBC 통합 연동
 // ─────────────────────────────────────────────────────────────
 function applyMacroCardStyle(prefix, price, change, changePct, sourceLabel, extraSubText, useComma) {
-    // Schwab이 정상 표시 중인 종목은 CNBC가 덮어쓰지 않음 (깜빡임 방지)
-    if (DUAL_SRC.includes(prefix) && symMode[prefix] === 'schwab' && backendSeen[prefix]) return;
+    // 이중 소스 종목은 Schwab 모드에서 CNBC가 아예 그리지 않음 (기존 가드는 Schwab 표시 후 덮어쓰기만 막아
+    // 새로고침 시 CNBC 선행 페인트 → Schwab 덮어쓰기 깜빡임이 남았음. Schwab 실패 시에는 모드 전환 후 CNBC가 그림)
+    if (DUAL_SRC.includes(prefix) && symMode[prefix] === 'schwab') return;
     var priceEl = document.getElementById(prefix + '-price');
     var changeEl = document.getElementById(prefix + '-change');
     var srcEl = document.getElementById(prefix + '-source');
