@@ -2324,6 +2324,247 @@ def analyze_tf(candles):
     return {"score": round(score, 1), "status": label, "tone": tone}
 
 
+def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events):
+    """장중 추세 전환 감지 (전 구간) — '직전 확립 추세'가 깨졌는지 3신호로 판정.
+    세그먼트 방식: 완료된 10분봉을 순서대로 걸으며 추세 구간을 확정하고, 전환이
+    확정되면 그 지점부터 새 추세 구간으로 재무장한다 (하루 여러 번 감지 가능).
+    신호 (전부 마감 기준): ① VWAP 반대 마감 (10분봉 2연속) ② 구조 방어선 종가 돌파
+    (상승 추세: 최근 고점 형성 구간의 최저 저점 / 하락 추세: 그 반대)
+    ③ CVD 반전 (최근 30분 흐름이 세그먼트 누적 수급의 50%↑ 반대 + 극값 대비 50% 되돌림).
+    세그먼트 이동폭 <10pt면 횡보로 보고 신호를 내지 않는다. 확정 기록은 KV에 하루 래치."""
+    out = {"available": False, "state": "pre", "seg_dir": None, "seg_from": None,
+           "seg_change": None, "defense": None,
+           "signals": {"vwap": None, "orr": None, "cvd": None},
+           "sig_count": 0, "sig_total": 0, "new_dir": None, "confirmed_at": None,
+           "flips": [], "next_event": None, "note": ""}
+    if not spy_5m_bars or not ratio or now_et is None:
+        return out
+    sess, is_prior, sess_date = get_rth_session(spy_5m_bars, now_et)
+    if is_prior or not sess:
+        return out
+    out["available"] = True
+
+    def _mins(t):
+        d = datetime.fromtimestamp(t, ET)
+        return d.hour * 60 + d.minute
+
+    def _hm(mins):
+        return f"{mins // 60:02d}:{mins % 60:02d}"
+
+    # 임박/직후 고영향 이벤트 (10:00·14:00 등 시간대 무관 — 전환 주의 구간 표시용)
+    try:
+        now_ts0 = now_et.timestamp()
+        best = None
+        for it in (econ_events or {}).get("items") or []:
+            if datetime.fromtimestamp(it["ts"], ET).date() != now_et.date():
+                continue
+            dm = (it["ts"] - now_ts0) / 60.0
+            if -10 <= dm <= 20 and (best is None or abs(dm) < abs(best[0])):
+                best = (dm, it)
+        if best:
+            out["next_event"] = {"title": best[1].get("title") or "경제지표",
+                                 "time": datetime.fromtimestamp(best[1]["ts"], ET).strftime("%H:%M"),
+                                 "mins": round(best[0])}
+    except Exception:
+        pass
+
+    S = [{"t": c["t"], "m": _mins(c["t"]), "o": c["o"] * ratio, "h": c["h"] * ratio,
+          "l": c["l"] * ratio, "c": c["c"] * ratio, "v": c.get("v") or 0} for c in sess]
+    if not S:
+        return out
+
+    # 완료된 10분봉 + 봉별 누적 VWAP
+    now_ts = now_et.timestamp()
+    buckets = {}
+    for b in S:
+        bk = (b["m"] // 10) * 10
+        buckets.setdefault(bk, []).append(b)
+    bars10 = []
+    cum_v = cum_tp = 0.0
+    for bk in sorted(buckets):
+        bs = buckets[bk]
+        for b in bs:
+            if b["v"] > 0:
+                cum_v += b["v"]
+                cum_tp += (b["h"] + b["l"] + b["c"]) / 3.0 * b["v"]
+        end_ts = bs[0]["t"] - (bs[0]["m"] - bk) * 60 + 600
+        if end_ts <= now_ts:
+            bars10.append({"m": bk, "o": bs[0]["o"], "h": max(x["h"] for x in bs),
+                           "l": min(x["l"] for x in bs), "c": bs[-1]["c"],
+                           "vwap": (cum_tp / cum_v) if cum_v > 0 else None})
+    if not bars10:
+        out["state"] = "forming"
+        out["note"] = "추세 형성 중"
+        return out
+
+    cvd_map = {}
+    for b in (cvd_det or {}).get("bars") or []:
+        if b.get("cvd_line") is not None:
+            cvd_map[_mins(b["t"])] = b["cvd_line"]
+
+    def _fresh_seg(i, d, px, cvd0):
+        return {"dir": d, "start_i": i, "start_px": px, "start_cvd": cvd0,
+                "from_min": bars10[i]["m"], "ext": px, "ext_cvd": cvd0,
+                "defense": None, "vwap_ok": None,
+                "hi": px, "lo": px, "min_l_since_hi": None, "max_h_since_lo": None,
+                "def_up": None, "def_dn": None}
+
+    def _pillars(i, sg):
+        """i번 봉 마감 시점, 세그먼트 sg 기준 3신호 평가. sg는 i 이전 상태여야 한다."""
+        d = sg["dir"]
+        if not d:
+            return {"vwap": None, "orr": None, "cvd": None}
+        ds = 1 if d > 0 else -1
+        sig = {"vwap": None, "orr": None, "cvd": None}
+        # ① VWAP 반대 마감 (극값 봉에서 VWAP을 지킨 추세만 인정 — 반대편 추세는 N/A)
+        if sg["vwap_ok"] and i >= 1:
+            vw1, vw0 = bars10[i]["vwap"], bars10[i - 1]["vwap"]
+            if vw1 and vw0:
+                sig["vwap"] = bool((bars10[i]["c"] - vw1) * ds < 0 and (bars10[i - 1]["c"] - vw0) * ds < 0)
+        # ② 구조 방어선 종가 돌파
+        if sg["defense"] is not None:
+            sig["orr"] = bool((bars10[i]["c"] - sg["defense"]) * ds < 0)
+        # ③ CVD 반전
+        cvd_i = cvd_map.get(bars10[i]["m"])
+        cvd_i3 = cvd_map.get(bars10[i - 3]["m"]) if i >= 3 else None
+        if cvd_i is not None and cvd_i3 is not None and sg["start_cvd"] is not None and sg["ext_cvd"] is not None:
+            gain = sg["ext_cvd"] - sg["start_cvd"]
+            if abs(gain) >= 2.0:
+                d30 = cvd_i - cvd_i3
+                sig["cvd"] = bool(d30 * ds <= -0.5 * abs(gain) and (cvd_i - sg["ext_cvd"]) * ds <= -0.5 * abs(gain))
+        return sig
+
+    flips = []
+    seg = _fresh_seg(0, 0, bars10[0]["o"], cvd_map.get(bars10[0]["m"]))
+    for i, b in enumerate(bars10):
+        cvd_i = cvd_map.get(b["m"])
+        # 극값·방어선 추적 (양방향 — 방향 확정 전에도 유지)
+        if seg["min_l_since_hi"] is None or b["l"] < seg["min_l_since_hi"]:
+            seg["min_l_since_hi"] = b["l"]
+        if seg["max_h_since_lo"] is None or b["h"] > seg["max_h_since_lo"]:
+            seg["max_h_since_lo"] = b["h"]
+        if b["h"] > seg["hi"]:
+            seg["def_up"] = seg["min_l_since_hi"]
+            seg["hi"] = b["h"]
+            seg["min_l_since_hi"] = b["l"]
+            if seg["dir"] > 0:
+                seg["ext"], seg["ext_cvd"] = b["h"], cvd_i
+                seg["defense"] = seg["def_up"]
+                seg["vwap_ok"] = bool(b["vwap"] and b["c"] > b["vwap"])
+        if b["l"] < seg["lo"]:
+            seg["def_dn"] = seg["max_h_since_lo"]
+            seg["lo"] = b["l"]
+            seg["max_h_since_lo"] = b["h"]
+            if seg["dir"] < 0:
+                seg["ext"], seg["ext_cvd"] = b["l"], cvd_i
+                seg["defense"] = seg["def_dn"]
+                seg["vwap_ok"] = bool(b["vwap"] and b["c"] < b["vwap"])
+        # 방향 확정 (시작가 대비 ±10pt 먼저 도달한 쪽)
+        if seg["dir"] == 0:
+            up_move = seg["hi"] - seg["start_px"]
+            dn_move = seg["start_px"] - seg["lo"]
+            if up_move >= 10 or dn_move >= 10:
+                seg["dir"] = 1 if up_move >= dn_move else -1
+                if seg["dir"] > 0:
+                    seg["ext"], seg["defense"] = seg["hi"], seg["def_up"]
+                    seg["ext_cvd"] = cvd_map.get(bars10[seg["start_i"]]["m"])
+                    for j in range(seg["start_i"], i + 1):
+                        if bars10[j]["h"] == seg["hi"]:
+                            seg["ext_cvd"] = cvd_map.get(bars10[j]["m"])
+                            seg["vwap_ok"] = bool(bars10[j]["vwap"] and bars10[j]["c"] > bars10[j]["vwap"])
+                            break
+                else:
+                    seg["ext"], seg["defense"] = seg["lo"], seg["def_dn"]
+                    for j in range(seg["start_i"], i + 1):
+                        if bars10[j]["l"] == seg["lo"]:
+                            seg["ext_cvd"] = cvd_map.get(bars10[j]["m"])
+                            seg["vwap_ok"] = bool(bars10[j]["vwap"] and bars10[j]["c"] < bars10[j]["vwap"])
+                            break
+            continue
+        # 전환 판정 (확립된 세그먼트, 최소 3봉 경과)
+        established = abs(seg["ext"] - seg["start_px"]) >= 10
+        if established and i - seg["start_i"] >= 3:
+            sig = _pillars(i, seg)
+            vals = [v for v in sig.values() if v is not None]
+            if len(vals) >= 2 and all(vals):
+                nd = -seg["dir"]
+                flips.append({"at": _hm(b["m"] + 10), "end_min": b["m"] + 10,
+                              "from": "up" if seg["dir"] > 0 else "down",
+                              "to": "up" if nd > 0 else "down"})
+                seg = _fresh_seg(i, nd, b["c"], cvd_i)
+                seg["hi"] = seg["lo"] = b["c"]
+                continue
+
+    # 현재 세그먼트 표시 정보 + 실시간 신호
+    last_i = len(bars10) - 1
+    if seg["dir"]:
+        out["seg_dir"] = "up" if seg["dir"] > 0 else "down"
+        out["seg_from"] = _hm(seg["from_min"])
+        out["seg_change"] = round(seg["ext"] - seg["start_px"], 1)
+        out["defense"] = round(seg["defense"], 1) if seg["defense"] is not None else None
+        sig = _pillars(last_i, seg)
+        # ②번 실시간 보정: 현재가도 방어선 밖에 있어야 유지로 인정
+        if sig["orr"] and seg["defense"] is not None:
+            cur_px = spx_p or bars10[-1]["c"]
+            sig["orr"] = bool((cur_px - seg["defense"]) * (1 if seg["dir"] > 0 else -1) < 0)
+        out["signals"] = sig
+        vals = [v for v in sig.values() if v is not None]
+        out["sig_total"] = len(vals)
+        out["sig_count"] = sum(1 for v in vals if v)
+
+    # 확정 기록 KV 래치 (인스턴스 간 데이터 편차에도 기록 유지)
+    latch_key = f"rev:{sess_date}"
+    stored = []
+    try:
+        raw = kv_get(latch_key)
+        if raw:
+            stored = json.loads(raw) or []
+    except Exception:
+        stored = []
+    merged = list(stored)
+    known = {(f.get("at"), f.get("to")) for f in merged}
+    for f in flips:
+        if (f["at"], f["to"]) not in known:
+            merged.append({"at": f["at"], "from": f["from"], "to": f["to"]})
+    merged.sort(key=lambda f: f.get("at") or "")
+    if len(merged) != len(stored):
+        try:
+            kv_set(latch_key, json.dumps(merged), ex_seconds=36 * 3600)
+        except Exception:
+            pass
+    out["flips"] = merged
+    last_flip = None
+    if merged:
+        lf = merged[-1]
+        try:
+            _hh, _mm = (lf.get("at") or "0:0").split(":")
+            _em = int(_hh) * 60 + int(_mm)
+        except Exception:
+            _em = None
+        last_flip = {"at": lf.get("at"), "to": lf.get("to"), "end_min": _em}
+    now_min = now_et.hour * 60 + now_et.minute
+    recent = bool(last_flip and last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 45)
+
+    if last_flip and recent:
+        out["state"] = "confirmed"
+        out["confirmed_at"] = last_flip["at"]
+        out["new_dir"] = last_flip["to"]
+        out["note"] = f"{last_flip['at']} 방향 전환 확정"
+    elif not seg["dir"] or abs(seg["ext"] - seg["start_px"]) < 10:
+        out["state"] = "forming" if now_min < 600 else "flat"
+        out["note"] = "추세 형성 중" if out["state"] == "forming" else "뚜렷한 추세 없음 — 감지 대기"
+    elif out["sig_count"] >= 2:
+        out["state"] = "warn"
+        out["note"] = "전환 경보 — 신호 2개 충족"
+    elif out["sig_count"] == 1:
+        out["state"] = "watch"
+        out["note"] = "전환 조짐 — 신호 1개"
+    else:
+        out["state"] = "hold"
+        out["note"] = "추세 유지 중"
+    return out
+
+
 def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
     avail = {k: v for k, v in tf_results.items() if v}
     if not avail:
@@ -2808,6 +3049,16 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     c1h = spy_all_c["1h"]["candles"] if (spy_all_c.get("1h") and spy_all_c["1h"].get("candles")) else []
     direction = build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd)
 
+    # 추세 전환 감지 — CVD 신호는 UI 선택 TF와 무관하게 ES 10m 고정 (UI와 같은 캐시 키 공유)
+    cvd_det = cvd
+    es_10m = es_all_c.get("10m")
+    if es_10m and es_10m.get("candles"):
+        _lt10 = es_10m["candles"][-1].get("t", 0)
+        _det = cached(f"cvd:es:10m:auto:{_lt10}", 20, lambda: compute_cvd(es_10m["candles"], "10m", es_10m["source"], "ES", now_et, vol_unit="contracts", session="auto"))
+        if _det:
+            cvd_det = _det
+    reversal = detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events)
+
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
     if shock_alert and shock_alert.get("active"):
@@ -2851,6 +3102,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "cvd": cvd,
         "cvd_overnight": cvd_overnight,
         "direction": direction,
+        "reversal": reversal,
     }
 
 
