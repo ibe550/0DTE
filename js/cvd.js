@@ -436,11 +436,13 @@ function initCvdInteraction() {
 document.addEventListener('DOMContentLoaded', initCvdInteraction);
 
 // 야간 ES CVD 한 줄 표시 (전일 18:00 → 당일 09:30 ET)
-// 메인 차트가 야간 LIVE를 표시 중이면 중복이므로 숨김
+// 메인 차트가 야간 LIVE를 표시 중이면 중복이므로 숨김.
+// 정규장 실시간 중에도 숨김 — 지난밤 최종 집계라 장중에는 참고 가치가 낮고
+// 실시간 데이터로 오인되기 쉬움 (James 2026-10-22 제보). 장전·장후·주말에만 표시.
 function renderCvdOvernight(cvdOn, mainMode) {
     var el = document.getElementById('cvd-overnight-line');
     if (!el) return;
-    if (!cvdOn || !cvdOn.bars || !cvdOn.bars.length || mainMode === 'overnight_live') {
+    if (!cvdOn || !cvdOn.bars || !cvdOn.bars.length || mainMode === 'overnight_live' || mainMode === 'rth_live') {
         el.style.display = 'none';
         return;
     }
