@@ -153,7 +153,6 @@ async function fetchRealMarketData(force = false) {
             () => renderQuote('wti', data.wti, { pct: true }),
             () => renderQuote('brent', data.brent, { pct: true }),
             () => renderYields(data.yields),
-            () => renderPolymarket(data.polymarket),
             () => {
                 const vp = data.volume_profile;
                 setText('val-price', vp ? vp.val : null); setText('poc-price', vp ? vp.poc : null); setText('vah-price', vp ? vp.vah : null);
