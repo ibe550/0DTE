@@ -1064,6 +1064,7 @@ def fetch_polymarket_spx_data(spx_price, spy_price=None):
             "no_pct": 50,
             "summary": f"예상 마감 {implied_spx:,.0f}{diff_str} · 중앙값 50%",
             "source": f"Polymarket SPX{vol_str}",
+            "median_spy": med_spy,  # 핸들러가 확정한 비율로 재환산할 수 있게 원본 중앙값 동봉
         }
 
     # SPY 완전 제외, 순수 S&P 500 / SPX 일일 마켓만 검색 (래더 탐색 실패 시 폴백)
@@ -3085,6 +3086,12 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         _spx_sess, _, _sd_spx = get_rth_session(spx_r["candles"], now_et)
         if _spy_sess and _spx_sess and _sd_spy == _sd_spx and _spy_sess[-1]["c"]:
             ratio = _spx_sess[-1]["c"] / _spy_sess[-1]["c"]
+    # 폴리마켓 래더(SPY 단위) 환산도 확정한 비율로 재계산 — 장외 왜곡 비율로 계산된 값 교정
+    if ratio and polymarket and polymarket.get("available") and polymarket.get("median_spy"):
+        _imp = polymarket["median_spy"] * ratio
+        if spx_p and abs(_imp - spx_p) / spx_p <= 0.20:
+            polymarket = dict(polymarket)
+            polymarket["summary"] = f"예상 마감 {_imp:,.0f} ({_imp - spx_p:+.0f}pt) · 중앙값 50%"
 
     spy_5m_bars = spy_5m.get("candles") if spy_5m else []
     econ_events = get_today_econ_events(now_et, spy_5m_bars, ratio)
