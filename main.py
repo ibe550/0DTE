@@ -3076,12 +3076,31 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
 
     spy_5m = spy_all_c.get("5m")
     ratio = ratio_q or ((spx_p / spy_5m["candles"][-1]["c"]) if (spx_p and spy_5m and spy_5m.get("candles")) else None)
+    # 장외 비율 왜곡 방지: 장외에는 SPX 종가가 고정된 채 SPY 시세만 ES를 따라 움직여
+    # ratio_q가 튀고(예: 10.03→10.13), SPY 환산 레벨(VP·VWAP·전환 방어선)이 통째로 밀린다.
+    # → 장외에서는 최근 정규장 세션의 종가 캔들끼리의 비율로 고정한다 (표시되는 세션과 동일 기준).
+    _is_rth_now = now_et.weekday() < 5 and (now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16
+    if not _is_rth_now and spy_5m and spy_5m.get("candles") and spx_r and spx_r.get("candles"):
+        _spy_sess, _, _sd_spy = get_rth_session(spy_5m["candles"], now_et)
+        _spx_sess, _, _sd_spx = get_rth_session(spx_r["candles"], now_et)
+        if _spy_sess and _spx_sess and _sd_spy == _sd_spx and _spy_sess[-1]["c"]:
+            ratio = _spx_sess[-1]["c"] / _spy_sess[-1]["c"]
 
     spy_5m_bars = spy_5m.get("candles") if spy_5m else []
     econ_events = get_today_econ_events(now_et, spy_5m_bars, ratio)
 
-    vwap_calc = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m else None
-    vp = compute_volume_profile(spy_5m_bars, ratio, spy_5m["source"], now_et) if (spy_5m and ratio) else None
+    # VP/VWAP 환산비: 표시 세션이 종료된 상태(장전·장후·주말)에서는 실시간 비율을 쓰지 않는다.
+    # $SPX 호가는 직전 종가에 멈춰 있는데 SPY만 시간외로 움직여 비율이 틀어지기 때문
+    # (2026-10-22 06:26 사례: SPY 장전 -0.94% → VP 전체가 당일 고점보다 +75pt 위에 표시됨).
+    # 종료된 세션은 SPX 세션 종가(동결된 spx_p) ÷ 세션 마지막 SPY 캔들 종가로 환산한다.
+    ratio_vp = ratio
+    _sess_bars, _sess_prior, _ = get_rth_session(spy_5m_bars, now_et)
+    _rth_now = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
+    if _sess_bars and spx_p and not (_rth_now and not _sess_prior):
+        if _sess_bars[-1].get("c"):
+            ratio_vp = spx_p / _sess_bars[-1]["c"]
+    vwap_calc = compute_vwap(spy_5m_bars, ratio_vp, now_et) if spy_5m else None
+    vp = compute_volume_profile(spy_5m_bars, ratio_vp, spy_5m["source"], now_et) if (spy_5m and ratio_vp) else None
     # CVD는 ES 선물 기준 (SPX 선행 수급, 단위: 계약). 세션 자동 선택 (정규장/야간LIVE/휴장).
     # ES 실패 시 SPY로 폴백 (카드가 비지 않도록). 사유를 기록해 UI에 표시.
     def _cvd_es(_sess):
