@@ -594,6 +594,15 @@
             <div class="text-xs sm:text-sm lg:text-base font-bold text-slate-300" id="dir-top-score">종합 점수 --</div>
         </div>
         <div class="text-[10px] sm:text-xs lg:text-sm text-slate-300 mb-2" id="dir-summary">--</div>
+        <div id="rev-panel" class="bg-slate-950 border border-slate-800 rounded p-2 sm:p-2.5 mb-2" style="display:none">
+            <div class="flex items-center justify-between">
+                <span class="text-[10px] sm:text-xs font-bold text-slate-300">🔄 추세 전환 감지 <span class="text-slate-500 font-normal">(직전 추세 대비 · 장중 전체)</span></span>
+                <span id="rev-badge" class="text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+            </div>
+            <div id="rev-line1" class="text-[10px] sm:text-xs text-slate-400 mt-1 font-mono">--</div>
+            <div id="rev-sigs" class="flex flex-wrap gap-1 mt-1.5"></div>
+            <div id="rev-event" class="text-[10px] sm:text-xs font-bold text-amber-300 mt-1.5" style="display:none"></div>
+        </div>
         <div class="w-full bg-slate-900 h-2 md:h-2.5 rounded-md relative overflow-hidden border border-slate-800 mb-1">
             <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-rose-600 via-slate-700 to-emerald-500 w-full opacity-70"></div>
             <div id="dir-gauge-pin" class="absolute top-0 bottom-0 w-2 md:w-2.5 bg-slate-400 rounded shadow" style="left:50%; transform:translateX(-50%);"></div>
@@ -669,9 +678,9 @@
     <script src="js/auth.js?v=2.3"></script>
     <script src="js/utils.js?v=1.1"></script>
     <script src="js/quotes.js?v=2.7"></script>
-    <script src="js/gex.js?v=2.6"></script>
+    <script src="js/gex.js?v=2.7"></script>
     <script src="js/cvd.js?v=2.2"></script>
     <script src="js/events.js?v=1.2"></script>
-    <script src="js/app.js?v=1.6"></script>
+    <script src="js/app.js?v=1.9"></script>
 </body>
 </html>
