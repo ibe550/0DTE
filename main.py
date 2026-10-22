@@ -2674,6 +2674,15 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
                             seg["vwap_ok"] = bool(bars10[j]["vwap"] and bars10[j]["c"] < bars10[j]["vwap"])
                             break
             continue
+        # 세그먼트 실패 처리: 확립(±10pt) 전에 종가가 시작가에서 반대 방향으로 10pt 이상
+        # 밀리면 실패로 보고 반대 방향 세그먼트로 재시작한다. 전환 기록·알림 대상은 아님
+        # (확립된 추세의 전환이 아니라, 실패한 반등/눌림의 정리 — 감지기가 죽은
+        #  세그먼트에 갇혀 종일 전환 판정을 못 하는 것을 방지)
+        if abs(seg["ext"] - seg["start_px"]) < 10 and (b["c"] - seg["start_px"]) * seg["dir"] <= -10:
+            nd = -seg["dir"]
+            seg = _fresh_seg(i, nd, b["c"], cvd_i)
+            seg["hi"] = seg["lo"] = b["c"]
+            continue
         # 전환 판정 (확립된 세그먼트, 최소 3봉 경과)
         established = abs(seg["ext"] - seg["start_px"]) >= 10
         if established and i - seg["start_i"] >= 3:
