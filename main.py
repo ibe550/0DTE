@@ -242,6 +242,73 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     return {"status": "sent", "results": results}
 
 
+_LAST_REVERSAL_TG = {}  # {flip_key: ts} — 인스턴스 내 중복 발송 방지
+
+
+def send_telegram_reversal_alert(flip, spx_price):
+    """추세 전환 확정 텔레그램 알림. 같은 전환은 하루 1회만 (KV + 메모리 이중 가드)."""
+    if not flip or not flip.get("at"):
+        return {"status": "skipped", "reason": "전환 정보 없음"}
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_ids_raw:
+        return {"status": "error", "reason": "환경변수 누락"}
+
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+    gkey = f"{today}:{flip.get('at')}:{flip.get('to')}"
+    kv_key = f"rev-tg:{gkey}"
+    if gkey in _LAST_REVERSAL_TG:
+        return {"status": "skipped", "reason": "이미 발송됨 (메모리)"}
+    if KV_AVAILABLE and kv_get(kv_key):
+        _LAST_REVERSAL_TG[gkey] = time.time()
+        return {"status": "skipped", "reason": "이미 발송됨 (KV)"}
+    _LAST_REVERSAL_TG[gkey] = time.time()
+    if KV_AVAILABLE:
+        try:
+            kv_set(kv_key, "1", ex_seconds=36 * 3600)
+        except Exception:
+            pass
+
+    frm = "상승" if flip.get("from") == "up" else "하락"
+    to = "상승" if flip.get("to") == "up" else "하락"
+    arrow = "📈" if flip.get("to") == "up" else "📉"
+    price_str = f"{spx_price:,.2f}" if spx_price else "N/A"
+    msg = (
+        f"🔄 [추세 전환 확정]\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"{arrow} {frm} 추세 → {to} 전환\n"
+        f"📍 SPX 현재가: {price_str}\n"
+        f"⏱ 확정 시각: {flip.get('at')} ET\n\n"
+        f"🔍 충족 신호:\n"
+        f"• VWAP 반대 마감 (10분봉 2연속)\n"
+        f"• 구조 방어선 종가 돌파\n"
+        f"• CVD 흐름 반전\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"SPX 0DTE DEFENDER Realtime Alert"
+    )
+
+    chat_ids = [cid.strip() for cid in chat_ids_raw.split(",") if cid.strip()]
+    results = []
+    for cid in chat_ids:
+        ok, err = False, None
+        for _ in range(2):
+            try:
+                r = requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": cid, "text": msg},
+                    timeout=4,
+                )
+                if r.status_code == 200:
+                    ok = True
+                    break
+                err = f"HTTP {r.status_code}"
+            except Exception as e:
+                err = str(e)[:120]
+            time.sleep(1)
+        results.append({"chat_id": cid, "ok": ok, **({} if ok else {"error": err})})
+    return {"status": "sent", "results": results}
+
+
 # ─────────────────────────────────────────────────────────────
 # Schwab 토큰 인증 관리
 # ─────────────────────────────────────────────────────────────
@@ -2336,7 +2403,7 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
            "seg_change": None, "defense": None,
            "signals": {"vwap": None, "orr": None, "cvd": None},
            "sig_count": 0, "sig_total": 0, "new_dir": None, "confirmed_at": None,
-           "flips": [], "next_event": None, "note": ""}
+           "flips": [], "next_event": None, "new_flip": None, "note": ""}
     if not spy_5m_bars or not ratio or now_et is None:
         return out
     sess, is_prior, sess_date = get_rth_session(spy_5m_bars, now_et)
@@ -2526,6 +2593,7 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
     for f in flips:
         if (f["at"], f["to"]) not in known:
             merged.append({"at": f["at"], "from": f["from"], "to": f["to"]})
+            out["new_flip"] = {"at": f["at"], "from": f["from"], "to": f["to"]}
     merged.sort(key=lambda f: f.get("at") or "")
     if len(merged) != len(stored):
         try:
@@ -3058,6 +3126,9 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         if _det:
             cvd_det = _det
     reversal = detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events)
+    if reversal.get("new_flip"):
+        # 전환 확정 텔레그램 — 응답 지연 방지를 위해 백그라운드 발송 (발송 가드는 함수 내부)
+        background_tasks.add_task(send_telegram_reversal_alert, reversal["new_flip"], spx_p)
 
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
