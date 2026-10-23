@@ -1,7 +1,8 @@
 const API_URL = 'https://0-dte-seven.vercel.app/api/market-data';
 const POLL_MS = 10000;
-let inFlight = false;
-let reqSeq = 0;
+const FULL_POLL_MS = 30000; // 분석(무거운 조회) 폴링 주기 — 시세 폴링과 분리
+const _fullState = { inFlight: false, seq: 0 };
+const _qState = { inFlight: false, seq: 0 };
 
 function toggleDetailEvidence() {
     const panel = $('detail-evidence-panel'), arrow = $('evidence-arrow'), txt =$('evidence-toggle-text');
@@ -120,32 +121,31 @@ function renderVpHist(vp) {
     }).join('');
 }
 
-async function fetchRealMarketData(force = false) {
+async function fetchRealMarketData(force = false, part = 'full') {
     // 인증 전에는 데이터 요청 차단 (잠금화면이 장식이던 문제 해결)
     if (!window.__AUTH_VERIFIED__) return;
-    if (inFlight && !force) return;
-    inFlight = true;
-    const mySeq = ++reqSeq;
+    const isQ = part === 'quotes';
+    const st = isQ ? _qState : _fullState;
+    if (st.inFlight && !force) return;
+    st.inFlight = true;
+    const mySeq = ++st.seq;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 30000); // 30초 여유 확보
 
     try {
-        const w = (typeof optWidth !== 'undefined' && optWidth) ? optWidth : 10;
         const headers = (typeof authHeaders === 'function') ? authHeaders() : {};
-        const res = await fetch(`${API_URL}?cvd_tf=${currentCvdTf}&opt_width=${w}`, { signal: ctrl.signal, headers: headers });
+        const url = isQ ? `${API_URL}?part=quotes` : `${API_URL}?cvd_tf=${currentCvdTf}`;
+        const res = await fetch(url, { signal: ctrl.signal, headers: headers });
         if (res.status === 401) {
-            if (mySeq === reqSeq && typeof handleAuthExpired === 'function') handleAuthExpired();
+            if (mySeq === st.seq && typeof handleAuthExpired === 'function') handleAuthExpired();
             return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
         const data = await res.json();
-        if (mySeq !== reqSeq || data.status !== 'success') return;
+        if (mySeq !== st.seq || data.status !== 'success') return;
 
-        [
-            () => renderShockAlert(data.shock_alert),
+        const quoteRenderers = [
             () => renderStatus(data),
-            () => renderEconEvents(data.econ_events),
-            () => renderRsi(data.rsi),
             () => renderQuote('spx', data.spx, { pct: true }),
             () => renderQuote('es', data.es, { pct: true }),
             () => { renderQuote('vix1d', data.vix1d, { invert: true }); renderQuote('vix', data.vix, { invert: true }); renderIvRank(data.iv_rank); },
@@ -153,6 +153,11 @@ async function fetchRealMarketData(force = false) {
             () => renderQuote('wti', data.wti, { pct: true }),
             () => renderQuote('brent', data.brent, { pct: true }),
             () => renderYields(data.yields),
+        ];
+        const fullRenderers = [
+            () => renderShockAlert(data.shock_alert),
+            () => renderEconEvents(data.econ_events),
+            () => renderRsi(data.rsi),
             () => {
                 const vp = data.volume_profile;
                 setText('val-price', vp ? vp.val : null); setText('poc-price', vp ? vp.poc : null); setText('vah-price', vp ? vp.vah : null);
@@ -164,13 +169,15 @@ async function fetchRealMarketData(force = false) {
             () => renderCvdOvernight(data.cvd_overnight, data.cvd ? data.cvd.session_mode : null),
             () => renderDirection(data.direction),
             () => renderReversal(data.reversal),
-        ].forEach(fn => { try { fn(); } catch (e) { console.error('렌더링 에러:', e); } });
+        ];
+        (isQ ? quoteRenderers : [...quoteRenderers, ...fullRenderers])
+            .forEach(fn => { try { fn(); } catch (e) { console.error('렌더링 에러:', e); } });
     } catch (err) {
         console.error('API Fetch 오류 상세:', err);
-        if (mySeq === reqSeq) setText('global-source-badge', 'API 연결 실패 · 재시도 중');
+        if (mySeq === st.seq) setText('global-source-badge', 'API 연결 실패 · 재시도 중');
     } finally {
         clearTimeout(timer);
-        if (mySeq === reqSeq) inFlight = false;
+        if (mySeq === st.seq) st.inFlight = false;
     }
 }
 
@@ -180,5 +187,7 @@ window.startAppPolling = function () {
     if (_pollStarted) { fetchRealMarketData(true); return; }
     _pollStarted = true;
     fetchRealMarketData(true);
-    setInterval(() => fetchRealMarketData(false), POLL_MS);
+    fetchRealMarketData(true, 'quotes');
+    setInterval(() => fetchRealMarketData(false), FULL_POLL_MS);
+    setInterval(() => fetchRealMarketData(false, 'quotes'), POLL_MS);
 };
