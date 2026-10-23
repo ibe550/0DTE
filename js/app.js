@@ -54,14 +54,42 @@ function fmtAgo(sec) {
     return Math.round(sec / 86400) + '일 전';
 }
 
+let _presWired = false;
 function renderPresence(p) {
     const chip = $('presence-chip');
+    const pop = $('presence-pop');
     if (!chip) return;
-    if (!p || !p.admin || !Array.isArray(p.users)) { chip.classList.add('hidden'); return; }
+    if (!p || !p.admin || !Array.isArray(p.users)) {
+        chip.classList.add('hidden');
+        if (pop) pop.classList.add('hidden');
+        return;
+    }
     const on = p.users.filter(u => u.online).map(u => u.name);
-    chip.textContent = '👥 ' + (on.length ? on.join(' · ') : '접속자 없음');
+    // 칩은 공간 절약: 최대 2명까지 이름, 나머지는 +N
+    chip.textContent = '👥 ' + (on.length
+        ? on.slice(0, 2).join(' · ') + (on.length > 2 ? ` +${on.length - 2}` : '')
+        : '접속자 없음');
     chip.title = p.users.map(u => u.online ? `${u.name} · 접속 중` : `${u.name} · ${fmtAgo(u.ago_sec)}`).join('\n');
     chip.classList.remove('hidden');
+    if (pop) {
+        pop.innerHTML = p.users.map(u =>
+            `<div class="flex items-center justify-between gap-3 py-0.5">
+                <span class="${u.online ? 'text-emerald-300 font-semibold' : 'text-slate-400'}">${u.online ? '🟢' : '⚪'} ${u.name}</span>
+                <span class="text-slate-500">${u.online ? '접속 중' : fmtAgo(u.ago_sec)}</span>
+            </div>`).join('');
+    }
+    if (!_presWired) {
+        _presWired = true;
+        chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (pop) pop.classList.toggle('hidden');
+        });
+        document.addEventListener('click', (e) => {
+            if (pop && !pop.classList.contains('hidden') && e.target !== chip && !pop.contains(e.target)) {
+                pop.classList.add('hidden');
+            }
+        });
+    }
 }
 
 function renderReversal(r) {
