@@ -3233,11 +3233,84 @@ async def api_logout(request: Request):
     return {"ok": True}
 
 
+_PRES_BLOB_KEY = "presence:all"
+_PRES_LOCAL = {"blob": {}, "fetched_at": 0.0, "wrote": {}}
+
+
+def _admin_user(users):
+    """관리자(접속자 표시를 볼 수 있는 사용자): ADMIN_USER 환경변수가
+    우선하고, 없으면 DASHBOARD_USERS의 첫 번째 사용자가 소유자."""
+    env_admin = (os.environ.get("ADMIN_USER") or "").strip()
+    if env_admin and env_admin in users:
+        return env_admin
+    return next(iter(users), None)
+
+
+def _presence_blob(force=False):
+    """presence 블롭 조회 (인스턴스 메모리 20초 캐시 — KV 명령 절약)."""
+    now = time.time()
+    if force or now - _PRES_LOCAL["fetched_at"] > 20:
+        blob = {}
+        raw = kv_get(_PRES_BLOB_KEY)
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    blob = parsed
+            except Exception:
+                blob = {}
+        _PRES_LOCAL["blob"] = blob
+        _PRES_LOCAL["fetched_at"] = now
+    return _PRES_LOCAL["blob"]
+
+
+def _presence_touch(user):
+    """접속 하트비트: 사용자의 마지막 접속 시각을 presence 블롭에 기록.
+    사용자당 60초에 1회만 KV에 쓰고, 동시 쓰기 경합으로 다른 사용자의
+    시각이 최대 수십 초 밀릴 수 있으나 온라인 판정(120초)에는 영향 없음."""
+    try:
+        if not user or user == "guest":
+            return
+        now = time.time()
+        if now - _PRES_LOCAL["wrote"].get(user, 0) < 60:
+            return
+        blob = _presence_blob()
+        if now - float(blob.get(user) or 0) >= 55:
+            blob[user] = int(now)
+            kv_set(_PRES_BLOB_KEY, json.dumps(blob))
+            _PRES_LOCAL["wrote"][user] = now
+            _PRES_LOCAL["fetched_at"] = now
+    except Exception:
+        pass
+
+
+def _presence_payload(user):
+    """관리자 전용 접속자 목록 (이름·온라인 여부·마지막 접속 경과).
+    관리자가 아니면 None → 프론트 칩이 숨겨진다."""
+    try:
+        users, _e = _dashboard_users()
+        if not users or _admin_user(users) != user:
+            return None
+        now = time.time()
+        blob = _presence_blob()
+        lst = []
+        for name in users:
+            ts = blob.get(name)
+            ago = int(now - float(ts)) if ts else None
+            lst.append({"name": name, "ago_sec": ago,
+                        "online": (ago is not None and ago <= 120)})
+        return {"admin": True, "users": lst}
+    except Exception:
+        return None
+
+
 @app.get("/api/market-data")
 def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10", part: str = "full"):
     # 대시보드 인증: 토큰 없으면 데이터 차단 (잠금화면 장식 문제 해결)
-    if not _require_auth(request):
+    auth_user = _require_auth(request)
+    if not auth_user:
         return JSONResponse({"status": "unauthorized", "error": "로그인이 필요합니다"}, status_code=401)
+    _presence_touch(auth_user)  # 접속 하트비트 (관리자 접속자 표시용)
     t0 = time.time()
     # Vercel Hobby 함수 제한 10초 대비 응답 데드라인 (초과 시 느린 섹션은 폴백으로 대체)
     RESP_BUDGET = 8.5
@@ -3271,6 +3344,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
             "timestamp": now_str,
             "source_summary": f"Schwab {schwab_cnt_q} · Realtime Hybrid",
             "schwab_status": schwab_msg,
+            "presence": _presence_payload(auth_user),
             "spx": q_spx,
             "es": quotes.get("es"),
             "vix1d": slim(quotes.get("vix1d")),
@@ -3433,6 +3507,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "cvd_overnight": cvd_overnight,
         "direction": direction,
         "reversal": reversal,
+        "presence": _presence_payload(auth_user),
     }
 
 
