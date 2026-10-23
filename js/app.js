@@ -46,6 +46,24 @@ function renderDirection(d) {
 }
 
 let _revPrevConfAt = undefined;
+function fmtAgo(sec) {
+    if (sec == null) return '기록 없음';
+    if (sec < 90) return '방금 전';
+    if (sec < 3600) return Math.round(sec / 60) + '분 전';
+    if (sec < 86400) return Math.round(sec / 3600) + '시간 전';
+    return Math.round(sec / 86400) + '일 전';
+}
+
+function renderPresence(p) {
+    const chip = $('presence-chip');
+    if (!chip) return;
+    if (!p || !p.admin || !Array.isArray(p.users)) { chip.classList.add('hidden'); return; }
+    const on = p.users.filter(u => u.online).map(u => u.name);
+    chip.textContent = '👥 ' + (on.length ? on.join(' · ') : '접속자 없음');
+    chip.title = p.users.map(u => u.online ? `${u.name} · 접속 중` : `${u.name} · ${fmtAgo(u.ago_sec)}`).join('\n');
+    chip.classList.remove('hidden');
+}
+
 function renderReversal(r) {
     const panel = $('rev-panel');
     if (!panel) return;
@@ -146,6 +164,7 @@ async function fetchRealMarketData(force = false, part = 'full') {
 
         const quoteRenderers = [
             () => renderStatus(data),
+            () => renderPresence(data.presence),
             () => renderQuote('spx', data.spx, { pct: true }),
             () => renderQuote('es', data.es, { pct: true }),
             () => { renderQuote('vix1d', data.vix1d, { invert: true }); renderQuote('vix', data.vix, { invert: true }); renderIvRank(data.iv_rank); },
