@@ -75,11 +75,15 @@ function changeCvdTimeframe(tf) {
     });
 
     // 5m cuqaasamee 1m akka hin agarsiisneef kallattiin API cvd_tf waliin waama
-    fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
+    // (인증 헤더 필수 — 없으면 401이라 다음 정기 폴링까지 반영이 안 됨)
+    fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now(),
+        { headers: (typeof authHeaders === 'function') ? authHeaders() : {} })
         .then(function(r) { return r.json(); })
         .then(function(d) {
             if (d && d.cvd) {
                 renderCvd(d.cvd);
+            } else if (typeof fetchRealMarketData === 'function') {
+                fetchRealMarketData(true);
             }
         })
         .catch(function() {
@@ -127,7 +131,8 @@ function renderCvd(cvd) {
     var symTag = incomingSource.indexOf('ES ') !== -1 ? 'ES ' : (incomingSource.indexOf('SPY ') !== -1 ? 'SPY ' : '');
     var expectedTag = symTag + (currentCvdTf === '1h' ? '1H' : currentCvdTf);
     if (symTag && incomingSource.indexOf(expectedTag) === -1) {
-        fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now())
+        fetch(cvdApiUrl() + '?cvd_tf=' + encodeURIComponent(currentCvdTf) + '&_t=' + Date.now(),
+            { headers: (typeof authHeaders === 'function') ? authHeaders() : {} })
             .then(function(r) { return r.json(); })
             .then(function(d) { if (d && d.cvd) renderCvdDirect(d.cvd); })
             .catch(function() {});
