@@ -1,5 +1,3 @@
-let _vix1dPrice = null;
-let _vixPrice = null;
 
 // ─────────────────────────────────────────────────────────────
 // Schwab 우선 · CNBC 폴백 (히스테리시스로 소스 깜빡임 방지)
@@ -34,15 +32,6 @@ function refreshSourceNotice() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 0DTE 변동성 판정: VIX 기간구조(Term Structure) 기반 4단계
-//   Ratio = VIX1D ÷ VIX
-//   - Ratio ≤ 0.85      : 정상 콘탱고 (1일물 IV가 30일물보다 충분히 낮음)
-//   - 0.85 < Ratio < 1.0: 커브 평탄화 (경험적 경계, 0.85는 휴리스틱)
-//   - Ratio ≥ 1.0       : 백워데이션(역전) → 절대 VIX 레벨로 2차 판정
-//       · VIX < 25      : 역전 주의 (절대 변동성 제한적, 신규 매도 자제)
-//       · VIX ≥ 25      : 고변동성 체제 (신규 매도 금지) — 25는 휴리스틱
-//   ※ 토/일(ET)에는 금요일 종가 기준 stale 데이터임을 표시
-// ─────────────────────────────────────────────────────────────
 // IV Rank 표시 (6) — 크레딧 매도 타이밍 잣대 (높을수록 프리미엄 비쌈)
 function renderIvRank(iv) {
     const el = document.getElementById('iv-rank-val');
@@ -59,58 +48,6 @@ function renderIvRank(iv) {
     el.className = 'text-[9px] sm:text-[10px] font-bold ' + (r >= 50 ? 'text-amber-300' : (r >= 25 ? 'text-slate-300' : 'text-slate-500'));
 }
 
-function updateVixRatio() {
-    const card = $('vix-ratio-card');
-    const badge = $('vix-status-badge');
-    const desc = $('vix-status-desc');
-    const ratioEl = $('vix-ratio-val');
-    const dot = $('vix-status-dot');
-    if (!card || !badge || !desc || !ratioEl || !dot) return;
-
-    if (!isNum(_vix1dPrice) || !isNum(_vixPrice) || _vixPrice <= 0) {
-        badge.className = 'px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-slate-800 text-slate-400 border border-slate-700';
-        badge.innerText = '집계 대기';
-        desc.innerText = 'VIX 1D 및 VIX 실시간 데이터를 확인하는 중...';
-        ratioEl.innerText = 'Ratio --';
-        dot.className = 'w-2 h-2 rounded-full bg-slate-500';
-        card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-slate-900/80 border-slate-800';
-        return;
-    }
-
-    const ratio = _vix1dPrice / _vixPrice;
-    ratioEl.innerText = `Ratio ${ratio.toFixed(2)}`;
-
-    // 주말(ET) 판정: VIX/VIX1D는 금요일 종가 기준이므로 stale 표시
-    var nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    var wd = nowET.getDay();
-    var staleTag = (wd === 0 || wd === 6) ? ' · 📌 금요일 종가 기준' : '';
-
-    if (ratio <= 0.85) {
-        card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-emerald-950/25 border-emerald-800/70 shadow-sm transition-all';
-        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]';
-        badge.className = 'px-2 py-0.5 rounded font-black text-[9px] sm:text-xs bg-emerald-950 text-emerald-300 border border-emerald-500 tracking-tight';
-        badge.innerText = '🟢 스프레드 진입 적격';
-        desc.innerHTML = '<span class="text-emerald-300 font-bold">정상 콘탱고</span> · 당일 돌발 급변동 위험 낮음 (프리미엄 수취 최적)' + staleTag;
-    } else if (ratio < 1.00) {
-        card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-amber-950/20 border-amber-800/60 transition-all';
-        dot.className = 'w-2 h-2 rounded-full bg-amber-400';
-        badge.className = 'px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-amber-950 text-amber-300 border border-amber-600 tracking-tight';
-        badge.innerText = '🟡 일반 장세 (선별 진입)';
-        desc.innerHTML = '<span class="text-amber-300 font-semibold">표준 변동성</span> · Wall 및 EM 이격 15pt 이상 확보 권장' + staleTag;
-    } else if (_vixPrice < 25) {
-        card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-orange-950/20 border-orange-800/60 transition-all';
-        dot.className = 'w-2 h-2 rounded-full bg-orange-400';
-        badge.className = 'px-2 py-0.5 rounded font-bold text-[9px] sm:text-xs bg-orange-950 text-orange-300 border border-orange-600 tracking-tight';
-        badge.innerText = '🟠 커브 역전 주의';
-        desc.innerHTML = '<span class="text-orange-300 font-bold">변동성 커브 역전</span> · 절대 변동성은 제한적 (신규 매도 자제)' + staleTag;
-    } else {
-        card.className = 'card px-2.5 py-1.5 sm:px-3 sm:py-2 lg:px-4 lg:py-2.5 mb-2 lg:mb-3 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm bg-rose-950/40 border-rose-600/80 shadow-md transition-all';
-        dot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
-        badge.className = 'px-2 py-0.5 rounded font-black text-[9px] sm:text-xs bg-rose-950 text-rose-300 border border-rose-500 tracking-tight animate-pulse';
-        badge.innerText = '🚨 크레딧 스프레드 금지';
-        desc.innerHTML = '<span class="text-rose-300 font-bold">변동성 커브 역전(백워데이션)</span> · 당일 급변동 경계 (신규 매도 금지)' + staleTag;
-    }
-}
 
 function renderQuote(pfx, q, opts = {}) {
     // CNBC에서 직접 받아오는 종목들은 백엔드가 빈 값(null)을 보내도 N/A로 지우지 않도록 보호
@@ -151,8 +88,6 @@ function renderQuote(pfx, q, opts = {}) {
     if (!q) {
         setText(pfx + '-price', NA); setText(pfx + '-change', NA); setText(pfx + '-source', NA);
         setTone(pfx + '-price', 'text-slate-500'); setTone(pfx + '-change', 'text-slate-500');
-        if (pfx === 'vix1d') { _vix1dPrice = null; updateVixRatio(); }
-        if (pfx === 'vix') { _vixPrice = null; updateVixRatio(); }
         return;
     }
     setText(pfx + '-price', fmt(q.price, 2));
@@ -164,8 +99,6 @@ function renderQuote(pfx, q, opts = {}) {
     const s = $(pfx + '-source');
     if (s) { s.innerText = srcShort(q.source); s.title = q.source || ''; }
 
-    if (pfx === 'vix1d') { _vix1dPrice = q.price; updateVixRatio(); }
-    if (pfx === 'vix') { _vixPrice = q.price; updateVixRatio(); }
 }
 
 function renderYields(y) {
