@@ -7,6 +7,7 @@ import os
 import re as re_lib
 import secrets as secrets_lib
 import time
+import threading
 
 # DEPLOY_MARKER: 2026-10-18 auth-v2 (배포 확인용)
 # AUTH_DISABLED: True면 비밀번호/토큰 검사 없이 모두 통과 (임시 테스트용)
@@ -72,13 +73,37 @@ def _parse_val(s):
 
 
 _CACHE = {}
+_REFRESHING = set()
 
 
 def cached(key, ttl, fn):
+    """인메모리 캐시 + SWR(Stale-While-Revalidate):
+    - 신선하면(TTL 내) 캐시 반환
+    - 만료했지만 유예 구간(TTL×3) 안이면 옛 값을 즉시 반환하고 백그라운드로 갱신
+      → 폴링이 느린 외부 조회(Schwab 등)를 기다리지 않아 응답이 일정해진다
+    - 유예 구간도 지났거나 캐시가 없으면 동기 계산 (기존 동작)
+    """
     now = time.time()
     hit = _CACHE.get(key)
-    if hit and now - hit[0] < ttl:
-        return hit[1]
+    if hit:
+        age = now - hit[0]
+        if age < ttl:
+            return hit[1]
+        if age < ttl * 3 and key not in _REFRESHING:
+            _REFRESHING.add(key)
+
+            def _bg():
+                try:
+                    v = fn()
+                    if v is not None:
+                        _CACHE[key] = (time.time(), v)
+                except Exception:
+                    pass
+                finally:
+                    _REFRESHING.discard(key)
+
+            threading.Thread(target=_bg, daemon=True).start()
+            return hit[1]
     val = fn()
     if val is not None:
         _CACHE[key] = (now, val)
@@ -2344,7 +2369,6 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
             "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
             "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
             "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
-            "spread_optimizer": compute_spread_optimizer(contracts, spot, call_wall, put_wall, em_pt, width, T),
         },
     }
 
@@ -3210,7 +3234,7 @@ async def api_logout(request: Request):
 
 
 @app.get("/api/market-data")
-def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10"):
+def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf: str = "1H", cvd_tf: str = "10m", opt_width: str = "10", part: str = "full"):
     # 대시보드 인증: 토큰 없으면 데이터 차단 (잠금화면 장식 문제 해결)
     if not _require_auth(request):
         return JSONResponse({"status": "unauthorized", "error": "로그인이 필요합니다"}, status_code=401)
@@ -3233,6 +3257,35 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     q_spx, q_spy = quotes.get("spx"), quotes.get("spy")
     spx_p = q_spx["price"] if q_spx else None
     ratio_q = (spx_p / q_spy["price"]) if (spx_p and q_spy and q_spy.get("price")) else None
+
+    def slim(q):
+        return {"price": q["price"], "change": q["change"], "change_pct": q.get("change_pct"), "source": q["source"]} if q else None
+
+    # 경량 모드 (프론트 시세 폴링 전용): 무거운 캔들·GEX·CVD 조회를 건너뛰고
+    # 헤더 시세·금리·IV Rank만 반환한다 — 시세 갱신이 무거운 분석에 막히지 않게 분리
+    if part == "quotes":
+        used_q = [q["source"] for q in quotes.values() if q]
+        schwab_cnt_q = sum(1 for s in used_q if src_kind(s) == "schwab")
+        return {
+            "status": "success",
+            "timestamp": now_str,
+            "source_summary": f"Schwab {schwab_cnt_q} · Realtime Hybrid",
+            "schwab_status": schwab_msg,
+            "spx": q_spx,
+            "es": quotes.get("es"),
+            "vix1d": slim(quotes.get("vix1d")),
+            "vix": slim(quotes.get("vix")),
+            "iv_rank": _get_iv_rank(quotes.get("vix"), now_et),
+            "mag7": quotes.get("mag7"),
+            "wti": quotes.get("wti"),
+            "brent": quotes.get("brent"),
+            "uso": quotes.get("uso"),
+            "yields": {
+                "3m": quotes.get("yield-3m"),
+                "10y": quotes.get("yield-10y"),
+                "30y": quotes.get("yield-30y"),
+            },
+        }
 
     r_key, c_key = normalize_tf(rsi_tf), normalize_tf(cvd_tf)
     spy_tf_set = {"1h", "15m", "5m", "1m", c_key}
@@ -3348,9 +3401,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
 
     # IV Rank (6) — VIX 일별 종가를 KV에 적립해 1년 랭크 계산 (크레딧 매도 타이밍 잣대)
     iv_rank = _get_iv_rank(quotes.get("vix"), now_et)
-
-    def slim(q):
-        return {"price": q["price"], "change": q["change"], "change_pct": q.get("change_pct"), "source": q["source"]} if q else None
 
     used = [q["source"] for q in quotes.values() if q]
     schwab_cnt = sum(1 for s in used if src_kind(s) == "schwab")
