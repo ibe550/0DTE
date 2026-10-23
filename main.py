@@ -2787,6 +2787,14 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
         _cur = spx_p or (bars10[-1]["c"] if bars10 else None)
         if _cur is not None and (_cur - last_flip["px"]) * _ds < -5:
             invalidated = True
+        if not invalidated:
+            # 무효 래치: 한 번 무효화된 확정은 가격이 되돌아와도 부활하지 않는다
+            # (텔레그램은 1회성으로 이미 발송됐는데 웹 배지만 확정으로 되돌아가던 문제)
+            try:
+                if kv_get(f"rev-inv:{sess_date}:{last_flip['at']}:{last_flip['to']}"):
+                    invalidated = True
+            except Exception:
+                pass
 
     if last_flip and recent and not invalidated:
         out["state"] = "confirmed"
@@ -2825,8 +2833,9 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
                 "sig_count": out["sig_count"], "sig_total": out["sig_total"],
                 "at": _hm(bars10[-1]["m"] + 10) if bars10 else "",
             }
-    # 무효 텔레그램 트리거 — 확정 60분 내 무효화가 처음 감지될 때 전환당 1회만
-    if invalidated and last_flip and last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 60:
+    # 무효 래치 + 텔레그램 트리거 — 무효화가 처음 감지되면 래치를 남기고(웹 표시용),
+    # 텔레그램은 확정 60분 내일 때만 전환당 1회 발송한다
+    if invalidated and last_flip:
         ikey = f"rev-inv:{sess_date}:{last_flip['at']}:{last_flip['to']}"
         seen = False
         try:
@@ -2838,9 +2847,10 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
                 kv_set(ikey, "1", ex_seconds=36 * 3600)
             except Exception:
                 pass
-            out["new_invalidation"] = {"at": last_flip["at"], "to": last_flip["to"],
-                                       "px": last_flip["px"],
-                                       "cur": round(_cur, 1) if _cur else None}
+            if last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 60:
+                out["new_invalidation"] = {"at": last_flip["at"], "to": last_flip["to"],
+                                           "px": last_flip["px"],
+                                           "cur": round(_cur, 1) if _cur else None}
     return out
 
 
