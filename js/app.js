@@ -92,6 +92,29 @@ function renderPresence(p) {
     }
 }
 
+function renderOvernight(o) {
+    const el = $('overnight-strip');
+    if (!el) return;
+    const hasData = o && ((o.asia && o.asia.length) || (o.europe && o.europe.length)
+        || o.es_gap_pct != null || (o.events && o.events.length));
+    if (!hasData) { el.classList.add('hidden'); return; }
+    const span = (items) => (items || []).map(x => {
+        const s = x.pct >= 0 ? '+' : '';
+        const c = x.pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        return `<span class="${c}">${x.name} ${s}${x.pct.toFixed(2)}%</span>`;
+    }).join(' · ');
+    $('overnight-asia').innerHTML = span(o.asia) ? ('아시아 ' + span(o.asia) + ' <span class="text-slate-600">|</span>') : '';
+    $('overnight-europe').innerHTML = span(o.europe) ? ('유럽 ' + span(o.europe) + ' <span class="text-slate-600">|</span>') : '';
+    const g = $('overnight-gap');
+    if (o.es_gap_pct != null) {
+        g.textContent = `ES 갭 ${o.es_gap_pct >= 0 ? '+' : ''}${o.es_gap_pct.toFixed(2)}%`;
+        g.className = 'font-semibold ' + (o.es_gap_pct >= 0 ? 'text-emerald-400' : 'text-rose-400');
+    } else { g.textContent = ''; }
+    const ev = $('overnight-events');
+    ev.textContent = (o.events || []).map(e => `${e.time} ${e.title}`).join(' · ');
+    el.classList.remove('hidden');
+}
+
 function renderReversal(r) {
     const panel = $('rev-panel');
     if (!panel) return;
@@ -204,6 +227,7 @@ async function fetchRealMarketData(force = false, part = 'full') {
         const fullRenderers = [
             () => renderShockAlert(data.shock_alert),
             () => renderEconEvents(data.econ_events),
+            () => renderOvernight(data.overnight),
             () => renderRsi(data.rsi),
             () => {
                 const vp = data.volume_profile;
