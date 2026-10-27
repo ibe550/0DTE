@@ -980,7 +980,7 @@ def detect_event_market_reaction(event_ts, spy_5m_candles, ratio):
     return {"detected": True, "dir": "flat", "diff_pt": diff_pt, "diff_str": diff_str}
 
 
-def fetch_global_econ_calendar():
+def fetch_global_econ_calendar(countries=("USD",)):
     now_sec = int(time.time())
     url = f"https://nfs.faireconomy.media/ff_calendar_thisweek.json?_={now_sec}"
     req_headers = {
@@ -996,7 +996,7 @@ def fetch_global_econ_calendar():
         data = r.json()
         parsed = []
         for it in data:
-            if it.get("country") != "USD":
+            if it.get("country") not in countries:
                 continue
             title = (it.get("title") or "").strip()
             impact = it.get("impact", "")
@@ -1018,17 +1018,94 @@ def fetch_global_econ_calendar():
                         kr_name = f"연준 {spk_v['name']} 연설/발언"
                         break
             if not kr_name:
+                for spk_k, spk_v in {"lagarde": "ECB 라가르드 총재", "ueda": "일본은행 우에다 총재"}.items():
+                    if spk_k in t_lower:
+                        kr_name = f"{spk_v} 연설/발언"
+                        break
+            if not kr_name:
                 kr_name = title
 
             parsed.append({
                 "title": kr_name, "title_en": title, "dt": dt_obj, "ts": dt_obj.timestamp(),
-                "time": dt_obj.strftime("%H:%M ET"), "impact": impact,
+                "time": dt_obj.strftime("%H:%M ET"), "impact": impact, "country": it.get("country"),
                 "forecast": (it.get("forecast") or "").strip(), "previous": (it.get("previous") or "").strip(),
                 "actual": (it.get("actual") or "").strip()
             })
         return parsed
     except Exception:
         return None
+
+
+def _yahoo_index(sym):
+    """Yahoo 지수 전일 대비 등락률 (닛케이·항셍·DAX·FTSE용)."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=1d",
+                         headers=HEADERS, timeout=4)
+        meta = ((r.json().get("chart", {}).get("result") or [{}])[0] or {}).get("meta") or {}
+        px = num(meta.get("regularMarketPrice"))
+        prev = num(meta.get("chartPreviousClose") or meta.get("previousClose"))
+        if px is None or prev is None or prev == 0:
+            return None
+        return {"price": px, "pct": round((px - prev) / prev * 100, 2)}
+    except Exception:
+        return None
+
+
+def _eu_asia_events(now_et):
+    """전날 15:00 ET ~ 당일 11:30 ET 구간의 유럽·아시아 고영향 이벤트
+    (밤사이 일본 지표·유럽 오전 일정·11:30 전 ECB/BoJ 일정)."""
+    try:
+        evs = cached("econ_events_eu_asia", 900, lambda: fetch_global_econ_calendar(("EUR", "JPY", "CNY", "GBP")))
+    except Exception:
+        return []
+    if not evs:
+        return []
+    start = (now_et - timedelta(days=1)).replace(hour=15, minute=0, second=0, microsecond=0)
+    end = now_et.replace(hour=11, minute=30, second=0, microsecond=0)
+    out = []
+    for it in evs:
+        dt = it.get("dt")
+        if dt and start <= dt <= end:
+            out.append({"time": dt.strftime("%H:%M"),
+                        "title": it.get("title") or it.get("title_en") or "",
+                        "country": it.get("country"), "_ts": it.get("ts") or dt.timestamp()})
+    out = sorted(out, key=lambda x: x["_ts"])[:6]
+    for e in out:
+        e.pop("_ts", None)
+    return out
+
+
+def _build_overnight(now_et, es_price):
+    """장전 스트립용 밤사이 요약. 평일 00:00~11:30 ET에만 반환 (이후 None → 프론트 숨김).
+    지수는 120초 캐시 + 병렬 조회로 폴링 비용을 묶는다."""
+    if now_et.weekday() >= 5 or (now_et.hour * 60 + now_et.minute) >= 690:
+        return None
+    idx = {}
+    specs = [("nikkei", "^N225", "닛케이"), ("hangseng", "^HSI", "항셍"),
+             ("dax", "^GDAXI", "DAX"), ("ftse", "^FTSE", "FTSE")]
+    try:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futs = {key: ex.submit(cached, f"yahoo_idx:{sym}", 120, lambda s=sym: _yahoo_index(s))
+                    for key, sym, _n in specs}
+            for key, _sym, name in specs:
+                try:
+                    q = futs[key].result(timeout=5)
+                except Exception:
+                    q = None
+                if q:
+                    idx[key] = {"name": name, "pct": q["pct"]}
+    except Exception:
+        pass
+    gap = None
+    try:
+        prev = _yahoo_prev_ref("ES")
+        if es_price and prev:
+            gap = round((es_price - prev) / prev * 100, 2)
+    except Exception:
+        pass
+    return {"asia": [idx[k] for k in ("nikkei", "hangseng") if k in idx],
+            "europe": [idx[k] for k in ("dax", "ftse") if k in idx],
+            "es_gap_pct": gap, "events": _eu_asia_events(now_et)}
 
 
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
@@ -3502,6 +3579,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "iv_rank": iv_rank,
         "mag7": quotes.get("mag7"),
         "econ_events": econ_events,
+        "overnight": _build_overnight(now_et, (quotes.get("es") or {}).get("price")),
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
         "uso": quotes.get("uso"),
