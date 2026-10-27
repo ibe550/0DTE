@@ -96,7 +96,7 @@ function renderOvernight(o) {
     const el = $('overnight-strip');
     if (!el) return;
     const hasData = o && ((o.asia && o.asia.length) || (o.europe && o.europe.length)
-        || o.es_gap_pct != null || (o.events && o.events.length));
+        || o.es_gap_pct != null || (o.events && o.events.length) || (o.leaders && o.leaders.length));
     if (!hasData) { el.classList.add('hidden'); return; }
     const span = (items) => (items || []).map(x => {
         const s = x.pct >= 0 ? '+' : '';
@@ -112,6 +112,11 @@ function renderOvernight(o) {
     } else { g.textContent = ''; }
     const ev = $('overnight-events');
     ev.textContent = (o.events || []).map(e => `${e.time} ${e.title}`).join(' · ');
+    const ld = $('overnight-leaders');
+    if (ld) {
+        ld.textContent = (o.leaders || []).map(l =>
+            `📰 ${l.sym} 장전 ${l.pct >= 0 ? '+' : ''}${l.pct.toFixed(1)}% · ${String(l.title).slice(0, 60)}`).join(' · ');
+    }
     el.classList.remove('hidden');
 }
 
