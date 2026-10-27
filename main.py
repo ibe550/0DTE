@@ -1103,9 +1103,145 @@ def _build_overnight(now_et, es_price):
             gap = round((es_price - prev) / prev * 100, 2)
     except Exception:
         pass
+    leaders = []
+    try:
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            lfuts = {sym: ex.submit(cached, f"yahoo_leader:{sym}", 120, lambda s=sym: _yahoo_leader(s, premarket=True))
+                     for sym, _n in LEADER_SYMBOLS}
+            for sym, name in LEADER_SYMBOLS:
+                try:
+                    q = lfuts[sym].result(timeout=5)
+                except Exception:
+                    q = None
+                if q and abs(q["pct"]) >= 1.0:
+                    hl = cached(f"leader_hl:{sym}", 600, lambda s=sym, n=[name]: _leader_headline(s, n, "12h"))
+                    if hl:
+                        leaders.append({"sym": sym, "name": name, "pct": q["pct"],
+                                        "title": hl["title"], "source": hl["source"]})
+        leaders = leaders[:2]
+    except Exception:
+        leaders = []
     return {"asia": [idx[k] for k in ("nikkei", "hangseng") if k in idx],
             "europe": [idx[k] for k in ("dax", "ftse") if k in idx],
-            "es_gap_pct": gap, "events": _eu_asia_events(now_et)}
+            "es_gap_pct": gap, "events": _eu_asia_events(now_et), "leaders": leaders}
+
+
+# ── 시장 주도주 뉴스 감시 (2026-10-27 James 요청: 방향 필터) ──
+# Mag7 + AI·반도체 주도주. 장전 플래그(브리핑/스트립)와 장중 텔레그램 트리거가 공유.
+LEADER_SYMBOLS = [("NVDA", "엔비디아"), ("AVGO", "브로드컴"), ("MSFT", "마이크로소프트"),
+                  ("META", "메타"), ("GOOGL", "알파벳"), ("AMZN", "아마존"),
+                  ("AAPL", "애플"), ("TSLA", "테슬라"), ("TSM", "TSMC"), ("AMD", "AMD")]
+
+
+def _yahoo_leader(sym, premarket=False):
+    """개별 종목 Yahoo 메타 등락률. 장전에는 장전가(preMarketPrice) 우선, 장중에는 정규가."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=1d",
+                         headers=HEADERS, timeout=4)
+        meta = ((r.json().get("chart", {}).get("result") or [{}])[0] or {}).get("meta") or {}
+        prev = num(meta.get("chartPreviousClose") or meta.get("previousClose"))
+        px = num(meta.get("preMarketPrice")) if premarket else None
+        if px is None:
+            px = num(meta.get("regularMarketPrice"))
+        if px is None or prev is None or prev == 0:
+            return None
+        return {"price": px, "pct": round((px - prev) / prev * 100, 2)}
+    except Exception:
+        return None
+
+
+def _leader_headline(sym, names, window="2h"):
+    """해당 종목 관련 헤드라인 1건 (Google News RSS). 없으면 None."""
+    try:
+        terms = [sym] + list(names)
+        q = "%20OR%20".join(t.replace(" ", "%20") for t in terms)
+        url = f"https://news.google.com/rss/search?q=({q})+when:{window}&hl=en-US&gl=US&ceid=US:en"
+        r = requests.get(url, headers=HEADERS, timeout=4.0)
+        if r.status_code != 200:
+            return None
+        root = ET_xml.fromstring(r.text)
+        for it in root.findall(".//item"):
+            title = it.findtext("title", "")
+            source = title.rsplit(" - ", 1)[1] if " - " in title else ""
+            title = title.rsplit(" - ", 1)[0] if " - " in title else title
+            return {"title": title.strip(), "source": source.strip()}
+        return None
+    except Exception:
+        return None
+
+
+def send_telegram_leader_alert(sym, name, pct, hl, spx_p):
+    """대형주 뉴스 텔레그램. 방향 라벨(상방/하방 재료)만 표시하고 매매 권유는 하지 않는다."""
+    try:
+        token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
+        if not token or not chat_ids_raw:
+            return {"status": "error", "reason": "환경변수 누락"}
+        arrow = "📈" if pct > 0 else "📉"
+        direction = "상방 재료" if pct > 0 else "하방 재료"
+        src = f" ({hl['source']})" if hl.get("source") else ""
+        price_str = f"{spx_p:,.2f}" if spx_p else "N/A"
+        msg = (f"{arrow} [대형주 뉴스 · {direction}]\n"
+               f"━━━━━━━━━━━━━━━\n"
+               f"{sym} ({name}) {pct:+.1f}%\n"
+               f"📰 {hl['title']}{src}\n"
+               f"📍 SPX 현재가: {price_str}\n"
+               f"━━━━━━━━━━━━━━━\n"
+               f"SPX 0DTE DEFENDER Realtime Alert")
+        results = []
+        for cid in [c.strip() for c in chat_ids_raw.split(",") if c.strip()]:
+            ok = False
+            for _ in range(2):
+                try:
+                    r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                                      json={"chat_id": cid, "text": msg}, timeout=10)
+                    if r.status_code == 200:
+                        ok = True
+                        break
+                except Exception:
+                    pass
+            results.append(ok)
+        return {"status": "sent" if all(results) else "partial", "results": results}
+    except Exception as e:
+        return {"status": "error", "reason": str(e)[:200]}
+
+
+def _check_leader_news(spx_p, now_et):
+    """장중 대형주 뉴스 트리거: 종목 ±3% 이상 + 관련 헤드라인 확인 시
+    텔레그램 발송 (종목·방향·당일 1회 쿨다운). 발송 건이 있으면 요약 반환."""
+    try:
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futs = {sym: ex.submit(cached, f"yahoo_leader:{sym}", 120, lambda s=sym: _yahoo_leader(s))
+                    for sym, _n in LEADER_SYMBOLS}
+            quotes = {}
+            for sym, _n in LEADER_SYMBOLS:
+                try:
+                    quotes[sym] = futs[sym].result(timeout=5)
+                except Exception:
+                    quotes[sym] = None
+        for sym, name in LEADER_SYMBOLS:
+            q = quotes.get(sym)
+            if not q or abs(q["pct"]) < 3.0:
+                continue
+            direction = "up" if q["pct"] > 0 else "down"
+            key = f"leader-tg:{now_et.strftime('%Y-%m-%d')}:{sym}:{direction}"
+            try:
+                if kv_get(key):
+                    continue
+            except Exception:
+                pass
+            hl = _leader_headline(sym, [name])
+            if not hl:
+                continue
+            try:
+                kv_set(key, "1", ex_seconds=36 * 3600)
+            except Exception:
+                pass
+            send_telegram_leader_alert(sym, name, q["pct"], hl, spx_p)
+            return {"symbol": sym, "pct": q["pct"], "headline": hl["title"]}
+    except Exception:
+        pass
+    return None
 
 
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
@@ -3091,11 +3227,12 @@ def check_shock(request: Request):
 
         vix_target = quotes.get("vix1d") or quotes.get("vix")
         shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd_cron, vix_target, now_et)
+        leader = _check_leader_news(spx_p, now_et)
         if shock_alert and shock_alert.get("active"):
             tg = send_telegram_shock_alert(shock_alert, spx_p)
             return {"status": "checked", "alert": shock_alert.get("title"), "telegram": tg,
-                    "now_et": now_et.strftime("%m/%d %H:%M ET")}
-        return {"status": "checked", "alert": None, "now_et": now_et.strftime("%m/%d %H:%M ET")}
+                    "leader": leader, "now_et": now_et.strftime("%m/%d %H:%M ET")}
+        return {"status": "checked", "alert": None, "leader": leader, "now_et": now_et.strftime("%m/%d %H:%M ET")}
     except Exception as e:
         return {"status": "error", "reason": str(e)[:200]}
 
