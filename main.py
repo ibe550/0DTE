@@ -1134,15 +1134,28 @@ LEADER_SYMBOLS = [("NVDA", "엔비디아"), ("AVGO", "브로드컴"), ("MSFT", "
 
 
 def _yahoo_leader(sym, premarket=False):
-    """개별 종목 Yahoo 메타 등락률. 장전에는 장전가(preMarketPrice) 우선, 장중에는 정규가."""
+    """개별 종목 등락률. 장전에는 장전 1분봉 마지막 가격 vs 어제 종가,
+    장중에는 정규가 vs 전일 종가. 장전가를 못 구하면 None을 반환한다 —
+    어제 종가를 현재가로 써서 어제 상승률을 장전 등락으로 띄우는 함정을 피한다
+    (2026-10-28 AVGO +4.0% 오표시 교훈: Yahoo 메타 preMarketPrice가 비어 있음)."""
     try:
+        if premarket:
+            r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1m&range=1d&includePrePost=true",
+                             headers=HEADERS, timeout=4)
+            res = ((r.json().get("chart", {}).get("result") or [{}])[0] or {})
+            meta = res.get("meta") or {}
+            ref = num(meta.get("regularMarketPrice"))  # 장전 중에는 어제 종가
+            closes = [c for c in (((res.get("indicators", {}) or {}).get("quote") or [{}])[0] or {}).get("close") or []
+                      if c is not None]
+            if not closes or ref is None or ref == 0:
+                return None
+            px = closes[-1]
+            return {"price": px, "pct": round((px - ref) / ref * 100, 2)}
         r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=1d",
                          headers=HEADERS, timeout=4)
         meta = ((r.json().get("chart", {}).get("result") or [{}])[0] or {}).get("meta") or {}
         prev = num(meta.get("chartPreviousClose") or meta.get("previousClose"))
-        px = num(meta.get("preMarketPrice")) if premarket else None
-        if px is None:
-            px = num(meta.get("regularMarketPrice"))
+        px = num(meta.get("regularMarketPrice"))
         if px is None or prev is None or prev == 0:
             return None
         return {"price": px, "pct": round((px - prev) / prev * 100, 2)}
