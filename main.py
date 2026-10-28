@@ -1098,9 +1098,11 @@ def _build_overnight(now_et, es_price):
         pass
     gap = None
     try:
-        prev = _yahoo_prev_ref("ES")
+        prev = _yahoo_prev_ref("ES=F")
         if es_price and prev:
             gap = round((es_price - prev) / prev * 100, 2)
+            if abs(gap) > 20:  # 기준가 오조회 시(2026-10-28 "ES"=Eversource $67.55) 쓰레기 표시 방지
+                gap = None
     except Exception:
         pass
     leaders = []
