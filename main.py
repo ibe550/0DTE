@@ -1133,6 +1133,10 @@ def _build_overnight(now_et, es_price):
 LEADER_SYMBOLS = [("NVDA", "엔비디아"), ("AVGO", "브로드컴"), ("MSFT", "마이크로소프트"),
                   ("META", "메타"), ("GOOGL", "알파벳"), ("AMZN", "아마존"),
                   ("AAPL", "애플"), ("TSLA", "테슬라"), ("TSM", "TSMC"), ("AMD", "AMD")]
+# 영문 뉴스 검색용 회사명 (한글명은 영문 피드와 매칭이 안 됨)
+LEADER_EN_NAMES = {"NVDA": "NVIDIA", "AVGO": "Broadcom", "MSFT": "Microsoft",
+                   "META": "Meta", "GOOGL": "Alphabet", "AMZN": "Amazon",
+                   "AAPL": "Apple", "TSLA": "Tesla", "TSM": "TSMC", "AMD": "AMD"}
 
 
 def _yahoo_leader(sym, premarket=False):
@@ -1166,9 +1170,12 @@ def _yahoo_leader(sym, premarket=False):
 
 
 def _leader_headline(sym, names, window="2h"):
-    """해당 종목 관련 헤드라인 1건 (Google News RSS). 없으면 None."""
+    """해당 종목 관련 헤드라인 1건 (Google News RSS). 피드 추출 실패 플레이스홀더
+    제목(META_TITLE_QUOTE 등)은 건너뛰고 첫 번째 정상 제목을 반환. 없으면 None.
+    검색어는 영어 회사명 기준 (한글명은 영문 피드와 매칭이 안 됨)."""
     try:
-        terms = [sym] + list(names)
+        en = LEADER_EN_NAMES.get(sym)
+        terms = [sym] + ([en] if en else list(names))
         q = "%20OR%20".join(t.replace(" ", "%20") for t in terms)
         url = f"https://news.google.com/rss/search?q=({q})+when:{window}&hl=en-US&gl=US&ceid=US:en"
         r = requests.get(url, headers=HEADERS, timeout=4.0)
@@ -1179,7 +1186,12 @@ def _leader_headline(sym, names, window="2h"):
             title = it.findtext("title", "")
             source = title.rsplit(" - ", 1)[1] if " - " in title else ""
             title = title.rsplit(" - ", 1)[0] if " - " in title else title
-            return {"title": title.strip(), "source": source.strip()}
+            title = title.strip()
+            if not title:
+                continue
+            if title.startswith("META_") or (title.isupper() and "_" in title):
+                continue
+            return {"title": title, "source": source.strip()}
         return None
     except Exception:
         return None
