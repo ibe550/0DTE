@@ -96,7 +96,7 @@ function renderOvernight(o) {
     const el = $('overnight-strip');
     if (!el) return;
     const hasData = o && ((o.asia && o.asia.length) || (o.europe && o.europe.length)
-        || o.es_gap_pct != null || (o.events && o.events.length) || (o.leaders && o.leaders.length));
+        || o.es_gap_pct != null || (o.events && o.events.length) || (o.leaders && o.leaders.length) || !!o.cause);
     if (!hasData) { el.classList.add('hidden'); return; }
     const span = (items) => (items || []).map(x => {
         const s = x.pct >= 0 ? '+' : '';
@@ -116,6 +116,18 @@ function renderOvernight(o) {
     if (ld) {
         ld.textContent = (o.leaders || []).map(l =>
             `📰 ${l.sym} 장전 ${l.pct >= 0 ? '+' : ''}${l.pct.toFixed(1)}% · ${String(l.title).slice(0, 60)}`).join(' · ');
+    }
+    const cs = $('overnight-cause');
+    if (cs) {
+        if (o.cause && o.cause.kind === 'leaders') {
+            const arrow = (o.es_gap_pct != null && o.es_gap_pct < 0) ? '📉' : '📈';
+            cs.textContent = `${arrow} 원인: ` + o.cause.drivers.map(d =>
+                `${d.sym} ${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(1)}% · ${String(d.title).slice(0, 60)}`).join(' vs ');
+        } else if (o.cause && o.cause.kind === 'overseas') {
+            cs.textContent = `🌏 원인: ${o.cause.name} ${o.cause.pct >= 0 ? '+' : ''}${o.cause.pct.toFixed(2)}%와 같은 방향`;
+        } else {
+            cs.textContent = '';
+        }
     }
     el.classList.remove('hidden');
 }
