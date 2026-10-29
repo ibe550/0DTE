@@ -1075,6 +1075,28 @@ def _eu_asia_events(now_et):
     return out
 
 
+def _overnight_cause(all_leaders, gap, idx):
+    """밤사이 움직임 원인 (2026-10-28 James 요청: 오를 때·떨어질 때 이유 표시).
+    주도주 |등락| ≥3% + 헤드라인이 있으면 절대값 순 최대 2건,
+    없으면 ES 갭 ±0.5% 이상일 때 같은 방향의 해외 지수 1건.
+    해당 없으면 None — 없는 원인을 지어서 표시하지 않는다."""
+    try:
+        drivers = [l for l in all_leaders if abs(l["pct"]) >= 3.0]
+        drivers.sort(key=lambda l: -abs(l["pct"]))
+        if drivers:
+            return {"kind": "leaders", "drivers": drivers[:2]}
+        if gap is not None and abs(gap) >= 0.5:
+            overseas = list(idx.values())
+            same = [i for i in overseas if (i["pct"] >= 0) == (gap >= 0)]
+            if same:
+                same.sort(key=lambda i: -abs(i["pct"]))
+                top = same[0]
+                return {"kind": "overseas", "name": top["name"], "pct": top["pct"]}
+    except Exception:
+        pass
+    return None
+
+
 def _build_overnight(now_et, es_price):
     """장전 스트립용 밤사이 요약. 평일 00:00~11:30 ET에만 반환 (이후 None → 프론트 숨김).
     지수는 120초 캐시 + 병렬 조회로 폴링 비용을 묶는다."""
@@ -1105,7 +1127,7 @@ def _build_overnight(now_et, es_price):
                 gap = None
     except Exception:
         pass
-    leaders = []
+    all_leaders = []
     try:
         with ThreadPoolExecutor(max_workers=10) as ex:
             lfuts = {sym: ex.submit(cached, f"yahoo_leader:{sym}", 120, lambda s=sym: _yahoo_leader(s, premarket=True))
@@ -1118,14 +1140,15 @@ def _build_overnight(now_et, es_price):
                 if q and abs(q["pct"]) >= 1.0:
                     hl = cached(f"leader_hl:{sym}", 600, lambda s=sym, n=[name]: _leader_headline(s, n, "12h"))
                     if hl:
-                        leaders.append({"sym": sym, "name": name, "pct": q["pct"],
-                                        "title": hl["title"], "source": hl["source"]})
-        leaders = leaders[:2]
+                        all_leaders.append({"sym": sym, "name": name, "pct": q["pct"],
+                                            "title": hl["title"], "source": hl["source"]})
     except Exception:
-        leaders = []
+        all_leaders = []
+    leaders = all_leaders[:2]
+    cause = _overnight_cause(all_leaders, gap, idx)
     return {"asia": [idx[k] for k in ("nikkei", "hangseng") if k in idx],
             "europe": [idx[k] for k in ("dax", "ftse") if k in idx],
-            "es_gap_pct": gap, "events": _eu_asia_events(now_et), "leaders": leaders}
+            "es_gap_pct": gap, "events": _eu_asia_events(now_et), "leaders": leaders, "cause": cause}
 
 
 # ── 시장 주도주 뉴스 감시 (2026-10-27 James 요청: 방향 필터) ──
