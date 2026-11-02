@@ -1078,7 +1078,8 @@ def _eu_asia_events(now_et):
 def _overnight_cause(all_leaders, gap, idx):
     """밤사이 움직임 원인 (2026-10-28 James 요청: 오를 때·떨어질 때 이유 표시).
     주도주 |등락| ≥3% + 헤드라인이 있으면 절대값 순 최대 2건,
-    없으면 ES 갭 ±0.5% 이상일 때 같은 방향의 해외 지수 1건.
+    없으면 ES 갭 ±0.5% 이상이고 같은 방향 해외 지수가 ±1% 이상일 때 1건
+    (2026-11-02 수정: 항셍 +0.4% 같은 자잘한 동반 움직임은 원인으로 찍지 않음).
     해당 없으면 None — 없는 원인을 지어서 표시하지 않는다."""
     try:
         drivers = [l for l in all_leaders if abs(l["pct"]) >= 3.0]
@@ -1086,7 +1087,7 @@ def _overnight_cause(all_leaders, gap, idx):
         if drivers:
             return {"kind": "leaders", "drivers": drivers[:2]}
         if gap is not None and abs(gap) >= 0.5:
-            overseas = list(idx.values())
+            overseas = [i for i in idx.values() if abs(i["pct"]) >= 1.0]
             same = [i for i in overseas if (i["pct"] >= 0) == (gap >= 0)]
             if same:
                 same.sort(key=lambda i: -abs(i["pct"]))
@@ -1214,6 +1215,8 @@ def _leader_headline(sym, names, window="2h"):
                 continue
             if title.startswith("META_") or (title.isupper() and "_" in title):
                 continue
+            if re_lib.search(r"[A-Z]{2,5}\d{6}[CP]\d{8}", title):
+                continue  # 옵션 시세 페이지 제목(뉴스 아님, 2026-11-02 AVGO 건)
             return {"title": title, "source": source.strip()}
         return None
     except Exception:
