@@ -124,7 +124,7 @@ function renderOvernight(o) {
             cs.textContent = `${arrow} 원인: ` + o.cause.drivers.map(d =>
                 `${d.sym} ${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(1)}% · ${String(d.title).slice(0, 60)}`).join(' vs ');
         } else if (o.cause && o.cause.kind === 'overseas') {
-            cs.textContent = `🌏 원인: ${o.cause.name} ${o.cause.pct >= 0 ? '+' : ''}${o.cause.pct.toFixed(2)}%와 같은 방향`;
+            cs.textContent = `🌏 같은 방향: ${o.cause.name} ${o.cause.pct >= 0 ? '+' : ''}${o.cause.pct.toFixed(2)}%`;
         } else {
             cs.textContent = '';
         }
