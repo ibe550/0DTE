@@ -1283,7 +1283,7 @@ def _check_leader_news(spx_p, now_et):
                     continue
             except Exception:
                 pass
-            hl = _leader_headline(sym, [name])
+            hl = _leader_headline(sym, [name], "24h")  # 2026-11-06: 2h → 24h (장중 경보 헤드라인 지연 수정)
             if not hl:
                 continue
             try:
