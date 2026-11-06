@@ -2674,33 +2674,55 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
     elapsed_text = ""
     is_pre_alert = False
 
+    # --- 2026-11-06 수정 (급락 경보 오탐 방지) ---
+    # ① 고정 pt 임계값 → 가격 대비 비율 (SPX 7,300 기준: fast 0.25% ≈ 18pt, 15m 0.40% ≈ 29pt)
+    # ② 단일 봉 딥은 경보 안 냄: fast 트리거는 직전 봉도 같은 방향이어야 함 (2봉 확인)
+    # ③ 레벨 게이트: 당일 시가 대비 실제로 내려가 있어야 하락 경보 (오르는 장의 딥은 신호 아님)
+    thr_fast = max(10.0, spx_p * 0.0025)
+    thr_fast_crit = max(15.0, spx_p * 0.0035)
+    thr_15 = max(16.0, spx_p * 0.004)
+    thr_15_crit = max(24.0, spx_p * 0.006)
+    session_open = today_bars[0]["o"] * ratio if today_bars and ratio else None
+
     if len(recent_bars) >= 2 and ratio:
         curr_c = recent_bars[-1]["c"] * ratio
         net_15m = curr_c - (recent_bars[-3]["o"] * ratio if len(recent_bars) >= 3 else recent_bars[0]["o"] * ratio)
         fast_5m = curr_c - (recent_bars[-2]["c"] * ratio)
+        prev_5m = (recent_bars[-2]["c"] - recent_bars[-3]["c"]) * ratio if len(recent_bars) >= 3 else None
+        down_vs_open = session_open is not None and curr_c <= session_open * 0.999
+        up_vs_open = session_open is not None and curr_c >= session_open * 1.001
 
-        if fast_5m <= -10.0 or net_15m <= -16.0:
+        fast_down = fast_5m <= -thr_fast and prev_5m is not None and prev_5m <= -thr_fast * 0.5
+        fast_up = fast_5m >= thr_fast and prev_5m is not None and prev_5m >= thr_fast * 0.5
+        net_down = net_15m <= -thr_15
+        net_up = net_15m >= thr_15
+
+        if (fast_down or net_down) and down_vs_open:
             shock_type = "DROP"
-            level = "CRITICAL" if (fast_5m <= -15.0 or net_15m <= -24.0) else "WARNING"
-            val = fast_5m if fast_5m <= -10.0 else net_15m
+            level = "CRITICAL" if (fast_5m <= -thr_fast_crit or net_15m <= -thr_15_crit) else "WARNING"
+            val = fast_5m if fast_5m <= -thr_fast else net_15m
             reasons.append(f"단기 급락 압력 발생 ({val:.1f}pt 하락)")
 
-        elif fast_5m >= 10.0 or net_15m >= 16.0:
+        elif (fast_up or net_up) and up_vs_open:
             shock_type = "SURGE"
-            level = "CRITICAL" if (fast_5m >= 15.0 or net_15m >= 24.0) else "WARNING"
-            val = fast_5m if fast_5m >= 10.0 else net_15m
+            level = "CRITICAL" if (fast_5m >= thr_fast_crit or net_15m >= thr_15_crit) else "WARNING"
+            val = fast_5m if fast_5m >= thr_fast else net_15m
             reasons.append(f"단기 급등 모멘텀 발생 (+{val:.1f}pt 상승)")
 
     if gex and gex.get("available") and gex.get("is_0dte"):
         pw, cw = gex.get("put_wall"), gex.get("call_wall")
         by_strike = gex.get("by_strike", [])
-        BUFFER = 2.5
-
-        if pw and spx_p < (pw - BUFFER):
+        BUFFER = 10.0  # 2026-11-06: 2.5pt → 10pt (장 초반 노이즈에 월 붕괴 오탐 방지)
+        last_close = recent_bars[-1]["c"] * ratio if recent_bars and ratio else None
+        # 월 붕괴/돌파는 5분봉 마감으로 확인 (장중 찍고 돌아오는 스파이크는 제외)
+        pw_broken = pw and spx_p < (pw - BUFFER) and (last_close is None or last_close < (pw - BUFFER))
+        cw_broken = cw and spx_p > (cw + BUFFER) and (last_close is None or last_close > (cw + BUFFER))
+        # 월 붕괴도 당일 레벨 게이트 적용 (전날 밤에 이미 뚫린 월을 장 초반에 다시 "붕괴"로 찍지 않음)
+        if pw_broken and (session_open is None or spx_p <= session_open * 0.999):
             reasons.append(f"Put Wall 지지선({pw:.1f}) 하향 붕괴 이탈 ({spx_p - pw:.1f}pt)")
             shock_type, level = "DROP", "CRITICAL"
 
-        elif cw and spx_p > (cw + BUFFER):
+        elif cw_broken and (session_open is None or spx_p >= session_open * 1.001):
             reasons.append(f"Call Wall 저항선({cw:.1f}) 상향 돌파 이탈 (+{spx_p - cw:.1f}pt)")
             shock_type, level = "SURGE", "CRITICAL"
 
@@ -2738,9 +2760,9 @@ def detect_market_shock(spx_p, spy_5m_candles, ratio, gex, cvd, vix_active, now_
                     reasons.append("⚠️ Bull Put Spread 신규 진입 즉시 보류")
 
         if not is_pre_alert:
-            if shock_type == "SURGE" and pw and spx_p <= pw + 4.0:
+            if shock_type == "SURGE" and pw and spx_p <= pw + 10.0:
                 return {"active": False}
-            if shock_type == "DROP" and cw and spx_p >= cw - 4.0:
+            if shock_type == "DROP" and cw and spx_p >= cw - 10.0:
                 return {"active": False}
 
     if cvd and not cvd.get("is_prior"):
