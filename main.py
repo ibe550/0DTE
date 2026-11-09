@@ -203,6 +203,42 @@ REFRESH_TOKEN_TTL = 8 * 24 * 3600
 _LAST_TELEGRAM_SHOCK = {}  # {type: ts}
 TELEGRAM_COOLDOWN_SEC = 600
 
+# ── Wall 래치 (2026-11-09): 같은 wall 반복 알람 억제 + 히스테리시스 ──
+# wall 근처에서 맴돌면 10분 쿨다운마다 알람이 와서 하루 수십 번 울림.
+# 같은 wall+방향 알람은 1회만 울리고, 가격이 wall에서 15pt 이상 벗어났다가
+# 다시 깨야 재알람 (히스테리시스). wall 아닌 순수 가격/VIX 쇼크는 기존 쿨다운만 적용.
+WALL_LATCH_TTL_SEC = 8 * 3600
+WALL_LATCH_HYST_PT = 15.0
+_WALL_RE = re_lib.compile(r"(Put Wall|Call Wall)[^\d]*([\d,]+(?:\.\d+)?)")
+
+
+def _parse_wall_alert(shock_alert):
+    """wall 알람이면 (side, level) 반환. side: 'put'|'call'. 아니면 None."""
+    for d in shock_alert.get("details", []) or []:
+        m = _WALL_RE.search(d or "")
+        if m:
+            side = "put" if m.group(1) == "Put Wall" else "call"
+            try:
+                return side, float(m.group(2).replace(",", ""))
+            except Exception:
+                continue
+    return None
+
+
+def _wall_latch_suppress(wall, spx_price):
+    """래치된 wall 알람을 억제할지 판정. 가격이 wall에서 15pt 이상 벗어났으면
+    False(재무장 → 알람 허용), 아니면 True(억제). wall이 아니면 False."""
+    if not wall:
+        return False
+    side, level = wall
+    if not spx_price:
+        return True
+    if side == "put" and spx_price >= level + WALL_LATCH_HYST_PT:
+        return False
+    if side == "call" and spx_price <= level - WALL_LATCH_HYST_PT:
+        return False
+    return True
+
 
 def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
     if not shock_alert or (not shock_alert.get("active") and not force_test):
@@ -221,6 +257,15 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
         last_ts = max(_LAST_TELEGRAM_SHOCK.get(s_type, 0.0), kv_last_ts or 0.0)
         if now_ts - last_ts < TELEGRAM_COOLDOWN_SEC:
             return {"status": "skipped", "reason": f"쿨다운 침묵 중 ({s_type})"}
+
+    # wall 래치: 같은 wall+방향은 1회만. 가격이 wall에서 15pt 이상 벗어나면 재무장.
+    wall = _parse_wall_alert(shock_alert) if not force_test else None
+    wall_key = None
+    if wall:
+        w_side, w_level = wall
+        wall_key = f"alert:wall:latch:{w_side}:{int(round(w_level))}"
+        if KV_AVAILABLE and kv_get(wall_key) and _wall_latch_suppress(wall, spx_price):
+            return {"status": "skipped", "reason": f"wall 래치 침묵 중 ({w_side} {w_level:.0f})"}
 
     title = shock_alert.get("title", "⚡ [변동성 쇼크]")
     time_info = shock_alert.get("elapsed_text") or shock_alert.get("timestamp") or ""
@@ -263,6 +308,8 @@ def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
         _LAST_TELEGRAM_SHOCK[s_type] = now_ts
         if KV_AVAILABLE:
             kv_set(kv_key, str(now_ts), ex_seconds=TELEGRAM_COOLDOWN_SEC)
+            if wall_key:
+                kv_set(wall_key, str(now_ts), ex_seconds=WALL_LATCH_TTL_SEC)
 
     return {"status": "sent", "results": results}
 
