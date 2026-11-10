@@ -1048,6 +1048,34 @@ def detect_event_market_reaction(event_ts, spy_5m_candles, ratio):
     return {"detected": True, "dir": "flat", "diff_pt": diff_pt, "diff_str": diff_str}
 
 
+def _dedupe_econ_events(events):
+    """경제 캘린더 중복 제거 (2026-11-10).
+    ForexFactory 원본에 같은 발표가 1분 차이로 두 번 뜨는 경우가 있음
+    (예: ADP Weekly Employment Change 08:15/08:16).
+    같은 영문 제목 + 국가 + 5분 이내면 중복으로 보고 정보가 더 많은 쪽
+    (전망/이전치/실적 채워진 쪽)을 남기고, 동점이면 이른 시간을 남김.
+    5분 창을 쓰는 이유: 같은 사람 연설이 다른 시간에 두 번 있는 경우
+    (예: 보우만 15:30/18:30)는 엄연히 별개 일정이라 합치면 안 됨."""
+    deduped = []
+    for ev in events:
+        dup = None
+        for kept in deduped:
+            if (kept.get("title_en") == ev.get("title_en")
+                    and kept.get("country") == ev.get("country")
+                    and kept.get("dt") is not None and ev.get("dt") is not None
+                    and abs((kept["dt"] - ev["dt"]).total_seconds()) <= 300):
+                dup = kept
+                break
+        if dup is None:
+            deduped.append(ev)
+            continue
+        def _filled(e):
+            return sum(1 for k in ("forecast", "previous", "actual") if e.get(k))
+        if _filled(ev) > _filled(dup):
+            deduped[deduped.index(dup)] = ev
+    return deduped
+
+
 def fetch_global_econ_calendar(countries=("USD",)):
     now_sec = int(time.time())
     url = f"https://nfs.faireconomy.media/ff_calendar_thisweek.json?_={now_sec}"
@@ -1099,7 +1127,7 @@ def fetch_global_econ_calendar(countries=("USD",)):
                 "forecast": (it.get("forecast") or "").strip(), "previous": (it.get("previous") or "").strip(),
                 "actual": (it.get("actual") or "").strip()
             })
-        return parsed
+        return _dedupe_econ_events(parsed)
     except Exception:
         return None
 
