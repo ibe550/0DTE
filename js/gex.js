@@ -313,6 +313,22 @@ function renderGex(g) {
         }
     }
 
+    // 풋/콜 비율 (2026-11-09) — 현물 ±12% 밴드 내 거래량/OI 기준, 1.0 초과면 풋 우세
+    const pc = g.put_call;
+    const pcBox = $('gex-put-call');
+    if (pcBox && pc) {
+        const vr = pc.vol_ratio, or = pc.oi_ratio;
+        if (isNum(vr) || isNum(or)) {
+            pcBox.classList.remove('hidden');
+            setText('gex-pc-vol', isNum(vr) ? vr.toFixed(2) : NA);
+            setText('gex-pc-oi', isNum(or) ? or.toFixed(2) : NA);
+            const volEl = $('gex-pc-vol');
+            if (volEl && isNum(vr)) volEl.style.color = vr >= 1.2 ? '#fda4af' : (vr <= 0.7 ? '#6ee7b7' : '#e2e8f0');
+        } else {
+            pcBox.classList.add('hidden');
+        }
+    }
+
     const regime = $('gex-regime');
     if (regime && g.regime_text) {
         regime.classList.remove('hidden');
