@@ -92,6 +92,20 @@ function renderPresence(p) {
     }
 }
 
+// 시장 breadth 칩 (2026-11-09) — RSP vs SPY, 헤더에 작게 표시
+function renderBreadth(b) {
+    const chip = $('breadth-chip');
+    if (!chip) return;
+    if (!b || !b.available) {
+        chip.classList.add('hidden');
+        return;
+    }
+    chip.textContent = `📊 ${b.label} ${b.rel >= 0 ? '+' : ''}${b.rel.toFixed(2)}pt`;
+    chip.title = `RSP ${b.rsp_pct >= 0 ? '+' : ''}${b.rsp_pct.toFixed(2)}% vs SPY ${b.spy_pct >= 0 ? '+' : ''}${b.spy_pct.toFixed(2)}%`;
+    chip.style.color = b.label.indexOf('넓은') === 0 ? '#6ee7b7' : (b.label.indexOf('좁은') === 0 ? '#fcd34d' : '');
+    chip.classList.remove('hidden');
+}
+
 function renderOvernight(o) {
     const el = $('overnight-strip');
     if (!el) return;
@@ -233,6 +247,7 @@ async function fetchRealMarketData(force = false, part = 'full') {
         const quoteRenderers = [
             () => renderStatus(data),
             () => renderPresence(data.presence),
+            () => renderBreadth(data.breadth),
             () => renderQuote('spx', data.spx, { pct: true }),
             () => renderQuote('es', data.es, { pct: true }),
             () => { renderQuote('vix1d', data.vix1d, { invert: true }); renderQuote('vix', data.vix, { invert: true }); renderIvRank(data.iv_rank); },
