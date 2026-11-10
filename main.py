@@ -602,6 +602,7 @@ SCHWAB_QUOTES = OrderedDict([
     ("vix1d", "$VIX1D"),
     ("vix", "$VIX"),
     ("spy", "SPY"),
+    ("rsp", "RSP"),
     ("es", "/ES"),
     ("wti", "/CL"),
     ("brent", "/BZ"),
@@ -640,6 +641,26 @@ def make_quote(price, prev, change, source):
         "change_pct": round(pct, 2) if pct is not None else None,
         "source": source,
     }
+
+
+def _compute_breadth(spy_q, rsp_q):
+    """시장 breadth 프록시 (2026-11-09) — RSP(동일가중) vs SPY(시가총액 가중) 당일 등락.
+    rel = RSP% - SPY%: 양수면 고른 상승(넓은 breadth), 음수면 대형주 주도(좁은 breadth).
+    봇의 signals.compute_breadth와 동일 정의. 라벨 경계 ±0.3pt는 표시용 구분일 뿐 판정 기준이 아님."""
+    spy_pct = (spy_q or {}).get("change_pct")
+    rsp_pct = (rsp_q or {}).get("change_pct")
+    if rsp_pct is None or spy_pct is None:
+        return {"available": False, "rsp_pct": rsp_pct, "spy_pct": spy_pct,
+                "rel": None, "label": "확인 불가"}
+    rel = round(rsp_pct - spy_pct, 2)
+    if rel >= 0.3:
+        label = "넓은 breadth"
+    elif rel <= -0.3:
+        label = "좁은 breadth"
+    else:
+        label = "breadth 중립"
+    return {"available": True, "rsp_pct": rsp_pct, "spy_pct": spy_pct,
+            "rel": rel, "label": label}
 
 
 def _find_quote(data, sym):
@@ -2663,6 +2684,12 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
         gamma_flip_note = "Wall 중간값 폴백"
 
     dte_days = (exp_dt.date() - now_et.date()).days
+    # 풋/콜 비율 (2026-11-09) — 현물 ±12% 밴드 내 스트라이크 합계 기준.
+    # 거래량 비율 = 당일 심리(공포), OI 비율 = 포지셔닝. 1.0 초과면 풋 우세.
+    pc_call_vol = sum(e["call_vol"] for e in per.values())
+    pc_put_vol = sum(e["put_vol"] for e in per.values())
+    pc_call_oi = sum(e["call_oi"] for e in per.values())
+    pc_put_oi = sum(e["put_oi"] for e in per.values())
     return {
         "available": True, "source": source, "expiration": exp_date, "is_0dte": is_0dte_session, "dte_days": dte_days, "spot": round(spot, 1),
         "call_wall": round(call_wall, 1) if call_wall else None, "put_wall": round(put_wall, 1) if put_wall else None,
@@ -2682,6 +2709,12 @@ def analyze_gex(contracts, spot, scale, exp_date, now_et, source, diag=None, wid
             "put_oi_at_or_above_spot": int(sum(e["put_oi"] for k, e in per.items() if k >= S)),
             "call_oi_below_spot": int(sum(e["call_oi"] for k, e in per.items() if k < S)),
             "put_oi_below_spot": int(sum(e["put_oi"] for k, e in per.items() if k < S)),
+        },
+        "put_call": {
+            "vol_ratio": round(pc_put_vol / pc_call_vol, 2) if pc_call_vol else None,
+            "oi_ratio": round(pc_put_oi / pc_call_oi, 2) if pc_call_oi else None,
+            "put_vol": int(pc_put_vol), "call_vol": int(pc_call_vol),
+            "put_oi": int(pc_put_oi), "call_oi": int(pc_call_oi),
         },
     }
 
@@ -3679,6 +3712,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
             "vix1d": slim(quotes.get("vix1d")),
             "vix": slim(quotes.get("vix")),
             "iv_rank": _get_iv_rank(quotes.get("vix"), now_et),
+            "breadth": _compute_breadth(q_spy, quotes.get("rsp")),
             "mag7": quotes.get("mag7"),
             "wti": quotes.get("wti"),
             "brent": quotes.get("brent"),
@@ -3819,6 +3853,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "vix1d": slim(quotes.get("vix1d")),
         "vix": slim(quotes.get("vix")),
         "iv_rank": iv_rank,
+        "breadth": _compute_breadth(q_spy, quotes.get("rsp")),
         "mag7": quotes.get("mag7"),
         "econ_events": econ_events,
         "overnight": _build_overnight(now_et, (quotes.get("es") or {}).get("price")),
