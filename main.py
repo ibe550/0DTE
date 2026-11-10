@@ -134,7 +134,7 @@ def src_kind(s):
 
 # ─────────────────────────────────────────────────────────────
 # 관리용 엔드포인트 보호 (선택)
-#  - Vercel 환경변수 CRON_SECRET 을 설정하면 test-alert / refresh-token 이 보호됩니다.
+#  - Vercel 환경변수 CRON_SECRET 을 설정하면 refresh-token 이 보호됩니다.
 #  - 설정하지 않으면 기존처럼 열려 있습니다.
 #  - Vercel Cron 은 CRON_SECRET 이 설정되어 있으면 Authorization: Bearer 헤더를 자동으로 보냅니다.
 # ─────────────────────────────────────────────────────────────
@@ -3278,23 +3278,6 @@ def build_direction(tf_results, tf_sources, spx_p, vwap_calc, c1h, cvd_data):
 # ─────────────────────────────────────────────────────────────
 # API 엔드포인트
 # ─────────────────────────────────────────────────────────────
-@app.get("/api/test-alert")
-def test_telegram_alert(request: Request):
-    if not _admin_ok(request):
-        return JSONResponse({"status": "unauthorized"}, status_code=401)
-    now_et = datetime.now(ET)
-    mock = {
-        "active": True,
-        "type": "DROP",
-        "level": "CRITICAL",
-        "title": "🚨 [시스템 테스트] 텔레그램 연동 정상 작동 확인",
-        "timestamp": now_et.strftime("%H:%M:%S ET"),
-        "elapsed_text": f"{now_et.strftime('%H:%M ET')} 테스트 발송",
-        "details": ["환경변수 연동 성공", "실시간 급변동 감지 시 이와 동일하게 자동 전송됩니다."],
-    }
-    return {"status": "ok", "result": send_telegram_shock_alert(mock, 5750.0, force_test=True)}
-
-
 def _cron_ok(request: Request):
     """Vercel cron 인증: CRON_SECRET 환경변수와 Authorization 헤더 대조.
     수동 테스트용으로 기존 admin key(?key=)도 허용."""
