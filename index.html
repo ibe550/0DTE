@@ -93,12 +93,13 @@
                 <svg class="icon-sm mr-1 lg:mr-1.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 SPX 0DTE DEFENDER
             </span>
-            <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v17.0 Modular</span>
+            <span class="text-[10px] lg:text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">v17.1 Modular</span>
             <span id="global-source-badge" class="text-[9px] lg:text-xs bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-1.5 py-0.5 rounded font-semibold">Connecting...</span>
             <span class="relative">
                 <span id="presence-chip" class="hidden cursor-pointer text-[9px] lg:text-xs bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap"></span>
                 <div id="presence-pop" class="hidden absolute left-0 top-full mt-1 z-50 bg-slate-900 border border-slate-700 rounded-lg p-2 shadow-2xl min-w-[150px]"></div>
             </span>
+            <span id="breadth-chip" class="hidden text-[9px] lg:text-xs bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap" title="RSP(동일가중) vs SPY(시가총액 가중) 당일 등락"></span>
             <button id="sound-toggle" title="쇼크 소리 알림 켜기/끄기" class="text-[11px] lg:text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-1.5 py-0.5 rounded transition-colors">🔇</button>
             <button id="logout-btn" title="로그아웃 (기기 바인딩 해제)" class="text-[11px] lg:text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-1.5 py-0.5 rounded transition-colors">🚪</button>
         </div>
@@ -357,6 +358,12 @@
             <div class="flex h-2 rounded overflow-hidden bg-slate-800">
                 <div id="gex-oi-skew-callbar" class="bg-emerald-500/80 transition-all duration-300" style="width: 50%;"></div>
                 <div id="gex-oi-skew-putbar" class="bg-rose-500/80 transition-all duration-300" style="width: 50%;"></div>
+            </div>
+        </div>
+        <div id="gex-put-call" class="mb-2.5 hidden">
+            <div class="flex items-center justify-between text-[9px] sm:text-[10px] text-slate-400">
+                <span>풋/콜 비율 <span class="text-slate-500">(거래량)</span> <span id="gex-pc-vol" class="text-slate-200 font-bold font-mono">--</span></span>
+                <span>OI <span id="gex-pc-oi" class="text-slate-200 font-bold font-mono">--</span></span>
             </div>
         </div>
         <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-2.5 sm:p-3 lg:p-3.5 mb-2">
