@@ -1,5 +1,6 @@
 let currentGexData = null;
 let currentSpotPrice = null;
+let currentLevels = null;
 let chartBars = [];
 
 // ─────────────────────────────────────────────────────────────
@@ -160,6 +161,38 @@ function drawGexBarChart() {
             ctx.fillText(badgeTxt, spotX, 20);
         }
     }
+
+    // 4. 지지/저항 레벨 수직선 (2026-11-10) — 야간 ES 고/저 + 전일 고/저/종가
+    // 현물선과 같은 선형 보간 (minK~maxK 범위 안에 있는 레벨만 표시)
+    if (currentLevels && strikes.length >= 2) {
+        const minK = strikes[0].strike;
+        const maxK = strikes[strikes.length - 1].strike;
+        const levelDefs = [
+            { key: 'overnight_high', label: '야간고', color: '#f59e0b', dash: [6, 3] },
+            { key: 'overnight_low', label: '야간저', color: '#f59e0b', dash: [6, 3] },
+            { key: 'prev_high', label: '전고', color: '#38bdf8', dash: [2, 3] },
+            { key: 'prev_low', label: '전저', color: '#38bdf8', dash: [2, 3] },
+            { key: 'prev_close', label: '전종', color: '#94a3b8', dash: [] },
+        ];
+        levelDefs.forEach(ld => {
+            const px = currentLevels[ld.key];
+            if (typeof px !== 'number' || !isFinite(px)) return;
+            if (px < minK || px > maxK) return;
+            const lx = padX + ((px - minK) / (maxK - minK)) * (w - padX - 16);
+            ctx.strokeStyle = ld.color;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash(ld.dash);
+            ctx.beginPath();
+            ctx.moveTo(lx, 30);
+            ctx.lineTo(lx, h - padBottom);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = ld.color;
+            ctx.fillText(ld.label, lx, 40);
+        });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -246,7 +279,7 @@ function expiryCountdownText() {
     } catch (e) { return ''; }
 }
 
-function renderGex(g) {
+function renderGex(g, _spot, levels) {
     const note = $('gex-note');
     if (!g || !g.available) {
         setText('gex-source', NA); setText('gex-meta', NA); setText('gex-em', NA);
@@ -257,6 +290,7 @@ function renderGex(g) {
         // stale 방지: 이전 세션의 차트·마커·배너를 모두 초기화 (어제의 월을 오늘로 오판 방지)
         currentGexData = null;
         currentSpotPrice = null;
+        currentLevels = null;
         chartBars = [];
         const _cv = $('gex-chart-canvas');
         if (_cv) { const _cx = _cv.getContext('2d'); if (_cx) _cx.clearRect(0, 0, _cv.width, _cv.height); }
@@ -270,6 +304,7 @@ function renderGex(g) {
     if (note) note.classList.add('hidden');
     currentGexData = g;
     currentSpotPrice = isNum(g.spot) ? g.spot : (isNum(g.gamma_flip) ? g.gamma_flip : null);
+    currentLevels = (levels && typeof levels === 'object') ? levels : null;
 
     setText('gex-source', srcShort(g.source));
     const dte = (typeof g.dte_days === 'number') ? g.dte_days : (g.is_0dte ? 0 : 1);
@@ -326,6 +361,29 @@ function renderGex(g) {
             if (volEl && isNum(vr)) volEl.style.color = vr >= 1.2 ? '#fda4af' : (vr <= 0.7 ? '#6ee7b7' : '#e2e8f0');
         } else {
             pcBox.classList.add('hidden');
+        }
+    }
+
+    // 지지/저항 레벨 (2026-11-10) — 야간 ES 고/저 + 전일 고/저/종가 (현재가 대비 거리 표시)
+    const lvBox = $('gex-levels');
+    if (lvBox) {
+        const lv = currentLevels;
+        const hasLv = lv && lv.available && (isNum(lv.overnight_high) || isNum(lv.overnight_low) ||
+            isNum(lv.prev_high) || isNum(lv.prev_low) || isNum(lv.prev_close));
+        if (hasLv) {
+            lvBox.classList.remove('hidden');
+            const lvDist = (v) => {
+                if (!isNum(v) || !isNum(currentSpotPrice)) return '';
+                const d = v - currentSpotPrice;
+                return ` (${d >= 0 ? '+' : ''}${d.toFixed(1)})`;
+            };
+            setText('lv-on-hi', isNum(lv.overnight_high) ? fmt(lv.overnight_high, 1) + lvDist(lv.overnight_high) : NA);
+            setText('lv-on-lo', isNum(lv.overnight_low) ? fmt(lv.overnight_low, 1) + lvDist(lv.overnight_low) : NA);
+            setText('lv-prev-hi', isNum(lv.prev_high) ? fmt(lv.prev_high, 1) + lvDist(lv.prev_high) : NA);
+            setText('lv-prev-lo', isNum(lv.prev_low) ? fmt(lv.prev_low, 1) + lvDist(lv.prev_low) : NA);
+            setText('lv-prev-cl', isNum(lv.prev_close) ? fmt(lv.prev_close, 1) + lvDist(lv.prev_close) : NA);
+        } else {
+            lvBox.classList.add('hidden');
         }
     }
 
