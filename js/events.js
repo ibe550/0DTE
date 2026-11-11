@@ -18,8 +18,26 @@ function renderEconEvents(e) {
     if (flashBox) flashBox.classList.add('hidden');
 
     const items = (e && e.items) ? e.items : [];
+
+    // 패널 제목 동적 표시 (2026-11-10) — 보여주는 날짜에 맞게 제목 변경
+    const titleEl = $('econ-panel-title');
+    if (titleEl && e && e.target_date) {
+        const parts = String(e.target_date).split('-').map(Number);
+        const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+        const wd = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()];
+        const label = `${parts[1]}/${parts[2]}(${wd})`;
+        if (!items.length) {
+            titleEl.textContent = `📅 ${label} 일정 없음`;
+        } else if (e.is_tomorrow) {
+            titleEl.textContent = `📅 내일(${label}) 중요 발표 & 연준 위원 발언 (ET)`;
+        } else {
+            titleEl.textContent = `📅 오늘(${label}) 중요 발표 & 연준 위원 발언 (ET)`;
+        }
+    }
+
     if (!items.length) {
-        $('econ-list').innerHTML = '<div class="text-[11px] sm:text-xs lg:text-sm text-slate-500 py-0.5">현재 예정되거나 진행 중인 발표가 없습니다.</div>';
+        const msg = (e && e.empty_note) ? e.empty_note : '현재 예정되거나 진행 중인 발표가 없습니다.';
+        $('econ-list').innerHTML = `<div class="text-[11px] sm:text-xs lg:text-sm text-slate-500 py-0.5">${escapeHtml(msg)}</div>`;
         return;
     }
 
