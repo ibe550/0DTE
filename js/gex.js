@@ -164,6 +164,7 @@ function drawGexBarChart() {
 
     // 4. 지지/저항 레벨 수직선 (2026-11-10) — 야간 ES 고/저 + 전일 고/저/종가
     // 현물선과 같은 선형 보간 (minK~maxK 범위 안에 있는 레벨만 표시)
+    // 라벨은 배경 pill + 행 교대로 그려서 겹침/막대 가림 방지 (2026-11-10 수정)
     if (currentLevels && strikes.length >= 2) {
         const minK = strikes[0].strike;
         const maxK = strikes[strikes.length - 1].strike;
@@ -174,6 +175,7 @@ function drawGexBarChart() {
             { key: 'prev_low', label: '전저', color: '#38bdf8', dash: [2, 3] },
             { key: 'prev_close', label: '전종', color: '#94a3b8', dash: [] },
         ];
+        const labelSpots = [];
         levelDefs.forEach(ld => {
             const px = currentLevels[ld.key];
             if (typeof px !== 'number' || !isFinite(px)) return;
@@ -187,10 +189,26 @@ function drawGexBarChart() {
             ctx.lineTo(lx, h - padBottom);
             ctx.stroke();
             ctx.setLineDash([]);
-            ctx.font = 'bold 10px monospace';
+            labelSpots.push({ x: lx, label: ld.label, color: ld.color });
+        });
+        // 라벨: x순 정렬 후 가까운 라벨은 아래 행으로 (배경 pill로 막대 위에서도 읽히게)
+        labelSpots.sort((a, b) => a.x - b.x);
+        ctx.font = 'bold 10px monospace';
+        const lastX = [-Infinity, -Infinity];
+        labelSpots.forEach(s => {
+            const tw = ctx.measureText(s.label).width;
+            let row = 0;
+            if (s.x - lastX[0] < tw + 14) row = 1;
+            if (row === 1 && s.x - lastX[1] < tw + 14) row = 0;
+            const ly = 42 + row * 18;
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+            ctx.beginPath();
+            ctx.roundRect(s.x - tw / 2 - 4, ly - 11, tw + 8, 14, 4);
+            ctx.fill();
+            ctx.fillStyle = s.color;
             ctx.textAlign = 'center';
-            ctx.fillStyle = ld.color;
-            ctx.fillText(ld.label, lx, 40);
+            ctx.fillText(s.label, s.x, ly);
+            lastX[row] = s.x;
         });
     }
 }
