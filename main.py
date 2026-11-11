@@ -663,6 +663,47 @@ def _compute_breadth(spy_q, rsp_q):
             "rel": rel, "label": label}
 
 
+def _compute_levels(spx_p, es_p, spy_1h_candles, es_10m_candles, ratio, now_et):
+    """지지/저항 레벨 (2026-11-10, 기록/표시용 — 진입 차단 아님).
+    야간 ES 고/저 (전일 18:00~당일 09:30, ES→SPX 환산) + 전일 RTH 고/저/종가
+    (SPY 1h 5일치에서 전일 세션 추출, SPX 환산). 봇 signals.compute_levels와 동일 정의.
+    spy_1h_candles / es_10m_candles는 캔들 리스트. 하나라도 없으면 해당 항목만 None."""
+    out = {"available": False, "overnight_high": None, "overnight_low": None,
+           "prev_high": None, "prev_low": None, "prev_close": None}
+    # 야간 ES 고/저 → SPX 환산 (ES/SPX 베이시스 보정: 현재 SPX/ES 가격 비율)
+    try:
+        if es_10m_candles:
+            on_sess, _, _ = get_overnight_session(es_10m_candles, now_et)
+            if on_sess:
+                es_hi = max(c["h"] for c in on_sess)
+                es_lo = min(c["l"] for c in on_sess)
+                f = (spx_p / es_p) if (spx_p and es_p and es_p > 0) else 1.0
+                out["overnight_high"] = round(es_hi * f, 1)
+                out["overnight_low"] = round(es_lo * f, 1)
+    except Exception:
+        pass
+    # 전일 RTH 고/저/종가 (SPY 1h, RTH 정렬 슬롯 09:30~16:00)
+    try:
+        if spy_1h_candles and ratio:
+            by_date = {}
+            for c in spy_1h_candles:
+                dt = datetime.fromtimestamp(c["t"], ET)
+                mins = dt.hour * 60 + dt.minute
+                if 570 <= mins < 960:
+                    by_date.setdefault(dt.date(), []).append(c)
+            today = now_et.date()
+            priors = sorted(d for d in by_date if d < today)
+            if priors:
+                pb = by_date[priors[-1]]
+                out["prev_high"] = round(max(c["h"] for c in pb) * ratio, 1)
+                out["prev_low"] = round(min(c["l"] for c in pb) * ratio, 1)
+                out["prev_close"] = round(pb[-1]["c"] * ratio, 1)
+    except Exception:
+        pass
+    out["available"] = any(v is not None for k, v in out.items() if k != "available")
+    return out
+
+
 def _find_quote(data, sym):
     """응답 키가 요청 심볼과 다를 수 있는 선물 대응 (/ES -> /ESZ26)"""
     info = data.get(sym)
@@ -3886,6 +3927,11 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     # IV Rank (6) — VIX 일별 종가를 KV에 적립해 1년 랭크 계산 (크레딧 매도 타이밍 잣대)
     iv_rank = _get_iv_rank(quotes.get("vix"), now_et)
 
+    # 지지/저항 레벨 (2026-11-10) — 야간 ES 고/저 + 전일 고/저/종가 (표시/기록용)
+    es_10m_c = (es_10m or {}).get("candles") if es_10m else None
+    es_p = (quotes.get("es") or {}).get("price")
+    levels = _compute_levels(spx_p, es_p, c1h, es_10m_c, ratio_vp, now_et)
+
     used = [q["source"] for q in quotes.values() if q]
     schwab_cnt = sum(1 for s in used if src_kind(s) == "schwab")
 
@@ -3901,6 +3947,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "vix": slim(quotes.get("vix")),
         "iv_rank": iv_rank,
         "breadth": _compute_breadth(q_spy, quotes.get("rsp")),
+        "levels": levels,
         "mag7": quotes.get("mag7"),
         "econ_events": econ_events,
         "overnight": _build_overnight(now_et, (quotes.get("es") or {}).get("price")),
