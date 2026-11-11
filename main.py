@@ -3394,11 +3394,30 @@ def check_shock(request: Request):
         vix_target = quotes.get("vix1d") or quotes.get("vix")
         shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd_cron, vix_target, now_et)
         leader = _check_leader_news(spx_p, now_et)
+        # 추세 전환 감지 — 브라우저 없이 5분마다 감지 (2026-11-10).
+        # market-data 경로와 같은 KV 래치(rev:{날짜})를 공유하므로, 대시보드를
+        # 안 열어도 전환 확정/경보/무효 알림이 5분 안에 나간다. 발송 가드
+        # (rev-tg/rev-warn-tg/rev-inv-tg, KV+메모리)가 market-data와
+        # check-shock 간 중복 발송을 막는다. econ_events는 다음 이벤트 표시용이라
+        # check-shock에서는 빈 dict로 둔다. 쇼크 경보와 같은 동기 발송 (기존 패턴).
+        rev_tg = {}
+        try:
+            vwap_c = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m_bars else None
+            reversal_c = detect_trend_reversal(spy_5m_bars, ratio, vwap_c, cvd_cron, spx_p, now_et, {})
+            if reversal_c.get("new_flip"):
+                rev_tg["confirmed"] = send_telegram_reversal_alert(reversal_c["new_flip"], spx_p)
+            if reversal_c.get("new_warn"):
+                rev_tg["warn"] = send_telegram_warn_alert(reversal_c["new_warn"], spx_p)
+            if reversal_c.get("new_invalidation"):
+                rev_tg["invalidation"] = send_telegram_invalidation_alert(reversal_c["new_invalidation"], spx_p)
+        except Exception as e:
+            rev_tg = {"error": str(e)[:120]}
         if shock_alert and shock_alert.get("active"):
             tg = send_telegram_shock_alert(shock_alert, spx_p)
             return {"status": "checked", "alert": shock_alert.get("title"), "telegram": tg,
-                    "leader": leader, "now_et": now_et.strftime("%m/%d %H:%M ET")}
-        return {"status": "checked", "alert": None, "leader": leader, "now_et": now_et.strftime("%m/%d %H:%M ET")}
+                    "leader": leader, "reversal": rev_tg, "now_et": now_et.strftime("%m/%d %H:%M ET")}
+        return {"status": "checked", "alert": None, "leader": leader, "reversal": rev_tg,
+                "now_et": now_et.strftime("%m/%d %H:%M ET")}
     except Exception as e:
         return {"status": "error", "reason": str(e)[:200]}
 
