@@ -267,7 +267,7 @@ async function fetchRealMarketData(force = false, part = 'full') {
                 setText('vp-source', vp ? vp.source : NA); setText('vp-timestamp', data.timestamp);
                 renderVpHist(vp);
             },
-            () => renderGex(data.gex, data.spx ? data.spx.price : null),
+            () => renderGex(data.gex, data.spx ? data.spx.price : null, data.levels),
             () => renderCvd(data.cvd),
             () => renderCvdOvernight(data.cvd_overnight, data.cvd ? data.cvd.session_mode : null),
             () => renderDirection(data.direction),
