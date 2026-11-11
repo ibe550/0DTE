@@ -1464,17 +1464,17 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
     target_items = []
 
     # 16:00 ET 이후에는 오늘 밤 잔여 일정을 무시하고 익일(내일) 지표를 1순위로 강제 설정
+    # (2026-11-10 James: 내일 일정이 없으면 "없음"으로 표시 — 그다음날 것까지 끌어오지 않음)
     if now_et.hour >= 16:
         tomorrow_items = [e for e in events if e["dt"].date() == tomorrow]
         if tomorrow_items:
             target_items = tomorrow_items
             is_tomorrow = True
         else:
-            future_events = [e for e in events if e["dt"].date() > today]
-            if future_events:
-                next_date = min(e["dt"].date() for e in future_events)
-                target_items = [e for e in future_events if e["dt"].date() == next_date]
-                is_tomorrow = True
+            # 내일 일정 없음 — 빈 목록 반환 (오늘 일정으로 되돌아가지 않고, 그다음날도 끌어오지 않음)
+            return {"items": [], "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진",
+                    "error": None, "target_date": tomorrow.isoformat(), "is_tomorrow": True,
+                    "empty_note": f"{tomorrow.strftime('%m/%d')} 일정 없음 (Veterans Day 등 휴일·무발표일)"}
 
     # 장중(16:00 ET 이전)이거나 미래 일정이 전혀 없을 때만 당일 이벤트 노출
     if not target_items:
@@ -1503,7 +1503,9 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
             "eval_tag": eval_res["tag"], "eval_tone": eval_res["tone"], "eval_sentence": eval_res["sentence"],
         })
 
-    return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None}
+    return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None,
+            "target_date": (target_items[0]["dt"].date().isoformat() if target_items else today.isoformat()),
+            "is_tomorrow": is_tomorrow}
 
 
 def fetch_polymarket_spx_data(spx_price, spy_price=None):
