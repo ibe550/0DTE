@@ -106,6 +106,21 @@ function renderBreadth(b) {
     chip.classList.remove('hidden');
 }
 
+// Schwab 토큰 만료 칩 — refresh_token 남은 일수 표시 (2일 이하 노랑, 1일 이하 빨강)
+function renderTokenStatus(t) {
+    const chip = $('token-chip');
+    if (!chip) return;
+    if (!t) { chip.classList.add('hidden'); return; }
+    chip.textContent = '🔑 ' + (t.label || '토큰 상태 확인 불가');
+    const cls = t.level === 'critical'
+        ? 'bg-rose-950 text-rose-300 border border-rose-700'
+        : (t.level === 'warn'
+            ? 'bg-amber-950 text-amber-300 border border-amber-700'
+            : 'bg-slate-800 text-slate-300 border border-slate-700');
+    chip.className = `text-[9px] lg:text-xs px-1.5 py-0.5 rounded font-semibold whitespace-nowrap ${cls}`;
+    chip.classList.remove('hidden');
+}
+
 function renderOvernight(o) {
     const el = $('overnight-strip');
     if (!el) return;
@@ -248,6 +263,7 @@ async function fetchRealMarketData(force = false, part = 'full') {
             () => renderStatus(data),
             () => renderPresence(data.presence),
             () => renderBreadth(data.breadth),
+            () => renderTokenStatus(data.token_status),
             () => renderQuote('spx', data.spx, { pct: true }),
             () => renderQuote('es', data.es, { pct: true }),
             () => { renderQuote('vix1d', data.vix1d, { invert: true }); renderQuote('vix', data.vix, { invert: true }); renderIvRank(data.iv_rank); },
