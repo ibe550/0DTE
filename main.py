@@ -1464,6 +1464,23 @@ def _check_leader_news(spx_p, now_et):
     return None
 
 
+def _third_friday(year, month):
+    """해당 월의 세 번째 금요일 (월간 옵션 만기일) — date 객체 반환."""
+    first = datetime(year, month, 1)
+    offset = (4 - first.weekday()) % 7  # 금요일 weekday=4
+    return (first + timedelta(days=offset + 14)).date()
+
+
+def _opex_info(target_date):
+    """target_date가 옵션 만기일이면 ('monthly'|'quad', is_quad) 반환. 아니면 None.
+    3·6·9·12월 세 번째 금요일은 쿼드러플 위칭."""
+    tf = _third_friday(target_date.year, target_date.month)
+    if target_date != tf:
+        return None
+    is_quad = target_date.month in (3, 6, 9, 12)
+    return ("quad" if is_quad else "monthly", is_quad)
+
+
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
     events = cached("econ_events_data", 60, fetch_global_econ_calendar)
     flash_news = fetch_flash_market_news()
@@ -1532,6 +1549,31 @@ def get_today_econ_events(now_et, spy_5m_candles, ratio):
             "actual": it["actual"], "forecast": it["forecast"], "previous": it["previous"],
             "eval_tag": eval_res["tag"], "eval_tone": eval_res["tone"], "eval_sentence": eval_res["sentence"],
         })
+
+    # 옵션 만기일 (OpEx) — 날짜 계산만으로 판정, ForexFactory에 없음 (2026-11-16, James 요청).
+    # 대상일(오늘, 또는 16시 이후엔 내일)이 월 세 번째 금요일이면 항목 추가.
+    # 3·6·9·12월은 쿼드러플 위칭. ts는 당일 16:00 ET(마감)로 잡아 종일 '예정'으로 보인다.
+    _target = tomorrow if is_tomorrow else today
+    _opex = _opex_info(_target)
+    if _opex:
+        _kind, _is_quad = _opex
+        _close_ts = ET.localize(datetime(_target.year, _target.month, _target.day, 16, 0)).timestamp()
+        _prefix = f"[{_target.strftime('%m/%d')}] " if is_tomorrow else ""
+        if _is_quad:
+            _title = f"{_prefix}쿼드러플 위칭 (Quad Witching)"
+            _title_en = "Quadruple Witching"
+            _sentence = "지수 선물·지수 옵션·주식 옵션·단일주식 선물 동시 만기 — 거래량·변동성 확대 주의. 마감 1시간 헤지 물량 주의."
+        else:
+            _title = f"{_prefix}월간 옵션 만기일 (OpEx)"
+            _title_en = "Monthly Options Expiration"
+            _sentence = "SPX·주식 월간 옵션 만기 — 마감 1시간 헤지 물량 주의, 지수 피닝 가능."
+        out_items.append({
+            "title": _title, "title_en": _title_en, "time": "16:00 ET",
+            "ts": _close_ts, "passed": (_close_ts <= now_ts), "has_actual": False,
+            "impact": "High", "actual": None, "forecast": None, "previous": None,
+            "eval_tag": None, "eval_tone": None, "eval_sentence": _sentence,
+        })
+        out_items.sort(key=lambda x: x["ts"])
 
     return {"items": out_items, "flash_news": flash_news, "source": "공식 캘린더 + Flash 속보 엔진", "error": None,
             "target_date": (target_items[0]["dt"].date().isoformat() if target_items else today.isoformat()),
