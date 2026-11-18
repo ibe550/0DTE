@@ -184,14 +184,6 @@ def kv_set(key, value, ex_seconds=None):
     return kv_cmd("SET", key, value) is not None
 
 
-def kv_ttl(key):
-    # Upstash TTL: 남은 초수. 키 없음 -2, 만료 없음 -1, 조회 실패 None.
-    v = kv_cmd("TTL", key)
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
-
 
 KV_AVAILABLE = _kv_config()[0] is not None
 _TOKEN = {"value": None, "exp": 0.0}
@@ -518,27 +510,6 @@ def send_telegram_invalidation_alert(inv, spx_price):
 # ─────────────────────────────────────────────────────────────
 # Schwab 토큰 인증 관리
 # ─────────────────────────────────────────────────────────────
-def _token_status():
-    # Schwab refresh_token 남은 일수 (대시보드 헤더 칩용).
-    # KV TTL은 8일(REFRESH_TOKEN_TTL), 실제 Schwab 만료는 7일 → 1일 차감.
-    if not KV_AVAILABLE:
-        return {"available": False, "level": "unknown", "days_left": None, "label": "토큰 상태 확인 불가"}
-    ttl = kv_ttl(KV_KEY_REFRESH)
-    if ttl is None or ttl == -2:
-        return {"available": False, "level": "missing", "days_left": 0, "label": "Schwab 토큰 없음 · 재인증 필요"}
-    if ttl == -1:
-        return {"available": True, "level": "unknown", "days_left": None, "label": "토큰 만료 정보 없음"}
-    days_left = max(0.0, ttl / 86400.0 - 1.0)
-    if days_left <= 1:
-        level = "critical"
-    elif days_left <= 2:
-        level = "warn"
-    else:
-        level = "ok"
-    return {"available": True, "level": level, "days_left": round(days_left, 1),
-            "label": f"Schwab 토큰 {days_left:.1f}일 남음"}
-
-
 def get_schwab_token(force_refresh=False):
     now = time.time()
     if not force_refresh and _TOKEN["value"] and now < _TOKEN["exp"]:
@@ -3868,7 +3839,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
             "timestamp": now_str,
             "source_summary": f"Schwab {schwab_cnt_q} · Realtime Hybrid",
             "schwab_status": schwab_msg,
-            "token_status": _token_status(),
             "presence": _presence_payload(auth_user),
             "spx": q_spx,
             "es": quotes.get("es"),
@@ -4015,7 +3985,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "timestamp": now_str,
         "source_summary": f"Schwab {schwab_cnt} · Realtime Hybrid",
         "schwab_status": schwab_msg,
-        "token_status": _token_status(),
         "shock_alert": shock_alert,
         "spx": q_spx,
         "es": quotes.get("es"),
