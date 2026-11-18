@@ -106,7 +106,7 @@ function renderYields(y) {
 }
 
 function renderRsi(r) {
-    const badge = $('header-rsi-badge');
+    const badge = $('dir-rsi-badge');
     if (!badge || !r || !isNum(r.val)) {
         if (badge) badge.classList.add('hidden');
         return;
@@ -118,7 +118,7 @@ function renderRsi(r) {
     else if (r.val <= 30) { statusText = '과매도'; colorCls = 'bg-emerald-950/90 text-emerald-300 border-emerald-800/80 animate-pulse'; }
     else if (r.val >= 55) { statusText = '상승'; colorCls = 'bg-amber-950/70 text-amber-300 border-amber-800/60'; }
     else if (r.val <= 45) { statusText = '하락'; colorCls = 'bg-indigo-950/70 text-indigo-300 border-indigo-800/80'; }
-    badge.className = `whitespace-nowrap shrink-0 font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls} text-[9px] lg:text-xs`;
+    badge.className = `whitespace-nowrap shrink-0 font-mono px-1.5 py-0.5 rounded font-bold border ${colorCls} text-[10px] sm:text-xs lg:text-sm`;
     badge.innerText = `RSI ${val} (${statusText})`;
 }
 
