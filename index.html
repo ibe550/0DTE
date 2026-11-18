@@ -104,7 +104,6 @@
             <button id="logout-btn" title="로그아웃 (기기 바인딩 해제)" class="text-[11px] lg:text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-1.5 py-0.5 rounded transition-colors">🚪</button>
         </div>
         <div class="flex items-center gap-x-1.5 shrink-0 text-[10px] lg:text-xs text-slate-400">
-            <span id="header-rsi-badge" class="hidden whitespace-nowrap shrink-0 text-[9px] lg:text-xs font-mono px-1.5 py-0.5 rounded font-bold border transition-colors">RSI --</span>
             <span class="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-500 ml-0.5 animate-pulse shrink-0"></span>
             <span class="text-slate-400 font-mono text-[10px] sm:text-xs lg:text-sm font-semibold whitespace-nowrap" id="current-clock">ET</span>
         </div>
@@ -525,7 +524,10 @@
             <div class="flex items-center space-x-1.5 text-xs sm:text-sm lg:text-base font-bold text-slate-300" id="dir-head">
                 <span>📈 SPX 방향분석 · <span id="dir-main-status">--</span></span>
             </div>
-            <div class="text-xs sm:text-sm lg:text-base font-bold text-slate-300" id="dir-top-score">종합 점수 --</div>
+            <div class="flex items-center gap-1.5 shrink-0">
+                <span id="dir-rsi-badge" class="hidden whitespace-nowrap text-[10px] sm:text-xs lg:text-sm font-mono px-1.5 py-0.5 rounded font-bold border">RSI --</span>
+                <div class="text-xs sm:text-sm lg:text-base font-bold text-slate-300" id="dir-top-score">종합 점수 --</div>
+            </div>
         </div>
         <div class="text-[10px] sm:text-xs lg:text-sm text-slate-300 mb-2" id="dir-summary">--</div>
         <div id="rev-panel" class="bg-slate-950 border border-slate-800 rounded p-2 sm:p-2.5 mb-2" style="display:none">
