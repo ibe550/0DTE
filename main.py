@@ -3023,14 +3023,16 @@ def analyze_tf(candles):
     return {"score": round(score, 1), "status": label, "tone": tone}
 
 
-def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events):
+def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events, em_pt=None):
     """장중 추세 전환 감지 (전 구간) — '직전 확립 추세'가 깨졌는지 3신호로 판정.
     세그먼트 방식: 완료된 10분봉을 순서대로 걸으며 추세 구간을 확정하고, 전환이
     확정되면 그 지점부터 새 추세 구간으로 재무장한다 (하루 여러 번 감지 가능).
     신호 (전부 마감 기준): ① VWAP 반대 마감 (10분봉 2연속) ② 구조 방어선 종가 돌파
     (상승 추세: 최근 고점 형성 구간의 최저 저점 / 하락 추세: 그 반대)
     ③ CVD 반전 (최근 30분 흐름이 세그먼트 누적 수급의 50%↑ 반대 + 극값 대비 50% 되돌림).
-    세그먼트 이동폭 <10pt면 횡보로 보고 신호를 내지 않는다. 확정 기록은 KV에 하루 래치."""
+    세그먼트 이동폭 <10pt면 횡보로 보고 신호를 내지 않는다. 확정 기록은 KV에 하루 래치.
+    em_pt: 당일 예상 움직임 — 무효화 기준을 적응형으로 만든다 (2026-11-18).
+    고정 5pt는 고변동성 날 노이즈에 불과하므로 max(5, EM×0.08)을 쓴다."""
     out = {"available": False, "state": "pre", "seg_dir": None, "seg_from": None,
            "seg_change": None, "defense": None,
            "signals": {"vwap": None, "orr": None, "cvd": None},
@@ -3261,13 +3263,16 @@ def detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et,
         last_flip = {"at": lf.get("at"), "to": lf.get("to"), "end_min": _em, "px": lf.get("px")}
     now_min = now_et.hour * 60 + now_et.minute
     recent = bool(last_flip and last_flip.get("end_min") is not None and now_min - last_flip["end_min"] <= 20)
-    # 확정 무효화: 현재가가 확정가(전환 봉 종가)에서 반대 방향으로 5pt 이상 이탈하면
-    # 확정 표시는 즉시 해제하고 실시간 상태로 복귀한다 (기록 자체는 flips에 남음)
+    # 확정 무효화: 현재가가 확정가(전환 봉 종가)에서 반대 방향으로 이탈하면
+    # 확정 표시는 즉시 해제하고 실시간 상태로 복귀한다 (기록 자체는 flips에 남음).
+    # 기준 적응형 (2026-11-18): 고정 5pt는 고EM 날 노이즈에 불과.
+    # max(5, EM×0.08) — 평상시(EM<62.5)엔 5pt 그대로, EM 130이면 ~10.4pt.
+    inv_thresh = max(5.0, em_pt * 0.08) if em_pt else 5.0
     invalidated = False
     if last_flip and last_flip.get("px") is not None:
         _ds = 1 if last_flip.get("to") == "up" else -1
         _cur = spx_p or (bars10[-1]["c"] if bars10 else None)
-        if _cur is not None and (_cur - last_flip["px"]) * _ds < -5:
+        if _cur is not None and (_cur - last_flip["px"]) * _ds < -inv_thresh:
             invalidated = True
         if not invalidated:
             # 무효 래치: 한 번 무효화된 확정은 가격이 되돌아와도 부활하지 않는다
@@ -3489,7 +3494,8 @@ def check_shock(request: Request):
         rev_tg = {}
         try:
             vwap_c = compute_vwap(spy_5m_bars, ratio, now_et) if spy_5m_bars else None
-            reversal_c = detect_trend_reversal(spy_5m_bars, ratio, vwap_c, cvd_cron, spx_p, now_et, {})
+            reversal_c = detect_trend_reversal(spy_5m_bars, ratio, vwap_c, cvd_cron, spx_p, now_et, {},
+                                               em_pt=(gex.get("em_pt") if isinstance(gex, dict) else None))
             if reversal_c.get("new_flip"):
                 rev_tg["confirmed"] = send_telegram_reversal_alert(reversal_c["new_flip"], spx_p)
             if reversal_c.get("new_warn"):
@@ -3952,7 +3958,8 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         _det = cached(f"cvd:es:10m:auto:{_lt10}", 20, lambda: compute_cvd(es_10m["candles"], "10m", es_10m["source"], "ES", now_et, vol_unit="contracts", session="auto"))
         if _det:
             cvd_det = _det
-    reversal = detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events)
+    reversal = detect_trend_reversal(spy_5m_bars, ratio, vwap_calc, cvd_det, spx_p, now_et, econ_events,
+                                     em_pt=(gex.get("em_pt") if isinstance(gex, dict) else None))
     if reversal.get("new_flip"):
         # 전환 확정 텔레그램 — 응답 지연 방지를 위해 백그라운드 발송 (발송 가드는 함수 내부)
         background_tasks.add_task(send_telegram_reversal_alert, reversal["new_flip"], spx_p)
