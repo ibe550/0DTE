@@ -1290,6 +1290,138 @@ def _build_overnight(now_et, es_price):
             "es_gap_pct": gap, "events": _eu_asia_events(now_et), "leaders": leaders, "cause": cause}
 
 
+# ── 야간 ES 거래량 게이지 (2026-11-19 James 요청: RSI처럼 많음/평균/적음 표시) ──
+# A-2 문제(밤 방향이 장 열리고 뒤집힘)의 배경: 밤 거래량이 적으면 갭이 얇아서 뒤집히기 쉽다.
+# 지표 = 야간 총 거래량(전일 18:00~현재, 계약). 기준 = 최근 완료된 밤들의 평균 (적응형, 고정 숫자 아님).
+# 페이스 = 야간 창(18:00→09:30, 930분) 경과 비율로 최종 거래량을 예상해 평균과 비교한다.
+_OVN_VOL_WIN_MIN = 930.0  # 야간 세션 길이 (18:00→09:30)
+_OVN_VOL_MIN_BARS = 10    # 유효한 밤으로 인정할 최소 봉 수 (주말 공백 제외용)
+_OVN_VOL_MIN_VOL = 10000  # 유효한 밤으로 인정할 최소 거래량 (계약, 주말 공백 제외용)
+
+
+def _yahoo_es_1m_5d():
+    """Yahoo ES=F 1분봉 5일치 (야간 거래량 기준용). 5분 캐시. 반환: [{t, v}] 또는 None."""
+    def load():
+        try:
+            r = requests.get("https://query1.finance.yahoo.com/v8/finance/chart/ES=F?interval=1m&range=5d&includePrePost=true",
+                             headers=HEADERS, timeout=10)
+            res = ((r.json().get("chart", {}).get("result") or [{}])[0] or {})
+            ts = res.get("timestamp") or []
+            vols = (((res.get("indicators", {}) or {}).get("quote") or [{}])[0] or {}).get("volume") or []
+            out = []
+            for t, v in zip(ts, vols):
+                if t is None or v is None:
+                    continue
+                try:
+                    out.append({"t": int(t), "v": float(v)})
+                except Exception:
+                    continue
+            return out or None
+        except Exception:
+            return None
+    return cached("yahoo_es_1m_5d", 300, load)
+
+
+def _ovn_night_key(ts):
+    """타임스탬프가 속한 야간 세션의 시작 날짜를 반환한다.
+    밤 18:00~24:00이면 당일, 00:00~09:30이면 전일. 그 외(정규장 시간)는 None."""
+    dt = datetime.fromtimestamp(ts, ET)
+    mins = dt.hour * 60 + dt.minute
+    if mins >= 1080:  # 18:00~24:00 → 당일 시작
+        return dt.date()
+    if mins < 570:  # 00:00~09:30 → 전일 시작
+        return dt.date() - timedelta(days=1)
+    return None
+
+
+def _overnight_vol_gauge(es_candles, now_et):
+    """야간 ES 총 거래량 게이지. 반환 dict 또는 None.
+    - vol_so_far: 진행 중 밤의 현재까지 총 거래량 (Schwab ES 캔들 우선, 실패 시 Yahoo)
+    - avg: 최근 완료된 밤들의 평균 총 거래량 (Yahoo 5일, 최소 2밤)
+    - projected: 페이스로 환산한 최종 예상 거래량, ratio = projected / avg
+    - label: <0.8 조용함 / 0.8~1.2 보통 / 1.2~1.6 활발 / >1.6 매우 활발"""
+    try:
+        if now_et is None:
+            now_et = datetime.now(ET)
+        # 진행 중 밤의 시작 (18:00 이후면 당일 18:00, 그 외 전일 18:00)
+        if (now_et.hour * 60 + now_et.minute) >= 1080:
+            night_start = ET.localize(datetime(now_et.year, now_et.month, now_et.day, 18, 0, 0))
+        else:
+            prev = now_et.date() - timedelta(days=1)
+            night_start = ET.localize(datetime(prev.year, prev.month, prev.day, 18, 0, 0))
+        night_start_ts = int(night_start.timestamp())
+        now_ts = int(now_et.timestamp())
+        elapsed_min = max(0.0, (now_ts - night_start_ts) / 60.0)
+        frac = min(elapsed_min / _OVN_VOL_WIN_MIN, 1.0)
+        if frac <= 0:
+            return None
+
+        # 현재까지 거래량 — Schwab ES 캔들 우선
+        vol_so_far = None
+        if es_candles:
+            bars, _, _ = get_overnight_session(es_candles, now_et)
+            if bars:
+                vol_so_far = sum(c.get("v") or 0 for c in bars)
+        y5 = _yahoo_es_1m_5d()
+        if vol_so_far is None and y5:
+            vol_so_far = sum(c["v"] for c in y5 if night_start_ts <= c["t"] <= now_ts)
+        if vol_so_far is None or vol_so_far <= 0:
+            return None
+
+        # 기준: 최근 완료된 밤들의 평균 (Yahoo 5일)
+        avg = None
+        nights_n = 0
+        if y5:
+            nights = {}
+            for c in y5:
+                k = _ovn_night_key(c["t"])
+                if k is None:
+                    continue
+                nights.setdefault(k, []).append(c)
+            totals = []
+            cur_key = night_start.date()
+            for k in sorted(nights):
+                if k == cur_key:
+                    continue  # 진행 중 밤은 평균에서 제외
+                bars = nights[k]
+                tot = sum(c["v"] for c in bars)
+                if len(bars) >= _OVN_VOL_MIN_BARS and tot >= _OVN_VOL_MIN_VOL:
+                    totals.append(tot)
+            if len(totals) >= 2:
+                avg = sum(totals) / len(totals)
+                nights_n = len(totals)
+
+        projected = vol_so_far / frac if frac < 1.0 else vol_so_far
+        ratio = (projected / avg) if avg else None
+        if ratio is None:
+            label, tone = "기준 수집 중", "flat"
+        elif ratio < 0.8:
+            label, tone = "조용함", "quiet"
+        elif ratio < 1.2:
+            label, tone = "보통", "avg"
+        elif ratio < 1.6:
+            label, tone = "활발", "busy"
+        else:
+            label, tone = "매우 활발", "hot"
+
+        def fmt(v):
+            return f"{v/1e6:.2f}M" if v >= 1e6 else (f"{v/1e3:.1f}K" if v >= 1e3 else f"{v:.0f}")
+
+        return {
+            "vol_so_far": int(round(vol_so_far)),
+            "vol_fmt": fmt(vol_so_far),
+            "projected": int(round(projected)),
+            "projected_fmt": fmt(projected),
+            "avg": int(round(avg)) if avg else None,
+            "avg_fmt": fmt(avg) if avg else None,
+            "ratio": round(ratio, 2) if ratio is not None else None,
+            "label": label, "tone": tone, "nights": nights_n,
+            "frac": round(frac, 2),
+        }
+    except Exception:
+        return None
+
+
 # ── 시장 주도주 뉴스 감시 (2026-10-27 James 요청: 방향 필터) ──
 # Mag7 + AI·반도체 주도주. 장전 플래그(브리핑/스트립)와 장중 텔레그램 트리거가 공유.
 LEADER_SYMBOLS = [("NVDA", "엔비디아"), ("AVGO", "브로드컴"), ("MSFT", "마이크로소프트"),
@@ -3987,6 +4119,11 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     used = [q["source"] for q in quotes.values() if q]
     schwab_cnt = sum(1 for s in used if src_kind(s) == "schwab")
 
+    # 야간 거래량 게이지 (2026-11-19) — 장전 스트립에만 첨부 (00:00~11:30)
+    _ovn = _build_overnight(now_et, (quotes.get("es") or {}).get("price"))
+    if _ovn is not None:
+        _ovn["vol_gauge"] = _overnight_vol_gauge(es_c.get("candles") if es_c else None, now_et)
+
     return {
         "status": "success",
         "timestamp": now_str,
@@ -4002,7 +4139,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "levels": levels,
         "mag7": quotes.get("mag7"),
         "econ_events": econ_events,
-        "overnight": _build_overnight(now_et, (quotes.get("es") or {}).get("price")),
+        "overnight": _ovn,
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
         "uso": quotes.get("uso"),
