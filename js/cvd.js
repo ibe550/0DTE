@@ -115,6 +115,8 @@ function clearCvdStale(reason) {
     safeSet('cvd-inspect-cvd', '--');
     safeSet('cvd-recent-vol', '--');
     safeSet('cvd-total-vol', '--');
+    var _vgc = document.getElementById('cvd-vol-gauge');
+    if (_vgc) _vgc.innerHTML = '';
     var onl = document.getElementById('cvd-overnight-line');
     if (onl) onl.style.display = 'none';
 }
@@ -243,6 +245,22 @@ function renderCvdDirect(cvd) {
     safeSet('cvd-inspect-sub', '최근 봉');
     safeSet('cvd-recent-vol', cvd.recent_vol || fmtVolM(lastBarShares));
     safeSet('cvd-total-vol', cvd.total_vol || fmtVolM(totalVolShares));
+    // 거래량 게이지 알림 pill (2026-11-19): 합계 옆에 평소보다 많음/적음 표시 (야간/본장 세션 자동)
+    var vgEl = document.getElementById('cvd-vol-gauge');
+    if (vgEl) {
+        var gv = cvd.vol_gauge;
+        if (gv) {
+            var toneBg = {quiet: '#1e3a5f', avg: '#1e293b', busy: '#064e3b', hot: '#78350f', flat: '#1e293b'}[gv.tone] || '#1e293b';
+            var toneFg = {quiet: '#93c5fd', avg: '#94a3b8', busy: '#6ee7b7', hot: '#fcd34d', flat: '#94a3b8'}[gv.tone] || '#94a3b8';
+            var sessWord = gv.session === 'rth' ? '일' : '밤';
+            var pctTxt = (gv.pct !== undefined && gv.pct !== null) ? (' ' + (gv.pct >= 0 ? '+' : '') + gv.pct + '%') : '';
+            var title = gv.avg != null
+                ? ('예상 최종 ' + gv.projected_fmt + ' · 최근 ' + gv.nights + sessWord + ' 평균 ' + gv.avg_fmt + ' · 비율 ' + gv.ratio)
+                : ('최근 평균 수집 중 (' + gv.nights + sessWord + ')');
+            vgEl.innerHTML = '<span style="background:' + toneBg + ';color:' + toneFg + ';font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap" title="' + title + '">' + gv.label + pctTxt + '</span>';
+            vgEl.title = title;
+        } else { vgEl.innerHTML = ''; }
+    }
     var lastCvdShares = Number(lastBar.cvd_line !== undefined ? lastBar.cvd_line : (lastBar.cvd || 0)) * unitMult;
     safeSet('cvd-inspect-cvd', fmtSignedM(lastCvdShares));
 
