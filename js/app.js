@@ -110,7 +110,7 @@ function renderOvernight(o) {
     const el = $('overnight-strip');
     if (!el) return;
     const hasData = o && ((o.asia && o.asia.length) || (o.europe && o.europe.length)
-        || o.es_gap_pct != null || (o.events && o.events.length) || (o.leaders && o.leaders.length) || !!o.cause || !!o.vol_gauge);
+        || o.es_gap_pct != null || (o.events && o.events.length) || (o.leaders && o.leaders.length) || !!o.cause);
     if (!hasData) { el.classList.add('hidden'); return; }
     const span = (items) => (items || []).map(x => {
         const s = x.pct >= 0 ? '+' : '';
@@ -124,20 +124,6 @@ function renderOvernight(o) {
         g.textContent = `ES 갭 ${o.es_gap_pct >= 0 ? '+' : ''}${o.es_gap_pct.toFixed(2)}%`;
         g.className = 'font-semibold ' + (o.es_gap_pct >= 0 ? 'text-emerald-400' : 'text-rose-400');
     } else { g.textContent = ''; }
-    // 야간 ES 거래량 게이지 (2026-11-19): RSI처럼 많음/평균/적음 표시
-    const vg = $('overnight-vol');
-    if (vg) {
-        const gv = o.vol_gauge;
-        if (gv) {
-            const toneColor = {quiet: '#94a3b8', avg: '#34d399', busy: '#fbbf24', hot: '#f87171', flat: '#94a3b8'}[gv.tone] || '#94a3b8';
-            const pct = gv.ratio != null ? Math.min(gv.ratio / 2, 1) * 100 : 0;
-            const title = gv.avg != null
-                ? `예상 최종 ${gv.projected_fmt} · 최근 ${gv.nights}밤 평균 ${gv.avg_fmt} · 비율 ${gv.ratio}`
-                : `최근 밤 평균 수집 중 (${gv.nights}밤)`;
-            vg.innerHTML = `야간 거래량 <b class="text-slate-100">${gv.vol_fmt}</b> · <span style="color:${toneColor};font-weight:700">${gv.label}</span> <span class="inline-block" style="width:56px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;vertical-align:middle" title="${title}"><span style="display:block;height:100%;width:${pct.toFixed(0)}%;background:${toneColor}"></span></span>`;
-            vg.title = title;
-        } else { vg.innerHTML = ''; }
-    }
     const ev = $('overnight-events');
     ev.textContent = (o.events || []).map(e => `${e.time} ${e.title}`).join(' · ');
     const ld = $('overnight-leaders');
