@@ -1334,12 +1334,45 @@ def _ovn_night_key(ts):
     return None
 
 
+def _vol_fmt(v):
+    return f"{v/1e6:.2f}M" if v >= 1e6 else (f"{v/1e3:.1f}K" if v >= 1e3 else f"{v:.0f}")
+
+
+def _vol_gauge_calc(vol_so_far, avg, frac, session, nights_n):
+    """거래량 게이지 공용 계산. ratio = 페이스 예상 최종 거래량 / 최근 평균.
+    라벨은 알림 문구 형태 (평소보다 많음/적음)."""
+    projected = vol_so_far / frac if frac < 1.0 else vol_so_far
+    ratio = (projected / avg) if avg else None
+    if ratio is None:
+        label, tone = "기준 수집 중", "flat"
+    elif ratio < 0.8:
+        label, tone = "평소보다 적음", "quiet"
+    elif ratio < 1.2:
+        label, tone = "평소 수준", "avg"
+    elif ratio < 1.6:
+        label, tone = "평소보다 많음", "busy"
+    else:
+        label, tone = "평소보다 매우 많음", "hot"
+    return {
+        "session": session,
+        "vol_so_far": int(round(vol_so_far)),
+        "vol_fmt": _vol_fmt(vol_so_far),
+        "projected": int(round(projected)),
+        "projected_fmt": _vol_fmt(projected),
+        "avg": int(round(avg)) if avg else None,
+        "avg_fmt": _vol_fmt(avg) if avg else None,
+        "ratio": round(ratio, 2) if ratio is not None else None,
+        "pct": int(round((ratio - 1.0) * 100)) if ratio is not None else None,
+        "label": label, "tone": tone, "nights": nights_n,
+        "frac": round(frac, 2),
+    }
+
+
 def _overnight_vol_gauge(es_candles, now_et):
     """야간 ES 총 거래량 게이지. 반환 dict 또는 None.
     - vol_so_far: 진행 중 밤의 현재까지 총 거래량 (Schwab ES 캔들 우선, 실패 시 Yahoo)
     - avg: 최근 완료된 밤들의 평균 총 거래량 (Yahoo 5일, 최소 2밤)
-    - projected: 페이스로 환산한 최종 예상 거래량, ratio = projected / avg
-    - label: <0.8 조용함 / 0.8~1.2 보통 / 1.2~1.6 활발 / >1.6 매우 활발"""
+    - projected: 페이스로 환산한 최종 예상 거래량, ratio = projected / avg"""
     try:
         if now_et is None:
             now_et = datetime.now(ET)
@@ -1391,35 +1424,85 @@ def _overnight_vol_gauge(es_candles, now_et):
                 avg = sum(totals) / len(totals)
                 nights_n = len(totals)
 
-        projected = vol_so_far / frac if frac < 1.0 else vol_so_far
-        ratio = (projected / avg) if avg else None
-        if ratio is None:
-            label, tone = "기준 수집 중", "flat"
-        elif ratio < 0.8:
-            label, tone = "조용함", "quiet"
-        elif ratio < 1.2:
-            label, tone = "보통", "avg"
-        elif ratio < 1.6:
-            label, tone = "활발", "busy"
-        else:
-            label, tone = "매우 활발", "hot"
-
-        def fmt(v):
-            return f"{v/1e6:.2f}M" if v >= 1e6 else (f"{v/1e3:.1f}K" if v >= 1e3 else f"{v:.0f}")
-
-        return {
-            "vol_so_far": int(round(vol_so_far)),
-            "vol_fmt": fmt(vol_so_far),
-            "projected": int(round(projected)),
-            "projected_fmt": fmt(projected),
-            "avg": int(round(avg)) if avg else None,
-            "avg_fmt": fmt(avg) if avg else None,
-            "ratio": round(ratio, 2) if ratio is not None else None,
-            "label": label, "tone": tone, "nights": nights_n,
-            "frac": round(frac, 2),
-        }
+        return _vol_gauge_calc(vol_so_far, avg, frac, "overnight", nights_n)
     except Exception:
         return None
+
+
+_RTH_VOL_WIN_MIN = 390.0  # 정규장 세션 길이 (09:30→16:00)
+_RTH_VOL_MIN_BARS = 30    # 유효한 정규장으로 인정할 최소 봉 수 (휴장일 제외용)
+_RTH_VOL_MIN_VOL = 100000  # 유효한 정규장으로 인정할 최소 거래량 (계약, 휴장일 제외용)
+
+
+def _rth_vol_gauge(es_candles, now_et):
+    """본장(정규장) ES 총 거래량 게이지. 반환 dict 또는 None.
+    - vol_so_far: 당일 09:30~현재 정규장 총 거래량 (Schwab ES 캔들 우선, 실패 시 Yahoo)
+    - avg: 최근 완료된 정규장들의 평균 총 거래량 (Yahoo 5일, 최소 2일)
+    - projected: 페이스로 환산한 최종 예상 거래량, ratio = projected / avg"""
+    try:
+        if now_et is None:
+            now_et = datetime.now(ET)
+        mins = now_et.hour * 60 + now_et.minute
+        if mins < 570:
+            return None  # 정규장 전 — 야간 게이지를 쓴다
+        rth_start = ET.localize(datetime(now_et.year, now_et.month, now_et.day, 9, 30, 0))
+        rth_start_ts = int(rth_start.timestamp())
+        now_ts = int(now_et.timestamp())
+        elapsed_min = max(0.0, (now_ts - rth_start_ts) / 60.0)
+        frac = min(elapsed_min / _RTH_VOL_WIN_MIN, 1.0)
+        if frac <= 0:
+            return None
+
+        # 현재까지 거래량 — Schwab ES 캔들 우선
+        vol_so_far = None
+        if es_candles:
+            bars, _, _ = get_rth_session(es_candles, now_et)
+            if bars:
+                vol_so_far = sum(c.get("v") or 0 for c in bars)
+        y5 = _yahoo_es_1m_5d()
+        if vol_so_far is None and y5:
+            vol_so_far = sum(c["v"] for c in y5 if rth_start_ts <= c["t"] <= now_ts)
+        if vol_so_far is None or vol_so_far <= 0:
+            return None
+
+        # 기준: 최근 완료된 정규장들의 평균 (Yahoo 5일)
+        avg = None
+        days_n = 0
+        if y5:
+            days = {}
+            for c in y5:
+                dt = datetime.fromtimestamp(c["t"], ET)
+                m = dt.hour * 60 + dt.minute
+                if not (570 <= m < 960):
+                    continue  # 정규장(09:30~16:00) 봉만
+                days.setdefault(dt.date(), []).append(c)
+            totals = []
+            today = now_et.date()
+            for k in sorted(days):
+                if k == today:
+                    continue  # 진행 중 당일은 평균에서 제외
+                bars = days[k]
+                tot = sum(c["v"] for c in bars)
+                if len(bars) >= _RTH_VOL_MIN_BARS and tot >= _RTH_VOL_MIN_VOL:
+                    totals.append(tot)
+            if len(totals) >= 2:
+                avg = sum(totals) / len(totals)
+                days_n = len(totals)
+
+        return _vol_gauge_calc(vol_so_far, avg, frac, "rth", days_n)
+    except Exception:
+        return None
+
+
+def _session_vol_gauge(es_candles, session_mode, now_et):
+    """CVD 카드 세션에 맞는 거래량 게이지. session_mode가 야간이면 야간, 정규장이면 본장."""
+    if not session_mode:
+        return None
+    if session_mode.startswith("overnight"):
+        return _overnight_vol_gauge(es_candles, now_et)
+    if session_mode.startswith("rth") or session_mode == "prior_rth":
+        return _rth_vol_gauge(es_candles, now_et)
+    return None
 
 
 # ── 시장 주도주 뉴스 감시 (2026-10-27 James 요청: 방향 필터) ──
@@ -4062,6 +4145,13 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         if cvd:
             cvd["fallback_note"] = f"SPY 대체 표시 ({es_reason} — ES 복구 시 자동 전환)"
 
+    # 거래량 게이지 (2026-11-19) — CVD 카드 세션에 맞춤 (야간/본장). 알림 문구 형태.
+    if cvd:
+        _vg = _session_vol_gauge(es_c.get("candles") if es_c else None,
+                                 cvd.get("session_mode"), now_et)
+        if _vg:
+            cvd["vol_gauge"] = _vg
+
     rsi = None
     if spx_r and spx_r.get("candles"):
         rs = rsi_series([c["c"] for c in spx_r["candles"]])
@@ -4119,11 +4209,6 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     used = [q["source"] for q in quotes.values() if q]
     schwab_cnt = sum(1 for s in used if src_kind(s) == "schwab")
 
-    # 야간 거래량 게이지 (2026-11-19) — 장전 스트립에만 첨부 (00:00~11:30)
-    _ovn = _build_overnight(now_et, (quotes.get("es") or {}).get("price"))
-    if _ovn is not None:
-        _ovn["vol_gauge"] = _overnight_vol_gauge(es_c.get("candles") if es_c else None, now_et)
-
     return {
         "status": "success",
         "timestamp": now_str,
@@ -4139,7 +4224,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         "levels": levels,
         "mag7": quotes.get("mag7"),
         "econ_events": econ_events,
-        "overnight": _ovn,
+        "overnight": _build_overnight(now_et, (quotes.get("es") or {}).get("price")),
         "wti": quotes.get("wti"),
         "brent": quotes.get("brent"),
         "uso": quotes.get("uso"),
