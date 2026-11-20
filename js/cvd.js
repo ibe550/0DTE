@@ -254,9 +254,9 @@ function renderCvdDirect(cvd) {
             var toneFg = {quiet: '#93c5fd', avg: '#94a3b8', busy: '#6ee7b7', hot: '#fcd34d', flat: '#94a3b8'}[gv.tone] || '#94a3b8';
             var sessWord = gv.session === 'rth' ? '일' : '밤';
             var pctTxt = (gv.pct !== undefined && gv.pct !== null) ? (' ' + (gv.pct >= 0 ? '+' : '') + gv.pct + '%') : '';
-            var title = gv.avg != null
+            var title = (gv.ratio !== undefined && gv.ratio !== null)
                 ? ('예상 최종 ' + gv.projected_fmt + ' · 최근 ' + gv.nights + sessWord + ' 평균 ' + gv.avg_fmt + ' · 비율 ' + gv.ratio)
-                : ('최근 평균 수집 중 (' + gv.nights + sessWord + ')');
+                : (gv.avg != null ? '세션 초반 — 30분 이후에 평소 대비 판정 표시' : ('최근 평균 수집 중 (' + gv.nights + sessWord + ')'));
             vgEl.innerHTML = '<span style="background:' + toneBg + ';color:' + toneFg + ';font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap" title="' + title + '">' + gv.label + pctTxt + '</span>';
             vgEl.title = title;
         } else { vgEl.innerHTML = ''; }
