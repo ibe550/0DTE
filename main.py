@@ -1338,12 +1338,21 @@ def _vol_fmt(v):
     return f"{v/1e6:.2f}M" if v >= 1e6 else (f"{v/1e3:.1f}K" if v >= 1e3 else f"{v:.0f}")
 
 
-def _vol_gauge_calc(vol_so_far, avg, frac, session, nights_n):
+_VOL_GAUGE_MIN_ELAPSED_MIN = 30.0  # 게이지 판정 최소 경과 시간 (2026-11-20):
+# 세션 시작 직후엔 거래량이 하루치로 환산돼 과장됨 (11/20 09:43 RTH +117%).
+# 30분 전엔 판정을 보류하고 "집계 중" 표시 (거래량 합계는 그대로 보임).
+
+
+def _vol_gauge_calc(vol_so_far, avg, frac, session, nights_n, elapsed_min=None):
     """거래량 게이지 공용 계산. ratio = 페이스 예상 최종 거래량 / 최근 평균.
-    라벨은 알림 문구 형태 (평소보다 많음/적음)."""
+    라벨은 알림 문구 형태 (평소보다 많음/적음).
+    elapsed_min < 30이면 페이스 예상이 불안정해서 판정 보류 ("집계 중", ratio None)."""
     projected = vol_so_far / frac if frac < 1.0 else vol_so_far
     ratio = (projected / avg) if avg else None
-    if ratio is None:
+    if elapsed_min is not None and elapsed_min < _VOL_GAUGE_MIN_ELAPSED_MIN:
+        label, tone = "집계 중", "flat"
+        ratio = None
+    elif ratio is None:
         label, tone = "기준 수집 중", "flat"
     elif ratio < 0.8:
         label, tone = "평소보다 적음", "quiet"
@@ -1428,7 +1437,7 @@ def _overnight_vol_gauge(es_candles, now_et):
                 avg = sum(totals) / len(totals)
                 nights_n = len(totals)
 
-        return _vol_gauge_calc(vol_so_far, avg, frac, "overnight", nights_n)
+        return _vol_gauge_calc(vol_so_far, avg, frac, "overnight", nights_n, elapsed_min=elapsed_min)
     except Exception:
         return None
 
@@ -1493,7 +1502,7 @@ def _rth_vol_gauge(es_candles, now_et):
                 avg = sum(totals) / len(totals)
                 days_n = len(totals)
 
-        return _vol_gauge_calc(vol_so_far, avg, frac, "rth", days_n)
+        return _vol_gauge_calc(vol_so_far, avg, frac, "rth", days_n, elapsed_min=elapsed_min)
     except Exception:
         return None
 
