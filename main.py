@@ -1668,7 +1668,7 @@ def _opex_info(target_date):
 
 
 def get_today_econ_events(now_et, spy_5m_candles, ratio):
-    events = cached("econ_events_data", 60, fetch_global_econ_calendar)
+    events = cached("econ_events_data", 1800, fetch_global_econ_calendar)
     flash_news = fetch_flash_market_news()
     now_ts = now_et.timestamp()
     if not events:
@@ -2230,7 +2230,7 @@ def get_candles(token, inst, tf):
         cs = aggregate_candles(base, agg) if agg else [dict(c) for c in base]
         return {"candles": cs, "source": f"{SRC_SCHWAB} ({ssym} {TF_LABEL[key]})"}
 
-    return cached(f"candles:{inst}:{key}", 4, load)
+    return cached(f"candles:{inst}:{key}", 20, load)
 
 
 def es_front_month_local(now=None):
@@ -4087,7 +4087,7 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
         f_es_all = {k: ex.submit(get_es_candles, token, k) for k in spy_tf_set}
         f_spx_r = ex.submit(get_candles, token, "spx", r_key)
         f_gex = ex.submit(get_gex, token, spx_p, ratio_q, now_et, opt_width)
-        f_cal = ex.submit(cached, "econ_events_data", 15, fetch_global_econ_calendar)
+        f_cal = ex.submit(cached, "econ_events_data", 1800, fetch_global_econ_calendar)
         f_news = ex.submit(fetch_flash_market_news)
 
         # 데드라인 기반 수집: 느린 섹션은 폴백으로 대체하고 전체 응답을 보호
