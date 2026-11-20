@@ -1416,6 +1416,10 @@ def _overnight_vol_gauge(es_candles, now_et):
             for k in sorted(nights):
                 if k == cur_key:
                     continue  # 진행 중 밤은 평균에서 제외
+                if k.weekday() == 6:
+                    continue  # 일요일 밤 제외 (2026-11-20): 일요일 18:00→월요일 09:30
+                    # 세션은 짧고 조용해서(570봉·168K) 평일 밤 기준을 끌어내림.
+                    # 평일 밤(~295K)만으로 평균을 내야 "많음" 판정이 정확해짐.
                 bars = nights[k]
                 tot = sum(c["v"] for c in bars)
                 if len(bars) >= _OVN_VOL_MIN_BARS and tot >= _OVN_VOL_MIN_VOL:
