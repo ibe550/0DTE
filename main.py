@@ -195,6 +195,126 @@ REFRESH_TOKEN_TTL = 8 * 24 * 3600
 
 
 # ─────────────────────────────────────────────────────────────
+# 적응형 노이즈 구간 (2026-11-24) — 봇과 동일 로직, 대시보드 자체 계산
+#  - 매일 방향이 처음 잡힌 시각(세그먼트 확립 + ES CVD 동의 + 세그먼트 15분 유지)을 KV에 기록
+#  - 최근 10일 중앙값이 다음 날 노이즈 구간 종료 시각 (09:45~10:30, 기록 없으면 10:30)
+#  - KV 쓰기는 하루 1회(첫 기록 시), 중앙값은 10개 이하 숫자라 폴링 부하 없음
+# ─────────────────────────────────────────────────────────────
+KV_KEY_NOISE_SETTLE = "noise_settle_times"
+NOISE_EARLY_MIN = 585   # 09:45
+NOISE_LATE_MIN = 630    # 10:30
+NOISE_WINDOW_DAYS = 10
+# 세그먼트 유지 시간 (분) — 방향이 잡혔다고 보려면 현재 세그먼트가 이 시간 이상
+# 유지돼야 한다. 봇 config의 settle_hold_min과 동일 (기본 15분, 환경변수로 변경 가능).
+try:
+    NOISE_SETTLE_HOLD_MIN = int(os.environ.get("NOISE_SETTLE_HOLD_MIN", "15") or 15)
+except ValueError:
+    NOISE_SETTLE_HOLD_MIN = 15
+_NOISE_SETTLE_CACHE = {"date": None, "entries": None}
+
+
+def _noise_seg_age_min(reversal, now_et):
+    """현재 세그먼트 경과 시간(분). seg_from이 없거나 파싱 불가면 None.
+    strong_trend_early와 동일한 계산 (now - seg_from). 세그먼트가 뒤집히면
+    seg_from이 새로 잡혀 나이가 리셋된다."""
+    seg_from = (reversal or {}).get("seg_from")
+    if not seg_from:
+        return None
+    try:
+        hh, mm = seg_from.split(":")
+        start = int(hh) * 60 + int(mm)
+    except Exception:
+        return None
+    return (now_et.hour * 60 + now_et.minute) - start
+
+
+def _noise_settle_is_settled(reversal, cvd, now_et, hold_min=NOISE_SETTLE_HOLD_MIN):
+    """방향이 잡혔는지 판정 — 세그먼트 확립(hold/confirmed) + CVD 동의 + 세그먼트 유지
+    (봇과 동일). seg_dir up + CVD bull, seg_dir down + CVD bear. Balanced(flat)는 미확정.
+    세그먼트가 hold_min분 이상 유지돼야 한다 — 한 번 스친 가짜 방향을 제외한다
+    (2026-11-24: 하락→반등→하락, 첫 하락은 가짜 시작이라 기록하면 안 됨)."""
+    if not reversal or not reversal.get("available"):
+        return False
+    if reversal.get("state") not in ("hold", "confirmed"):
+        return False
+    seg_dir = reversal.get("seg_dir")
+    if not seg_dir:
+        return False
+    age = _noise_seg_age_min(reversal, now_et)
+    if age is None or age < hold_min:
+        return False
+    tone = (cvd or {}).get("tone")
+    return (seg_dir == "up" and tone == "bull") or (seg_dir == "down" and tone == "bear")
+
+
+def _noise_median_minutes(entries, today_str):
+    """이전 날짜 settle 시각들의 중앙값(분). 없으면 630(10:30). 09:45~10:30으로 묶음."""
+    vals = sorted(
+        e["settle_min"]
+        for e in (entries or [])
+        if e.get("date") != today_str and isinstance(e.get("settle_min"), (int, float))
+    )
+    if not vals:
+        return NOISE_LATE_MIN
+    n = len(vals)
+    med = vals[n // 2] if n % 2 == 1 else round((vals[n // 2 - 1] + vals[n // 2]) / 2.0)
+    return max(NOISE_EARLY_MIN, min(NOISE_LATE_MIN, int(med)))
+
+
+def _noise_parse_entries(raw):
+    """KV 원문을 [{"date", "settle_min"}] 리스트로 정규화. 손상 시 빈 리스트."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out = [
+        e for e in parsed
+        if isinstance(e, dict) and e.get("date") and isinstance(e.get("settle_min"), (int, float))
+    ]
+    return sorted(out, key=lambda e: e["date"])[-NOISE_WINDOW_DAYS:]
+
+
+def _noise_load_entries(today_str):
+    """KV에서 기록을 읽는다. 날짜가 바뀌었을 때만 다시 읽는다 (인프로세스 캐시)."""
+    if _NOISE_SETTLE_CACHE.get("date") == today_str and _NOISE_SETTLE_CACHE.get("entries") is not None:
+        return _NOISE_SETTLE_CACHE["entries"]
+    entries = _noise_parse_entries(kv_get(KV_KEY_NOISE_SETTLE)) if KV_AVAILABLE else []
+    _NOISE_SETTLE_CACHE["date"] = today_str
+    _NOISE_SETTLE_CACHE["entries"] = entries
+    return entries
+
+
+def _noise_track_settle(reversal, cvd, now_et):
+    """방향이 처음 잡힌 시각을 하루 1회 KV에 기록하고 적응형 종료 시각을 반환.
+    반환: {"end_min": int, "days": int, "has_history": bool}"""
+    today_str = now_et.strftime("%Y-%m-%d")
+    entries = _noise_load_entries(today_str)
+    today_min = now_et.hour * 60 + now_et.minute
+    if not any(e.get("date") == today_str for e in entries) and _noise_settle_is_settled(reversal, cvd, now_et):
+        # 당일 첫 기록 — KV를 새로 읽어 중복 기록 방지 (Vercel 멀티 인스턴스)
+        fresh = _noise_parse_entries(kv_get(KV_KEY_NOISE_SETTLE)) if KV_AVAILABLE else []
+        if not any(e.get("date") == today_str for e in fresh):
+            merged = [e for e in fresh if e.get("date") != today_str]
+            merged.append({"date": today_str, "settle_min": today_min})
+            merged = sorted(merged, key=lambda e: e["date"])[-NOISE_WINDOW_DAYS:]
+            if KV_AVAILABLE:
+                kv_set(KV_KEY_NOISE_SETTLE, json.dumps(merged))
+            _NOISE_SETTLE_CACHE["date"] = today_str
+            _NOISE_SETTLE_CACHE["entries"] = merged
+            entries = merged
+    prior = [e for e in entries if e.get("date") != today_str]
+    return {
+        "end_min": _noise_median_minutes(entries, today_str),
+        "days": len(prior),
+        "has_history": len(prior) > 0,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
 # 텔레그램 실시간 알림 시스템
 #  - 방향별 쿨다운 10분 (DROP/SURGE 각각 — 반전 시그널이 묻히지 않음)
 #  - 메모리 + Upstash KV 이중 기록 (Vercel 멀티인스턴스 중복 방지)
@@ -4204,6 +4324,10 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     if reversal.get("new_invalidation"):
         # 전환 무효 텔레그램 — 확정가가 이탈된 순간 (발송 가드는 함수 내부)
         background_tasks.add_task(send_telegram_invalidation_alert, reversal["new_invalidation"], spx_p)
+
+    # 적응형 노이즈 구간 종료 시각 (2026-11-24) — 방향이 잡힌 시각을 KV에 기록하고
+    # 최근 10일 중앙값으로 종료 시각을 정한다. 방향 카드에 표시 (봇과 동일 로직).
+    direction["noise_zone"] = _noise_track_settle(reversal, cvd, now_et)
 
     vix_target = quotes.get("vix1d") or quotes.get("vix")
     shock_alert = detect_market_shock(spx_p, spy_5m_bars, ratio, gex, cvd, vix_target, now_et)
