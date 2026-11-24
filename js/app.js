@@ -14,6 +14,15 @@ function toggleDetailEvidence() {
 }
 
 function renderDirection(d) {
+    // 적응형 노이즈 구간 종료 시각 (2026-11-24) — 방향 카드 요약 바로 아래 표시
+    const nz = d && d.noise_zone;
+    if (nz && nz.has_history && typeof nz.end_min === 'number') {
+        const hh = String(Math.floor(nz.end_min / 60)).padStart(2, '0');
+        const mm = String(nz.end_min % 60).padStart(2, '0');
+        setText('dir-noise-end', `⏱️ 노이즈 구간 종료 ${hh}:${mm} (최근 ${nz.days}일 중앙값)`);
+    } else {
+        setText('dir-noise-end', '노이즈 구간: 09:30~10:30 (기본값, 기록 없음)');
+    }
     const tfKeys = ['5m', '1m', '15m', '1h'], list = $('evidence-list');
     if (!d || !d.available) {
         setText('dir-main-status', NA); setText('dir-top-score', '종합 점수 N/A');
