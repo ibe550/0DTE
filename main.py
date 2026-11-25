@@ -784,11 +784,14 @@ def _compute_breadth(spy_q, rsp_q):
             "rel": rel, "label": label}
 
 
-def _compute_levels(spx_p, es_p, spy_1h_candles, es_10m_candles, ratio, now_et):
+def _compute_levels(spx_p, es_p, spy_1h_candles, es_10m_candles, ratio, now_et, spx_prev_close=None):
     """지지/저항 레벨 (2026-11-10, 기록/표시용 — 진입 차단 아님).
     야간 ES 고/저 (전일 18:00~당일 09:30, ES→SPX 환산) + 전일 RTH 고/저/종가
     (SPY 1h 5일치에서 전일 세션 추출, SPX 환산). 봇 signals.compute_levels와 동일 정의.
-    spy_1h_candles / es_10m_candles는 캔들 리스트. 하나라도 없으면 해당 항목만 None."""
+    spy_1h_candles / es_10m_candles는 캔들 리스트. 하나라도 없으면 해당 항목만 None.
+    전종(prev_close)은 Schwab $SPX 호가의 전일 종가(spx_prev_close)를 우선 사용
+    (2026-11-24: SPY 종가 × 비율은 비율 근사 오차로 ~3pt 빗나감 — 11/24에 7,240.2 vs 실제 7,237.17).
+    spx_prev_close가 없으면 기존 SPY × 비율로 폴백. 전고/전저는 SPY 유래 유지."""
     out = {"available": False, "overnight_high": None, "overnight_low": None,
            "prev_high": None, "prev_low": None, "prev_close": None}
     # 야간 ES 고/저 → SPX 환산 (ES/SPX 베이시스 보정: 현재 SPX/ES 가격 비율)
@@ -821,6 +824,10 @@ def _compute_levels(spx_p, es_p, spy_1h_candles, es_10m_candles, ratio, now_et):
                 out["prev_close"] = round(pb[-1]["c"] * ratio, 1)
     except Exception:
         pass
+    # 전종은 Schwab $SPX 호가의 전일 종가를 우선 사용 (SPY × 비율은 근사 오차로 폴백만)
+    _spc = num(spx_prev_close)
+    if _spc:
+        out["prev_close"] = round(_spc, 1)
     out["available"] = any(v is not None for k, v in out.items() if k != "available")
     return out
 
@@ -4341,7 +4348,11 @@ def get_market_data(request: Request, background_tasks: BackgroundTasks, rsi_tf:
     # 지지/저항 레벨 (2026-11-10) — 야간 ES 고/저 + 전일 고/저/종가 (표시/기록용)
     es_10m_c = (es_10m or {}).get("candles") if es_10m else None
     es_p = (quotes.get("es") or {}).get("price")
-    levels = _compute_levels(spx_p, es_p, c1h, es_10m_c, ratio_vp, now_et)
+    # 전종은 SPX 호가의 전일 종가(= 현재가 - 당일 변동)에서 복원 — Schwab closePrice와 동일
+    spx_prev_close = None
+    if q_spx and q_spx.get("change") is not None:
+        spx_prev_close = q_spx["price"] - q_spx["change"]
+    levels = _compute_levels(spx_p, es_p, c1h, es_10m_c, ratio_vp, now_et, spx_prev_close)
 
     used = [q["source"] for q in quotes.values() if q]
     schwab_cnt = sum(1 for s in used if src_kind(s) == "schwab")
