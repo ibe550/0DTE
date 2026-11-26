@@ -324,6 +324,22 @@ def _noise_track_settle(reversal, cvd, now_et):
 _LAST_TELEGRAM_SHOCK = {}  # {type: ts}
 TELEGRAM_COOLDOWN_SEC = 600
 
+# ── NYSE 휴장일 (2026-11-26 추수감사절 알람 건) ──
+# 봇 market_calendar의 holidays와 동일 (2026·2027). 휴장일에는 대시보드
+# 텔레그램 알람(쇼크·전환·경보·무효·대형주 뉴스)을 일절 보내지 않는다.
+# 대시보드 화면(시가·차트)은 그대로 표시되고, 알람만 차단한다.
+MARKET_HOLIDAYS = frozenset({
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+})
+
+
+def _is_market_holiday():
+    """오늘(ET)이 NYSE 휴장일이면 True — 휴장일 텔레그램 알람 차단용."""
+    return datetime.now(ET).strftime("%Y-%m-%d") in MARKET_HOLIDAYS
+
 # ── Wall 래치 (2026-11-09): 같은 wall 반복 알람 억제 + 히스테리시스 ──
 # wall 근처에서 맴돌면 10분 쿨다운마다 알람이 와서 하루 수십 번 울림.
 # 같은 wall+방향 알람은 1회만 울리고, 가격이 wall에서 15pt 이상 벗어났다가
@@ -362,6 +378,8 @@ def _wall_latch_suppress(wall, spx_price):
 
 
 def send_telegram_shock_alert(shock_alert, spx_price, force_test=False):
+    if not force_test and _is_market_holiday():
+        return {"status": "skipped", "reason": "휴장일"}
     if not shock_alert or (not shock_alert.get("active") and not force_test):
         return {"status": "skipped", "reason": "알림 비활성"}
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -440,6 +458,8 @@ _LAST_REVERSAL_TG = {}  # {flip_key: ts} — 인스턴스 내 중복 발송 방�
 
 def send_telegram_reversal_alert(flip, spx_price):
     """추세 전환 확정 텔레그램 알림. 같은 전환은 하루 1회만 (KV + 메모리 이중 가드)."""
+    if _is_market_holiday():
+        return {"status": "skipped", "reason": "휴장일"}
     if not flip or not flip.get("at"):
         return {"status": "skipped", "reason": "전환 정보 없음"}
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -507,6 +527,8 @@ _LAST_WARN_TG = {}  # {warn_key: ts} — 인스턴스 내 중복 발송 방지
 
 def send_telegram_warn_alert(warn, spx_price):
     """추세 전환 경보(신호 2/3 충족) 텔레그램. 같은 세그먼트에서는 1회만 (KV + 메모리 이중 가드)."""
+    if _is_market_holiday():
+        return {"status": "skipped", "reason": "휴장일"}
     if not warn or not warn.get("seg_from"):
         return {"status": "skipped", "reason": "경보 정보 없음"}
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -570,6 +592,8 @@ _LAST_INV_TG = {}  # {inv_key: ts} — 인스턴스 내 중복 발송 방지
 
 def send_telegram_invalidation_alert(inv, spx_price):
     """추세 전환 무효(확정가 이탈) 텔레그램. 같은 전환은 1회만 (KV + 메모리 이중 가드)."""
+    if _is_market_holiday():
+        return {"status": "skipped", "reason": "휴장일"}
     if not inv or not inv.get("at"):
         return {"status": "skipped", "reason": "무효 정보 없음"}
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -1718,6 +1742,8 @@ def _leader_headline(sym, names, window="2h"):
 
 def send_telegram_leader_alert(sym, name, pct, hl, spx_p):
     """대형주 뉴스 텔레그램. 방향 라벨(상방/하방 재료)만 표시하고 매매 권유는 하지 않는다."""
+    if _is_market_holiday():
+        return {"status": "skipped", "reason": "휴장일"}
     try:
         token = os.environ.get("TELEGRAM_BOT_TOKEN")
         chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
@@ -3806,6 +3832,8 @@ def check_shock(request: Request):
     is_rth = (now_et.weekday() < 5) and ((now_et.hour > 9 or (now_et.hour == 9 and now_et.minute >= 30)) and now_et.hour < 16)
     if not is_rth:
         return {"status": "skipped", "reason": "RTH 아님", "now_et": now_et.strftime("%m/%d %H:%M ET")}
+    if _is_market_holiday():
+        return {"status": "skipped", "reason": "휴장일", "now_et": now_et.strftime("%m/%d %H:%M ET")}
 
     token, _ = get_schwab_token()
     if not token:
